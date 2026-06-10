@@ -4,7 +4,7 @@ export const navItems = [
   { label: 'Agent Platform', href: '#agent-platform' },
   { label: 'Use Cases', href: '#use-cases' },
   { label: 'Contact', href: '#contact' },
-];
+] as const;
 
 export const problemCards = [
   'Repetitive customer questions',
@@ -13,7 +13,7 @@ export const problemCards = [
   'Scattered documents',
   'Slow internal workflows',
   'No intelligent business assistant',
-];
+] as const;
 
 export const solutionCards = [
   ['AI Agent Systems', 'Purpose-built assistants that understand business context and guide customers or staff through complex processes.'],
@@ -22,7 +22,7 @@ export const solutionCards = [
   ['Internal Staff Assistants', 'Support teams with quick answers, process guidance, content drafting, and operational checklists.'],
   ['Lead Management Automation', 'Capture, qualify, route, and follow up with prospects using intelligent intake flows.'],
   ['Business Dashboards', 'Create focused workspaces that make agent activity, leads, and workflow status easy to monitor.'],
-];
+] as const;
 
 export const platformFeatures = [
   'Multi-channel ready',
@@ -31,7 +31,7 @@ export const platformFeatures = [
   'Secure API layer',
   'Staff workspace ready',
   'Future multi-business support',
-];
+] as const;
 
 export const services = [
   'AI Agent Development',
@@ -42,7 +42,7 @@ export const services = [
   'API & Integration Systems',
   'Knowledge Base Architecture',
   'AI Workflow Consulting',
-];
+] as const;
 
 export const ecosystemAreas = [
   'Education',
@@ -51,4 +51,4 @@ export const ecosystemAreas = [
   'Service Businesses',
   'Internal Operations',
   'Sales & Marketing',
-];
+] as const;
