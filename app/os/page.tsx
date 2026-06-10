@@ -1,49 +1,12 @@
 import type { Metadata } from 'next';
+import { Suspense } from 'react';
+import { getAgentProjects, getAgentTasks } from '@/lib/xeetrix-agent';
 import styles from './page.module.css';
 
 export const metadata: Metadata = {
   title: 'Shaikh OS Dashboard | Xeetrix',
   description: 'A dark personal dashboard for projects, tasks, notes, daily focus, and future AI commands.',
 };
-
-const projects = [
-  {
-    name: 'KNLTC Growth Engine',
-    status: 'Active',
-    progress: 72,
-    description: 'Lead generation, follow-up pipelines, content offers, and the first repeatable client closing system.',
-    next: 'Review 12 warm leads and assign follow-up owners.',
-  },
-  {
-    name: 'Islamic School Ops',
-    status: 'Running',
-    progress: 58,
-    description: 'Academic planning, teacher coordination, student visibility, and daily operational accountability.',
-    next: 'Confirm tomorrow\'s class coverage and parent notes.',
-  },
-  {
-    name: 'Xeetrix AI Platform',
-    status: 'Build',
-    progress: 36,
-    description: 'A product workspace for agents, education tools, automations, and future AI-assisted services.',
-    next: 'Define dashboard data schema and Supabase tables.',
-  },
-  {
-    name: 'Investment Watch',
-    status: 'Monitor',
-    progress: 44,
-    description: 'A lightweight tracker for pigeon project updates, small investments, risks, and monthly decisions.',
-    next: 'Log last cash movement and owner update.',
-  },
-];
-
-const tasks = [
-  { title: 'Call top KNLTC prospect', project: 'KNLTC', due: '09:30', priority: 'High' },
-  { title: 'Approve school weekly routine', project: 'School', due: '11:00', priority: 'High' },
-  { title: 'Write 1 conversion post', project: 'Marketing', due: '14:00', priority: 'Medium' },
-  { title: 'Check cash-flow notes', project: 'Finance', due: '18:00', priority: 'Medium' },
-  { title: 'Brain dump tomorrow ideas', project: 'Personal', due: '21:30', priority: 'Low' },
-];
 
 const notes = [
   {
@@ -65,6 +28,8 @@ const focusBlocks = [
   { label: 'Energy Guard', value: 'Deep work first', detail: 'No scattered switching until the main task is shipped.' },
   { label: 'End-of-day Review', value: '15 min reset', detail: 'Move unfinished tasks, write a short note, plan tomorrow.' },
 ];
+
+export const dynamic = 'force-dynamic';
 
 export default function ShaikhOSPage() {
   return (
@@ -107,22 +72,9 @@ export default function ShaikhOSPage() {
           <h2>Strategic lanes</h2>
           <p>Track active responsibilities with ownership, next action, and progress states ready to connect to Supabase.</p>
         </div>
-        <div className={styles.projectGrid}>
-          {projects.map((project) => (
-            <article key={project.name} className={styles.projectCard}>
-              <div className={styles.cardTopline}>
-                <span>{project.status}</span>
-                <strong>{project.progress}%</strong>
-              </div>
-              <h3>{project.name}</h3>
-              <p>{project.description}</p>
-              <div className={styles.progressTrack} aria-label={`${project.name} progress`}>
-                <span style={{ width: `${project.progress}%` }} />
-              </div>
-              <small>Next: {project.next}</small>
-            </article>
-          ))}
-        </div>
+        <Suspense fallback={<ProjectsLoadingState />}>
+          <ProjectsGrid />
+        </Suspense>
       </section>
 
       <section id="tasks" className={styles.section}>
@@ -131,18 +83,9 @@ export default function ShaikhOSPage() {
           <h2>Execution queue</h2>
           <p>A focused task list for daily operations, ordered by urgency, project context, and time block.</p>
         </div>
-        <div className={styles.taskBoard}>
-          {tasks.map((task) => (
-            <article key={task.title} className={styles.taskRow}>
-              <div>
-                <h3>{task.title}</h3>
-                <p>{task.project}</p>
-              </div>
-              <span>{task.due}</span>
-              <strong data-priority={task.priority}>{task.priority}</strong>
-            </article>
-          ))}
-        </div>
+        <Suspense fallback={<TasksLoadingState />}>
+          <TasksBoard />
+        </Suspense>
       </section>
 
       <section id="notes" className={styles.section}>
@@ -207,4 +150,132 @@ export default function ShaikhOSPage() {
       </section>
     </main>
   );
+}
+
+async function ProjectsGrid() {
+  const projects = await loadProjects();
+
+  if (projects.length === 0) {
+    return (
+      <div className={styles.projectGrid}>
+        <article className={styles.projectCard}>
+          <div className={styles.cardTopline}>
+            <span>No projects</span>
+            <strong>0%</strong>
+          </div>
+          <h3>No live projects found</h3>
+          <p>Projects from the Xeetrix Agent backend will appear here as soon as they are available.</p>
+          <div className={styles.progressTrack} aria-label="No live projects progress">
+            <span style={{ width: '0%' }} />
+          </div>
+          <small>Next: Add or sync a project in Xeetrix Agent.</small>
+        </article>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.projectGrid}>
+      {projects.map((project) => (
+        <article key={project.id} className={styles.projectCard}>
+          <div className={styles.cardTopline}>
+            <span>{project.status}</span>
+            <strong>{project.progress}%</strong>
+          </div>
+          <h3>{project.name}</h3>
+          <p>{project.description}</p>
+          <div className={styles.progressTrack} aria-label={`${project.name} progress`}>
+            <span style={{ width: `${project.progress}%` }} />
+          </div>
+          <small>Next: {project.next}</small>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+async function TasksBoard() {
+  const tasks = await loadTasks();
+
+  if (tasks.length === 0) {
+    return (
+      <div className={styles.taskBoard}>
+        <article className={styles.taskRow}>
+          <div>
+            <h3>No live tasks found</h3>
+            <p>Tasks from the Xeetrix Agent backend will appear here as soon as they are available.</p>
+          </div>
+          <span>—</span>
+          <strong data-priority="Low">Empty</strong>
+        </article>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.taskBoard}>
+      {tasks.map((task) => (
+        <article key={task.id} className={styles.taskRow}>
+          <div>
+            <h3>{task.title}</h3>
+            <p>{task.project}</p>
+          </div>
+          <span>{task.due}</span>
+          <strong data-priority={task.priority}>{task.priority}</strong>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function ProjectsLoadingState() {
+  return (
+    <div className={styles.projectGrid}>
+      <article className={styles.projectCard}>
+        <div className={styles.cardTopline}>
+          <span>Loading</span>
+          <strong>Live</strong>
+        </div>
+        <h3>Loading live projects…</h3>
+        <p>Connecting to the Xeetrix Agent backend for the latest project memory.</p>
+        <div className={styles.progressTrack} aria-label="Loading live projects progress">
+          <span style={{ width: '42%' }} />
+        </div>
+        <small>Next: Syncing project lanes.</small>
+      </article>
+    </div>
+  );
+}
+
+function TasksLoadingState() {
+  return (
+    <div className={styles.taskBoard}>
+      <article className={styles.taskRow}>
+        <div>
+          <h3>Loading live tasks…</h3>
+          <p>Connecting to the Xeetrix Agent backend.</p>
+        </div>
+        <span>—</span>
+        <strong data-priority="Medium">Loading</strong>
+      </article>
+    </div>
+  );
+}
+
+async function loadProjects() {
+  try {
+    return await getAgentProjects();
+  } catch (error) {
+    console.error(error);
+    return [];
+  }
+}
+
+async function loadTasks() {
+  try {
+    return await getAgentTasks();
+  } catch (error) {
+    console.error(error);
+    return [];
+  }
 }
