@@ -3,46 +3,46 @@ import styles from './page.module.css';
 const focusAreas = [
   {
     label: 'KNLTC',
-    role: 'Sales & Marketing Manager',
-    priority: 'Priority 1',
-    summary: 'Lead generation, follow-up, content, team monitoring, and first client closing.',
-    metrics: ['0 closed clients yet', 'Commission model planned', 'Cash flow priority'],
+    role: 'সেলস ও মার্কেটিং ম্যানেজার',
+    priority: 'প্রায়োরিটি ১',
+    summary: 'লিড জেনারেশন, ফলোআপ, কনটেন্ট, টিম মনিটরিং এবং প্রথম ক্লায়েন্ট ক্লোজ করাই এখন মূল লক্ষ্য।',
+    metrics: ['এখনো ০ ক্লোজড ক্লায়েন্ট', 'কমিশন মডেল পরিকল্পিত', 'ক্যাশ ফ্লো সবচেয়ে জরুরি'],
   },
   {
-    label: 'Islamic School',
-    role: 'Academic In-charge',
-    priority: 'Priority 2',
-    summary: 'Academic operations, teacher coordination, student affairs, and daily institutional responsibilities.',
-    metrics: ['60+ students', '4–5 teachers', 'Stable base'],
+    label: 'ইসলামিক স্কুল',
+    role: 'একাডেমিক ইনচার্জ',
+    priority: 'প্রায়োরিটি ২',
+    summary: 'একাডেমিক অপারেশন, শিক্ষক সমন্বয়, ছাত্র ব্যবস্থাপনা এবং প্রতিষ্ঠানের দৈনন্দিন দায়িত্ব।',
+    metrics: ['৬০+ শিক্ষার্থী', '৪–৫ জন শিক্ষক', 'স্থিতিশীল ভিত্তি'],
   },
   {
     label: 'Xeetrix',
-    role: 'Founder Vision',
-    priority: 'Priority 3',
-    summary: 'Technology parent brand for AI systems, education platforms, automation, and future products.',
-    metrics: ['AI Agent Platform', 'Education vision', 'Long-term asset'],
+    role: 'ফাউন্ডার ভিশন',
+    priority: 'প্রায়োরিটি ৩',
+    summary: 'AI সিস্টেম, এডুকেশন প্ল্যাটফর্ম, অটোমেশন এবং ভবিষ্যৎ প্রোডাক্টের জন্য টেক parent brand।',
+    metrics: ['AI Agent Platform', 'এডুকেশন ভিশন', 'দীর্ঘমেয়াদি asset'],
   },
   {
-    label: 'Investments',
-    role: 'Monitor & Decide',
-    priority: 'Priority 4',
-    summary: 'Pigeon project and other small investments need light tracking, not daily attention.',
-    metrics: ['Pigeon project', 'Low-time mode', 'Optional growth'],
+    label: 'ইনভেস্টমেন্ট',
+    role: 'মনিটর ও সিদ্ধান্ত',
+    priority: 'প্রায়োরিটি ৪',
+    summary: 'কবুতর প্রজেক্ট এবং অন্যান্য ছোট ইনভেস্টমেন্ট হালকা মনিটরিং দরকার, প্রতিদিনের মূল ফোকাস না।',
+    metrics: ['কবুতর প্রজেক্ট', 'কম সময়ের মনিটরিং', 'অপশনাল গ্রোথ'],
   },
 ];
 
 const todayBlocks = [
   {
-    title: 'Critical Focus',
-    items: ['KNLTC lead follow-up', 'One conversion-focused marketing action', 'Cash-flow related decision'],
+    title: 'জরুরি ফোকাস',
+    items: ['KNLTC লিড ফলোআপ', 'একটি conversion-focused marketing action', 'ক্যাশ ফ্লো সম্পর্কিত সিদ্ধান্ত'],
   },
   {
-    title: 'Academic Duty',
-    items: ['School operations check', 'Teacher/student issue review', 'Tomorrow academic preparation'],
+    title: 'একাডেমিক দায়িত্ব',
+    items: ['স্কুল অপারেশন চেক', 'শিক্ষক/শিক্ষার্থী বিষয় review', 'আগামী দিনের academic preparation'],
   },
   {
-    title: 'Personal Stability',
-    items: ['Sleep target check', 'Food/water reminder', 'Ibadah and emotional reset'],
+    title: 'ব্যক্তিগত স্থিতিশীলতা',
+    items: ['ঘুমের টার্গেট চেক', 'খাবার/পানি reminder', 'ইবাদত ও emotion reset'],
   },
 ];
 
@@ -60,15 +60,15 @@ export default function ShaikhOSPage() {
     <main className={styles.osShell}>
       <section className={styles.hero}>
         <div>
-          <p className={styles.eyebrow}>Personal Command Center</p>
+          <p className={styles.eyebrow}>পার্সোনাল কমান্ড সেন্টার</p>
           <h1>Shaikh OS</h1>
           <p className={styles.subtitle}>
-            A visual operating system to organize KNLTC, school responsibilities, Xeetrix vision,
-            investments, health, time, money, and daily execution in one place.
+            KNLTC, স্কুলের দায়িত্ব, Xeetrix ভিশন, ইনভেস্টমেন্ট, স্বাস্থ্য, সময়, টাকা
+            এবং দৈনন্দিন কাজ—সবকিছু এক জায়গায় সাজানোর জন্য একটি visual operating system।
           </p>
           <div className={styles.actions}>
-            <a href="#today" className={styles.primaryButton}>Plan Today</a>
-            <a href="#projects" className={styles.secondaryButton}>View Projects</a>
+            <a href="#today" className={styles.primaryButton}>আজকের প্ল্যান</a>
+            <a href="#projects" className={styles.secondaryButton}>প্রজেক্ট দেখুন</a>
           </div>
         </div>
 
@@ -78,21 +78,21 @@ export default function ShaikhOSPage() {
             <strong>Training Mode</strong>
           </div>
           <div className={styles.agentPrompt}>
-            <p>“Tell me everything in your head. I will sort it into projects, tasks, risks, and priorities.”</p>
+            <p>“মাথায় যা আছে সব লিখে দিন। আমি এগুলোকে প্রজেক্ট, কাজ, ঝুঁকি এবং priority অনুযায়ী সাজিয়ে দেব।”</p>
           </div>
           <div className={styles.agentGrid}>
-            <span>Think clearly</span>
-            <span>Decide clearly</span>
-            <span>Execute consistently</span>
+            <span>পরিষ্কারভাবে চিন্তা</span>
+            <span>পরিষ্কারভাবে সিদ্ধান্ত</span>
+            <span>নিয়মিত execution</span>
           </div>
         </aside>
       </section>
 
       <section id="today" className={styles.section}>
         <div className={styles.sectionHeader}>
-          <p className={styles.eyebrow}>Today</p>
+          <p className={styles.eyebrow}>আজ</p>
           <h2>Daily Control Board</h2>
-          <p>Start every day by reducing noise and choosing the few actions that matter most.</p>
+          <p>প্রতিদিন noise কমিয়ে সবচেয়ে গুরুত্বপূর্ণ অল্প কয়েকটি কাজ বেছে নেওয়ার জায়গা।</p>
         </div>
         <div className={styles.todayGrid}>
           {todayBlocks.map((block) => (
@@ -108,9 +108,9 @@ export default function ShaikhOSPage() {
 
       <section id="projects" className={styles.section}>
         <div className={styles.sectionHeader}>
-          <p className={styles.eyebrow}>Projects</p>
-          <h2>Life Areas & Active Responsibilities</h2>
-          <p>Each area has a role, a priority, and a clear operating mode.</p>
+          <p className={styles.eyebrow}>প্রজেক্ট</p>
+          <h2>জীবনের প্রধান দায়িত্ব ও active areas</h2>
+          <p>প্রতিটি area-র role, priority এবং operating mode পরিষ্কারভাবে দেখা যাবে।</p>
         </div>
         <div className={styles.projectGrid}>
           {focusAreas.map((area) => (
@@ -132,11 +132,11 @@ export default function ShaikhOSPage() {
       <section className={styles.section}>
         <div className={styles.commandLayout}>
           <div>
-            <p className={styles.eyebrow}>Personal Systems</p>
-            <h2>Not another task app. A warehouse for your mind.</h2>
+            <p className={styles.eyebrow}>পার্সোনাল সিস্টেম</p>
+            <h2>আরেকটা task app না। এটা আপনার মাথার warehouse।</h2>
             <p className={styles.commandText}>
-              Shaikh OS starts as a visual command center. Later it will connect with Shaikh Agent,
-              KNLTC leads, notes, finance, reminders, and weekly reviews.
+              Shaikh OS প্রথমে visual command center হিসেবে শুরু হচ্ছে। পরে এটি Shaikh Agent,
+              KNLTC leads, notes, finance, reminders এবং weekly review-এর সাথে connect হবে।
             </p>
           </div>
           <div className={styles.systemGrid}>
