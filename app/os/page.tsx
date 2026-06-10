@@ -1,147 +1,208 @@
+import type { Metadata } from 'next';
 import styles from './page.module.css';
 
-const focusAreas = [
+export const metadata: Metadata = {
+  title: 'Shaikh OS Dashboard | Xeetrix',
+  description: 'A dark personal dashboard for projects, tasks, notes, daily focus, and future AI commands.',
+};
+
+const projects = [
   {
-    label: 'KNLTC',
-    role: 'সেলস ও মার্কেটিং ম্যানেজার',
-    priority: 'প্রায়োরিটি ১',
-    summary: 'লিড জেনারেশন, ফলোআপ, কনটেন্ট, টিম মনিটরিং এবং প্রথম ক্লায়েন্ট ক্লোজ করাই এখন মূল লক্ষ্য।',
-    metrics: ['এখনো ০ ক্লোজড ক্লায়েন্ট', 'কমিশন মডেল পরিকল্পিত', 'ক্যাশ ফ্লো সবচেয়ে জরুরি'],
+    name: 'KNLTC Growth Engine',
+    status: 'Active',
+    progress: 72,
+    description: 'Lead generation, follow-up pipelines, content offers, and the first repeatable client closing system.',
+    next: 'Review 12 warm leads and assign follow-up owners.',
   },
   {
-    label: 'ইসলামিক স্কুল',
-    role: 'একাডেমিক ইনচার্জ',
-    priority: 'প্রায়োরিটি ২',
-    summary: 'একাডেমিক অপারেশন, শিক্ষক সমন্বয়, ছাত্র ব্যবস্থাপনা এবং প্রতিষ্ঠানের দৈনন্দিন দায়িত্ব।',
-    metrics: ['৬০+ শিক্ষার্থী', '৪–৫ জন শিক্ষক', 'স্থিতিশীল ভিত্তি'],
+    name: 'Islamic School Ops',
+    status: 'Running',
+    progress: 58,
+    description: 'Academic planning, teacher coordination, student visibility, and daily operational accountability.',
+    next: 'Confirm tomorrow\'s class coverage and parent notes.',
   },
   {
-    label: 'Xeetrix',
-    role: 'ফাউন্ডার ভিশন',
-    priority: 'প্রায়োরিটি ৩',
-    summary: 'AI সিস্টেম, এডুকেশন প্ল্যাটফর্ম, অটোমেশন এবং ভবিষ্যৎ প্রোডাক্টের জন্য টেক parent brand।',
-    metrics: ['AI Agent Platform', 'এডুকেশন ভিশন', 'দীর্ঘমেয়াদি asset'],
+    name: 'Xeetrix AI Platform',
+    status: 'Build',
+    progress: 36,
+    description: 'A product workspace for agents, education tools, automations, and future AI-assisted services.',
+    next: 'Define dashboard data schema and Supabase tables.',
   },
   {
-    label: 'ইনভেস্টমেন্ট',
-    role: 'মনিটর ও সিদ্ধান্ত',
-    priority: 'প্রায়োরিটি ৪',
-    summary: 'কবুতর প্রজেক্ট এবং অন্যান্য ছোট ইনভেস্টমেন্ট হালকা মনিটরিং দরকার, প্রতিদিনের মূল ফোকাস না।',
-    metrics: ['কবুতর প্রজেক্ট', 'কম সময়ের মনিটরিং', 'অপশনাল গ্রোথ'],
+    name: 'Investment Watch',
+    status: 'Monitor',
+    progress: 44,
+    description: 'A lightweight tracker for pigeon project updates, small investments, risks, and monthly decisions.',
+    next: 'Log last cash movement and owner update.',
   },
 ];
 
-const todayBlocks = [
+const tasks = [
+  { title: 'Call top KNLTC prospect', project: 'KNLTC', due: '09:30', priority: 'High' },
+  { title: 'Approve school weekly routine', project: 'School', due: '11:00', priority: 'High' },
+  { title: 'Write 1 conversion post', project: 'Marketing', due: '14:00', priority: 'Medium' },
+  { title: 'Check cash-flow notes', project: 'Finance', due: '18:00', priority: 'Medium' },
+  { title: 'Brain dump tomorrow ideas', project: 'Personal', due: '21:30', priority: 'Low' },
+];
+
+const notes = [
   {
-    title: 'জরুরি ফোকাস',
-    items: ['KNLTC লিড ফলোআপ', 'একটি conversion-focused marketing action', 'ক্যাশ ফ্লো সম্পর্কিত সিদ্ধান্ত'],
+    title: 'Decision log',
+    copy: 'Separate urgent cash-flow actions from long-term Xeetrix product work so daily execution stays clean.',
   },
   {
-    title: 'একাডেমিক দায়িত্ব',
-    items: ['স্কুল অপারেশন চেক', 'শিক্ষক/শিক্ষার্থী বিষয় review', 'আগামী দিনের academic preparation'],
+    title: 'Meeting memory',
+    copy: 'Capture stakeholder requests as notes first, then convert only confirmed commitments into tasks.',
   },
   {
-    title: 'ব্যক্তিগত স্থিতিশীলতা',
-    items: ['ঘুমের টার্গেট চেক', 'খাবার/পানি reminder', 'ইবাদত ও emotion reset'],
+    title: 'Supabase-ready data',
+    copy: 'Projects, tasks, notes, and focus blocks are structured as arrays now and can map directly to database rows later.',
   },
 ];
 
-const personalSystems = [
-  'Brain Dump',
-  'Daily Priority',
-  'Weekly Review',
-  'Money Check',
-  'Health Check-in',
-  'Emotion Reset',
+const focusBlocks = [
+  { label: 'Primary Focus', value: 'Close revenue loop', detail: 'One sales action before admin work.' },
+  { label: 'Energy Guard', value: 'Deep work first', detail: 'No scattered switching until the main task is shipped.' },
+  { label: 'End-of-day Review', value: '15 min reset', detail: 'Move unfinished tasks, write a short note, plan tomorrow.' },
 ];
 
 export default function ShaikhOSPage() {
   return (
-    <main className={styles.osShell}>
+    <main className={styles.dashboardShell}>
       <section className={styles.hero}>
-        <div>
-          <p className={styles.eyebrow}>পার্সোনাল কমান্ড সেন্টার</p>
-          <h1>Shaikh OS</h1>
+        <div className={styles.heroCopy}>
+          <p className={styles.eyebrow}>Shaikh OS Dashboard</p>
+          <h1>One dark command center for projects, tasks, notes, and focus.</h1>
           <p className={styles.subtitle}>
-            KNLTC, স্কুলের দায়িত্ব, Xeetrix ভিশন, ইনভেস্টমেন্ট, স্বাস্থ্য, সময়, টাকা
-            এবং দৈনন্দিন কাজ—সবকিছু এক জায়গায় সাজানোর জন্য একটি visual operating system।
+            A desktop-first personal operating dashboard designed for daily execution, future Supabase persistence,
+            and an AI command box that can later turn natural language into structured work.
           </p>
-          <div className={styles.actions}>
-            <a href="#today" className={styles.primaryButton}>আজকের প্ল্যান</a>
-            <a href="#projects" className={styles.secondaryButton}>প্রজেক্ট দেখুন</a>
+          <div className={styles.heroActions}>
+            <a href="#projects" className={styles.primaryButton}>Open dashboard</a>
+            <a href="#command" className={styles.secondaryButton}>AI command box</a>
           </div>
         </div>
 
-        <aside className={styles.agentCard}>
-          <div className={styles.cardHeader}>
-            <span>Shaikh Agent</span>
-            <strong>Training Mode</strong>
+        <aside className={styles.statusConsole} aria-label="Dashboard system status">
+          <div className={styles.consoleHeader}>
+            <span>System status</span>
+            <strong>Supabase Ready</strong>
           </div>
-          <div className={styles.agentPrompt}>
-            <p>“মাথায় যা আছে সব লিখে দিন। আমি এগুলোকে প্রজেক্ট, কাজ, ঝুঁকি এবং priority অনুযায়ী সাজিয়ে দেব।”</p>
+          <div className={styles.consoleMetric}>
+            <span>Today score</span>
+            <strong>86%</strong>
           </div>
-          <div className={styles.agentGrid}>
-            <span>পরিষ্কারভাবে চিন্তা</span>
-            <span>পরিষ্কারভাবে সিদ্ধান্ত</span>
-            <span>নিয়মিত execution</span>
+          <div className={styles.consoleRows}>
+            <span>Projects synced schema</span>
+            <span>Tasks priority queue</span>
+            <span>Notes knowledge layer</span>
+            <span>AI command reserved</span>
           </div>
         </aside>
       </section>
 
-      <section id="today" className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <p className={styles.eyebrow}>আজ</p>
-          <h2>Daily Control Board</h2>
-          <p>প্রতিদিন noise কমিয়ে সবচেয়ে গুরুত্বপূর্ণ অল্প কয়েকটি কাজ বেছে নেওয়ার জায়গা।</p>
-        </div>
-        <div className={styles.todayGrid}>
-          {todayBlocks.map((block) => (
-            <article key={block.title} className={styles.panel}>
-              <h3>{block.title}</h3>
-              <ul>
-                {block.items.map((item) => <li key={item}>{item}</li>)}
-              </ul>
-            </article>
-          ))}
-        </div>
-      </section>
-
       <section id="projects" className={styles.section}>
         <div className={styles.sectionHeader}>
-          <p className={styles.eyebrow}>প্রজেক্ট</p>
-          <h2>জীবনের প্রধান দায়িত্ব ও active areas</h2>
-          <p>প্রতিটি area-র role, priority এবং operating mode পরিষ্কারভাবে দেখা যাবে।</p>
+          <p className={styles.eyebrow}>Projects</p>
+          <h2>Strategic lanes</h2>
+          <p>Track active responsibilities with ownership, next action, and progress states ready to connect to Supabase.</p>
         </div>
         <div className={styles.projectGrid}>
-          {focusAreas.map((area) => (
-            <article key={area.label} className={styles.projectCard}>
-              <div className={styles.projectTopline}>
-                <span>{area.priority}</span>
-                <strong>{area.role}</strong>
+          {projects.map((project) => (
+            <article key={project.name} className={styles.projectCard}>
+              <div className={styles.cardTopline}>
+                <span>{project.status}</span>
+                <strong>{project.progress}%</strong>
               </div>
-              <h3>{area.label}</h3>
-              <p>{area.summary}</p>
-              <div className={styles.metricList}>
-                {area.metrics.map((metric) => <span key={metric}>{metric}</span>)}
+              <h3>{project.name}</h3>
+              <p>{project.description}</p>
+              <div className={styles.progressTrack} aria-label={`${project.name} progress`}>
+                <span style={{ width: `${project.progress}%` }} />
               </div>
+              <small>Next: {project.next}</small>
             </article>
           ))}
         </div>
       </section>
 
-      <section className={styles.section}>
-        <div className={styles.commandLayout}>
+      <section id="tasks" className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <p className={styles.eyebrow}>Tasks</p>
+          <h2>Execution queue</h2>
+          <p>A focused task list for daily operations, ordered by urgency, project context, and time block.</p>
+        </div>
+        <div className={styles.taskBoard}>
+          {tasks.map((task) => (
+            <article key={task.title} className={styles.taskRow}>
+              <div>
+                <h3>{task.title}</h3>
+                <p>{task.project}</p>
+              </div>
+              <span>{task.due}</span>
+              <strong data-priority={task.priority}>{task.priority}</strong>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section id="notes" className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <p className={styles.eyebrow}>Notes</p>
+          <h2>Knowledge capture</h2>
+          <p>Keep observations, decisions, and raw thoughts separate from action items until they are ready to become tasks.</p>
+        </div>
+        <div className={styles.notesGrid}>
+          {notes.map((note) => (
+            <article key={note.title} className={styles.noteCard}>
+              <h3>{note.title}</h3>
+              <p>{note.copy}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section id="focus" className={styles.section}>
+        <div className={styles.focusPanel}>
+          <div className={styles.sectionHeader}>
+            <p className={styles.eyebrow}>Daily Focus</p>
+            <h2>Today&apos;s operating rhythm</h2>
+            <p>Use this area as the daily reset layer: decide what matters, protect attention, and close the loop.</p>
+          </div>
+          <div className={styles.focusGrid}>
+            {focusBlocks.map((block) => (
+              <article key={block.label}>
+                <span>{block.label}</span>
+                <h3>{block.value}</h3>
+                <p>{block.detail}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section id="command" className={styles.section}>
+        <div className={styles.commandBox}>
           <div>
-            <p className={styles.eyebrow}>পার্সোনাল সিস্টেম</p>
-            <h2>আরেকটা task app না। এটা আপনার মাথার warehouse।</h2>
-            <p className={styles.commandText}>
-              Shaikh OS প্রথমে visual command center হিসেবে শুরু হচ্ছে। পরে এটি Shaikh Agent,
-              KNLTC leads, notes, finance, reminders এবং weekly review-এর সাথে connect হবে।
+            <p className={styles.eyebrow}>Future AI Command</p>
+            <h2>Tell Shaikh OS what changed.</h2>
+            <p>
+              Placeholder command input for a future AI layer that can create projects, schedule tasks,
+              summarize notes, and write updates back to Supabase.
             </p>
           </div>
-          <div className={styles.systemGrid}>
-            {personalSystems.map((system) => <span key={system}>{system}</span>)}
-          </div>
+          <form className={styles.commandForm}>
+            <label htmlFor="ai-command">Command</label>
+            <div className={styles.inputShell}>
+              <input
+                id="ai-command"
+                type="text"
+                placeholder="Example: Add a high priority KNLTC follow-up for tomorrow morning"
+                aria-label="Future AI command input"
+              />
+              <button type="button">Queue</button>
+            </div>
+            <small>UI only for now — ready for Supabase and AI workflow integration.</small>
+          </form>
         </div>
       </section>
     </main>
