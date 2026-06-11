@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
 import { getAgentProjects, getAgentTasks } from '@/lib/xeetrix-agent';
+import CommandForm from './CommandForm';
 import styles from './page.module.css';
 
 export const metadata: Metadata = {
@@ -126,26 +127,14 @@ export default function ShaikhOSPage() {
       <section id="command" className={styles.section}>
         <div className={styles.commandBox}>
           <div>
-            <p className={styles.eyebrow}>Future AI Command</p>
+            <p className={styles.eyebrow}>AI Command</p>
             <h2>Tell Shaikh OS what changed.</h2>
             <p>
-              Placeholder command input for a future AI layer that can create projects, schedule tasks,
-              summarize notes, and write updates back to Supabase.
+              Add natural language updates to Shaikh OS memory so the system can create tasks,
+              keep projects current, and refresh the dashboard after each command.
             </p>
           </div>
-          <form className={styles.commandForm}>
-            <label htmlFor="ai-command">Command</label>
-            <div className={styles.inputShell}>
-              <input
-                id="ai-command"
-                type="text"
-                placeholder="Example: Add a high priority KNLTC follow-up for tomorrow morning"
-                aria-label="Future AI command input"
-              />
-              <button type="button">Queue</button>
-            </div>
-            <small>UI only for now — ready for Supabase and AI workflow integration.</small>
-          </form>
+          <CommandForm />
         </div>
       </section>
     </main>
