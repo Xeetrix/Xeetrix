@@ -46,14 +46,14 @@ export default function CommandForm() {
 
       if (!response.ok) {
         const data = await response.json().catch(() => null);
-        throw new Error(data?.error ?? 'Failed to add task to Shaikh OS.');
+        throw new Error(data?.error ?? 'Shaikh OS-এ কাজ যোগ করা যায়নি।');
       }
 
       setCommand('');
-      setToastMessage('Task added to Shaikh OS');
+      setToastMessage('Shaikh OS-এ কাজ যোগ হয়েছে');
       router.refresh();
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to add task to Shaikh OS.');
+      setErrorMessage(error instanceof Error ? error.message : 'Shaikh OS-এ কাজ যোগ করা যায়নি।');
     } finally {
       setIsSubmitting(false);
     }
@@ -61,22 +61,22 @@ export default function CommandForm() {
 
   return (
     <form className={styles.commandForm} onSubmit={handleSubmit}>
-      <label htmlFor="ai-command">Command</label>
+      <label htmlFor="ai-command">নির্দেশনা</label>
       <div className={styles.inputShell} aria-busy={isSubmitting}>
         <input
           id="ai-command"
           type="text"
           value={command}
           onChange={(event) => setCommand(event.target.value)}
-          placeholder="Example: Add a high priority KNLTC follow-up for tomorrow morning"
-          aria-label="Shaikh OS command input"
+          placeholder="উদাহরণ: আগামীকাল সকালে KNLTC ফলোআপটি জরুরি অগ্রাধিকার দিয়ে যোগ করুন"
+          aria-label="Shaikh OS নির্দেশনা ইনপুট"
           disabled={isSubmitting}
         />
         <button type="submit" disabled={isSubmitting || !command.trim()}>
-          {isSubmitting ? 'Queuing…' : 'Queue'}
+          {isSubmitting ? 'তালিকাভুক্ত হচ্ছে…' : 'তালিকাভুক্ত করুন'}
         </button>
       </div>
-      <small>Connected to Shaikh OS memory — natural language commands create tasks.</small>
+      <small>Shaikh OS মেমরির সঙ্গে যুক্ত — স্বাভাবিক ভাষার নির্দেশনা থেকে কাজ তৈরি হয়।</small>
       {errorMessage ? (
         <p className={styles.commandError} role="alert">
           {errorMessage}

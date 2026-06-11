@@ -24,7 +24,8 @@ export type AgentTask = {
   title: string;
   project: string;
   due: string;
-  priority: string;
+  priorityTone: 'High' | 'Medium' | 'Low';
+  priorityLabel: string;
 };
 
 async function requestAgentMemory<T>(path: string): Promise<T[]> {
@@ -85,7 +86,7 @@ function extractCollection(data: unknown): unknown[] {
 }
 
 function normalizeProject(project: UnknownRecord, index: number): AgentProject {
-  const name = asText(project.name) ?? asText(project.title) ?? asText(project.project) ?? 'নামহীন প্রজেক্ট';
+  const name = asText(project.name) ?? asText(project.title) ?? asText(project.project) ?? 'নামহীন প্রকল্প';
   const progress = asProgress(
     project.progress ??
       project.progress_percent ??
@@ -97,16 +98,16 @@ function normalizeProject(project: UnknownRecord, index: number): AgentProject {
   return {
     id: asText(project.id) ?? asText(project._id) ?? asText(project.uuid) ?? `${name}-${index}`,
     name,
-    status: asText(project.status) ?? asText(project.state) ?? asText(project.phase) ?? 'active',
+    status: normalizeStatus(asText(project.status) ?? asText(project.state) ?? asText(project.phase) ?? 'active'),
     progress,
     description:
-      asText(project.description) ?? asText(project.summary) ?? asText(project.notes) ?? 'এই প্রজেক্টের বিস্তারিত এখনো যোগ করা হয়নি।',
+      asText(project.description) ?? asText(project.summary) ?? asText(project.notes) ?? 'এই প্রকল্পের বিস্তারিত এখনো যোগ করা হয়নি।',
     next:
       asText(project.next) ??
       asText(project.next_action) ??
       asText(project.nextAction) ??
       asText(project.next_step) ??
-      'পরবর্তী কাজ এখনো সেট করা হয়নি।',
+      'পরবর্তী কাজ এখনো নির্ধারণ করা হয়নি।',
   };
 }
 
@@ -122,11 +123,11 @@ function normalizeTask(task: UnknownRecord, index: number): AgentTask {
       asText(task.project_name) ??
       asText(task.projectName) ??
       asText(task.context) ??
-      'General',
+      'সাধারণ',
     due: formatDue(
       task.due ?? task.due_at ?? task.dueAt ?? task.due_date ?? task.dueDate ?? task.time ?? task.scheduled_for,
     ),
-    priority: normalizePriority(asText(task.priority) ?? asText(task.priority_label) ?? asText(task.urgency) ?? 'medium'),
+    ...normalizePriority(asText(task.priority) ?? asText(task.priority_label) ?? asText(task.urgency) ?? 'medium'),
   };
 }
 
@@ -138,11 +139,38 @@ function getTaskProject(project: unknown): string | undefined {
   return asText(project);
 }
 
-function normalizePriority(priority: string): string {
+function normalizeStatus(status: string): string {
+  const value = status.toLowerCase();
+  if (value === 'active' || value === 'in progress' || value === 'ongoing') {
+    return 'চলমান';
+  }
+
+  if (value === 'pending' || value === 'queued') {
+    return 'অপেক্ষমাণ';
+  }
+
+  if (value === 'completed' || value === 'done' || value === 'finished') {
+    return 'সম্পন্ন';
+  }
+
+  if (value === 'paused' || value === 'blocked') {
+    return 'স্থগিত';
+  }
+
+  return status;
+}
+
+function normalizePriority(priority: string): Pick<AgentTask, 'priorityTone' | 'priorityLabel'> {
   const value = priority.toLowerCase();
-  if (value === 'high') return 'High';
-  if (value === 'low') return 'Low';
-  return 'Medium';
+  if (value === 'high' || value === 'জরুরি' || value === 'উচ্চ') {
+    return { priorityTone: 'High', priorityLabel: 'জরুরি' };
+  }
+
+  if (value === 'low' || value === 'কম') {
+    return { priorityTone: 'Low', priorityLabel: 'কম' };
+  }
+
+  return { priorityTone: 'Medium', priorityLabel: 'মাঝারি' };
 }
 
 function asText(value: unknown): string | undefined {
