@@ -1,8 +1,12 @@
 const runtimeEnv = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
 
-const AGENT_API_URL = runtimeEnv.NEXT_PUBLIC_AGENT_API_URL;
+const AGENT_API_URL = runtimeEnv.NEXT_PUBLIC_AGENT_API_URL ?? 'https://api.xeetrix.com';
 const AGENT_API_KEY =
-  runtimeEnv.X_AGENT_KEY ?? runtimeEnv.AGENT_API_KEY ?? runtimeEnv.XEETRIX_AGENT_KEY ?? runtimeEnv['x-agent-key'];
+  runtimeEnv.AGENT_API_SECRET ??
+  runtimeEnv.X_AGENT_KEY ??
+  runtimeEnv.AGENT_API_KEY ??
+  runtimeEnv.XEETRIX_AGENT_KEY ??
+  runtimeEnv['x-agent-key'];
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -29,16 +33,14 @@ async function requestAgentMemory<T>(path: string): Promise<T[]> {
   }
 
   if (!AGENT_API_KEY) {
-    throw new Error('Agent API key is not configured.');
+    throw new Error('AGENT_API_SECRET is not configured.');
   }
 
   const response = await fetch(new URL(path, AGENT_API_URL), {
     headers: {
       'x-agent-key': AGENT_API_KEY,
     },
-    next: {
-      revalidate: 30,
-    },
+    cache: 'no-store',
   });
 
   if (!response.ok) {
@@ -83,7 +85,7 @@ function extractCollection(data: unknown): unknown[] {
 }
 
 function normalizeProject(project: UnknownRecord, index: number): AgentProject {
-  const name = asText(project.name) ?? asText(project.title) ?? asText(project.project) ?? 'Untitled project';
+  const name = asText(project.name) ?? asText(project.title) ?? asText(project.project) ?? 'নামহীন প্রজেক্ট';
   const progress = asProgress(
     project.progress ??
       project.progress_percent ??
@@ -95,22 +97,22 @@ function normalizeProject(project: UnknownRecord, index: number): AgentProject {
   return {
     id: asText(project.id) ?? asText(project._id) ?? asText(project.uuid) ?? `${name}-${index}`,
     name,
-    status: asText(project.status) ?? asText(project.state) ?? asText(project.phase) ?? 'Active',
+    status: asText(project.status) ?? asText(project.state) ?? asText(project.phase) ?? 'active',
     progress,
     description:
-      asText(project.description) ?? asText(project.summary) ?? asText(project.notes) ?? 'No project description available yet.',
+      asText(project.description) ?? asText(project.summary) ?? asText(project.notes) ?? 'এই প্রজেক্টের বিস্তারিত এখনো যোগ করা হয়নি।',
     next:
       asText(project.next) ??
       asText(project.next_action) ??
       asText(project.nextAction) ??
       asText(project.next_step) ??
-      'No next action set.',
+      'পরবর্তী কাজ এখনো সেট করা হয়নি।',
   };
 }
 
 function normalizeTask(task: UnknownRecord, index: number): AgentTask {
-  const title = asText(task.title) ?? asText(task.name) ?? asText(task.task) ?? 'Untitled task';
-  const projectValue = task.project;
+  const title = asText(task.title) ?? asText(task.name) ?? asText(task.task) ?? 'নামহীন কাজ';
+  const projectValue = task.projects ?? task.project;
 
   return {
     id: asText(task.id) ?? asText(task._id) ?? asText(task.uuid) ?? `${title}-${index}`,
@@ -124,7 +126,7 @@ function normalizeTask(task: UnknownRecord, index: number): AgentTask {
     due: formatDue(
       task.due ?? task.due_at ?? task.dueAt ?? task.due_date ?? task.dueDate ?? task.time ?? task.scheduled_for,
     ),
-    priority: asText(task.priority) ?? asText(task.priority_label) ?? asText(task.urgency) ?? 'Medium',
+    priority: normalizePriority(asText(task.priority) ?? asText(task.priority_label) ?? asText(task.urgency) ?? 'medium'),
   };
 }
 
@@ -134,6 +136,13 @@ function getTaskProject(project: unknown): string | undefined {
   }
 
   return asText(project);
+}
+
+function normalizePriority(priority: string): string {
+  const value = priority.toLowerCase();
+  if (value === 'high') return 'High';
+  if (value === 'low') return 'Low';
+  return 'Medium';
 }
 
 function asText(value: unknown): string | undefined {
@@ -162,7 +171,7 @@ function asProgress(value: unknown): number {
 function formatDue(value: unknown): string {
   const textValue = asText(value);
   if (!textValue) {
-    return 'Today';
+    return 'সময় নেই';
   }
 
   const date = new Date(textValue);
@@ -170,10 +179,12 @@ function formatDue(value: unknown): string {
     return textValue;
   }
 
-  return new Intl.DateTimeFormat('en', {
+  return new Intl.DateTimeFormat('bn-BD', {
+    day: '2-digit',
+    month: 'short',
     hour: '2-digit',
     minute: '2-digit',
-    hour12: false,
+    hour12: true,
   }).format(date);
 }
 
