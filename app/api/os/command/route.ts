@@ -24,14 +24,14 @@ function inferPriority(command: string) {
 export async function POST(request: Request) {
   try {
     if (!AGENT_API_SECRET) {
-      return NextResponse.json({ error: 'AGENT_API_SECRET is not configured.' }, { status: 500 });
+      return NextResponse.json({ error: 'AGENT_API_SECRET কনফিগার করা নেই।' }, { status: 500 });
     }
 
     const body = (await request.json()) as CommandRequest;
     const command = body.command?.trim();
 
     if (!command) {
-      return NextResponse.json({ error: 'Command is required.' }, { status: 400 });
+      return NextResponse.json({ error: 'নির্দেশনা লিখতে হবে।' }, { status: 400 });
     }
 
     const response = await fetch(new URL('/memory/tasks', AGENT_API_URL), {
@@ -52,7 +52,7 @@ export async function POST(request: Request) {
 
     if (!response.ok) {
       return NextResponse.json(
-        { error: 'Failed to save command to Shaikh OS memory.', details: data },
+        { error: 'Shaikh OS মেমরিতে নির্দেশনা সংরক্ষণ করা যায়নি।', details: data },
         { status: response.status },
       );
     }
@@ -60,7 +60,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, task: data?.task ?? data });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Unknown server error.' },
+      { error: error instanceof Error ? error.message : 'অজানা সার্ভার ত্রুটি।' },
       { status: 500 },
     );
   }

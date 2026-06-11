@@ -5,29 +5,31 @@ import CommandForm from './CommandForm';
 import styles from './page.module.css';
 
 export const metadata: Metadata = {
-  title: 'Shaikh OS Dashboard | Xeetrix',
-  description: 'A dark personal dashboard for projects, tasks, notes, daily focus, and future AI commands.',
+  title: 'Shaikh OS ড্যাশবোর্ড | Xeetrix',
+  description: 'প্রকল্প, কাজ, নোট, দৈনিক ফোকাস এবং ভবিষ্যৎ AI নির্দেশনার জন্য একটি গাঢ় ব্যক্তিগত কর্মড্যাশবোর্ড।'
 };
 
 const notes = [
   {
-    title: 'Decision log',
-    copy: 'Separate urgent cash-flow actions from long-term Xeetrix product work so daily execution stays clean.',
+    title: 'সিদ্ধান্তের রেকর্ড',
+    copy: 'দৈনিক কাজ পরিষ্কার রাখতে জরুরি নগদপ্রবাহের পদক্ষেপকে দীর্ঘমেয়াদি Xeetrix পণ্যকাজ থেকে আলাদা রাখুন।'
   },
   {
-    title: 'Meeting memory',
-    copy: 'Capture stakeholder requests as notes first, then convert only confirmed commitments into tasks.',
+    title: 'মিটিং স্মৃতি',
+    copy: 'স্টেকহোল্ডারদের অনুরোধ আগে নোট হিসেবে রাখুন, তারপর শুধু নিশ্চিত প্রতিশ্রুতিগুলোকে কাজে রূপান্তর করুন।'
   },
   {
-    title: 'Supabase-ready data',
-    copy: 'Projects, tasks, notes, and focus blocks are structured as arrays now and can map directly to database rows later.',
+    title: 'Supabase-প্রস্তুত ডেটা',
+    copy: 'প্রকল্প, কাজ, নোট ও ফোকাস ব্লক এখন অ্যারে কাঠামোতে সাজানো; পরে সরাসরি ডেটাবেস সারিতে যুক্ত করা যাবে।'
   },
 ];
 
+const banglaNumber = new Intl.NumberFormat('bn-BD');
+
 const focusBlocks = [
-  { label: 'Primary Focus', value: 'Close revenue loop', detail: 'One sales action before admin work.' },
-  { label: 'Energy Guard', value: 'Deep work first', detail: 'No scattered switching until the main task is shipped.' },
-  { label: 'End-of-day Review', value: '15 min reset', detail: 'Move unfinished tasks, write a short note, plan tomorrow.' },
+  { label: 'প্রধান ফোকাস', value: 'আয়ের চক্র সম্পন্ন করুন', detail: 'প্রশাসনিক কাজের আগে একটি বিক্রয়-সম্পর্কিত পদক্ষেপ শেষ করুন।' },
+  { label: 'শক্তি সুরক্ষা', value: 'আগে গভীর কাজ', detail: 'প্রধান কাজ শেষ না হওয়া পর্যন্ত ছড়ানো মনোযোগে কাজ বদলাবেন না।' },
+  { label: 'দিনশেষ পর্যালোচনা', value: '১৫ মিনিট রিসেট', detail: 'অসমাপ্ত কাজ সরান, ছোট নোট লিখুন, আগামীকাল পরিকল্পনা করুন।' },
 ];
 
 export const dynamic = 'force-dynamic';
@@ -37,41 +39,40 @@ export default function ShaikhOSPage() {
     <main className={styles.dashboardShell}>
       <section className={styles.hero}>
         <div className={styles.heroCopy}>
-          <p className={styles.eyebrow}>Shaikh OS Dashboard</p>
-          <h1>One dark command center for projects, tasks, notes, and focus.</h1>
+          <p className={styles.eyebrow}>Shaikh OS ড্যাশবোর্ড</p>
+          <h1>প্রকল্প, কাজ, নোট ও ফোকাসের জন্য একীভূত গাঢ় কমান্ড সেন্টার।</h1>
           <p className={styles.subtitle}>
-            A desktop-first personal operating dashboard designed for daily execution, future Supabase persistence,
-            and an AI command box that can later turn natural language into structured work.
+            দৈনিক বাস্তবায়ন, ভবিষ্যৎ Supabase সংরক্ষণ এবং স্বাভাবিক ভাষাকে কাঠামোবদ্ধ কাজে রূপান্তরের জন্য তৈরি ডেস্কটপ-প্রথম ব্যক্তিগত অপারেটিং ড্যাশবোর্ড।
           </p>
           <div className={styles.heroActions}>
-            <a href="#projects" className={styles.primaryButton}>Open dashboard</a>
-            <a href="#command" className={styles.secondaryButton}>AI command box</a>
+            <a href="#projects" className={styles.primaryButton}>ড্যাশবোর্ড খুলুন</a>
+            <a href="#command" className={styles.secondaryButton}>AI নির্দেশনা বক্স</a>
           </div>
         </div>
 
-        <aside className={styles.statusConsole} aria-label="Dashboard system status">
+        <aside className={styles.statusConsole} aria-label="ড্যাশবোর্ড সিস্টেম অবস্থা">
           <div className={styles.consoleHeader}>
-            <span>System status</span>
-            <strong>Supabase Ready</strong>
+            <span>সিস্টেম অবস্থা</span>
+            <strong>Supabase প্রস্তুত</strong>
           </div>
           <div className={styles.consoleMetric}>
-            <span>Today score</span>
-            <strong>86%</strong>
+            <span>আজকের স্কোর</span>
+            <strong>{formatPercent(86)}</strong>
           </div>
           <div className={styles.consoleRows}>
-            <span>Projects synced schema</span>
-            <span>Tasks priority queue</span>
-            <span>Notes knowledge layer</span>
-            <span>AI command reserved</span>
+            <span>প্রকল্প স্কিমা সিঙ্কড</span>
+            <span>কাজের অগ্রাধিকার তালিকা</span>
+            <span>নোট জ্ঞানস্তর</span>
+            <span>AI নির্দেশনা প্রস্তুত</span>
           </div>
         </aside>
       </section>
 
       <section id="projects" className={styles.section}>
         <div className={styles.sectionHeader}>
-          <p className={styles.eyebrow}>Projects</p>
-          <h2>Strategic lanes</h2>
-          <p>Track active responsibilities with ownership, next action, and progress states ready to connect to Supabase.</p>
+          <p className={styles.eyebrow}>প্রকল্পসমূহ</p>
+          <h2>কর্মক্ষেত্রসমূহ</h2>
+          <p>দায়িত্বের মালিকানা, পরবর্তী পদক্ষেপ এবং অগ্রগতি—সবকিছু Supabase সংযোগের জন্য প্রস্তুতভাবে অনুসরণ করুন।</p>
         </div>
         <Suspense fallback={<ProjectsLoadingState />}>
           <ProjectsGrid />
@@ -80,9 +81,9 @@ export default function ShaikhOSPage() {
 
       <section id="tasks" className={styles.section}>
         <div className={styles.sectionHeader}>
-          <p className={styles.eyebrow}>Tasks</p>
-          <h2>Execution queue</h2>
-          <p>A focused task list for daily operations, ordered by urgency, project context, and time block.</p>
+          <p className={styles.eyebrow}>কাজসমূহ</p>
+          <h2>কাজের তালিকা</h2>
+          <p>দৈনিক পরিচালনার জন্য ফোকাসড কাজের তালিকা—জরুরিতা, প্রকল্পপ্রসঙ্গ ও সময়-ব্লক অনুযায়ী সাজানো।</p>
         </div>
         <Suspense fallback={<TasksLoadingState />}>
           <TasksBoard />
@@ -91,9 +92,9 @@ export default function ShaikhOSPage() {
 
       <section id="notes" className={styles.section}>
         <div className={styles.sectionHeader}>
-          <p className={styles.eyebrow}>Notes</p>
-          <h2>Knowledge capture</h2>
-          <p>Keep observations, decisions, and raw thoughts separate from action items until they are ready to become tasks.</p>
+          <p className={styles.eyebrow}>নোটসমূহ</p>
+          <h2>নোট ও ধারণা</h2>
+          <p>পর্যবেক্ষণ, সিদ্ধান্ত ও কাঁচা ভাবনাগুলো কাজ হওয়ার মতো প্রস্তুত না হওয়া পর্যন্ত অ্যাকশন আইটেম থেকে আলাদা রাখুন।</p>
         </div>
         <div className={styles.notesGrid}>
           {notes.map((note) => (
@@ -108,9 +109,9 @@ export default function ShaikhOSPage() {
       <section id="focus" className={styles.section}>
         <div className={styles.focusPanel}>
           <div className={styles.sectionHeader}>
-            <p className={styles.eyebrow}>Daily Focus</p>
-            <h2>Today&apos;s operating rhythm</h2>
-            <p>Use this area as the daily reset layer: decide what matters, protect attention, and close the loop.</p>
+            <p className={styles.eyebrow}>দৈনিক ফোকাস</p>
+            <h2>আজকের কর্মপরিকল্পনা</h2>
+            <p>এই অংশকে দৈনিক রিসেট স্তর হিসেবে ব্যবহার করুন: গুরুত্বপূর্ণ বিষয় ঠিক করুন, মনোযোগ সুরক্ষিত রাখুন এবং কাজের চক্র সম্পন্ন করুন।</p>
           </div>
           <div className={styles.focusGrid}>
             {focusBlocks.map((block) => (
@@ -127,11 +128,10 @@ export default function ShaikhOSPage() {
       <section id="command" className={styles.section}>
         <div className={styles.commandBox}>
           <div>
-            <p className={styles.eyebrow}>AI Command</p>
-            <h2>Tell Shaikh OS what changed.</h2>
+            <p className={styles.eyebrow}>AI নির্দেশনা</p>
+            <h2>Shaikh OS-কে জানান কী পরিবর্তন হয়েছে।</h2>
             <p>
-              Add natural language updates to Shaikh OS memory so the system can create tasks,
-              keep projects current, and refresh the dashboard after each command.
+              স্বাভাবিক ভাষায় Shaikh OS মেমরিতে আপডেট যোগ করুন, যাতে সিস্টেম কাজ তৈরি করতে, প্রকল্প হালনাগাদ রাখতে এবং প্রতিটি নির্দেশনার পর ড্যাশবোর্ড রিফ্রেশ করতে পারে।
             </p>
           </div>
           <CommandForm />
@@ -139,6 +139,10 @@ export default function ShaikhOSPage() {
       </section>
     </main>
   );
+}
+
+function formatPercent(value: number) {
+  return `${banglaNumber.format(value)}%`;
 }
 
 async function ProjectsGrid() {
@@ -149,15 +153,15 @@ async function ProjectsGrid() {
       <div className={styles.projectGrid}>
         <article className={styles.projectCard}>
           <div className={styles.cardTopline}>
-            <span>No projects</span>
-            <strong>0%</strong>
+            <span>কোনো প্রকল্প নেই</span>
+            <strong>{formatPercent(0)}</strong>
           </div>
-          <h3>No live projects found</h3>
-          <p>Projects from the Xeetrix Agent backend will appear here as soon as they are available.</p>
-          <div className={styles.progressTrack} aria-label="No live projects progress">
+          <h3>সক্রিয় প্রকল্প পাওয়া যায়নি</h3>
+          <p>Xeetrix Agent ব্যাকএন্ডে প্রকল্প পাওয়া গেলে সেগুলো এখানে দেখা যাবে।</p>
+          <div className={styles.progressTrack} aria-label="সক্রিয় প্রকল্প নেই—অগ্রগতি">
             <span style={{ width: '0%' }} />
           </div>
-          <small>Next: Add or sync a project in Xeetrix Agent.</small>
+          <small>পরবর্তী: Xeetrix Agent-এ একটি প্রকল্প যোগ বা সিঙ্ক করুন।</small>
         </article>
       </div>
     );
@@ -169,14 +173,14 @@ async function ProjectsGrid() {
         <article key={project.id} className={styles.projectCard}>
           <div className={styles.cardTopline}>
             <span>{project.status}</span>
-            <strong>{project.progress}%</strong>
+            <strong>{formatPercent(project.progress)}</strong>
           </div>
           <h3>{project.name}</h3>
           <p>{project.description}</p>
-          <div className={styles.progressTrack} aria-label={`${project.name} progress`}>
+          <div className={styles.progressTrack} aria-label={`${project.name} অগ্রগতি`}>
             <span style={{ width: `${project.progress}%` }} />
           </div>
-          <small>Next: {project.next}</small>
+          <small>পরবর্তী: {project.next}</small>
         </article>
       ))}
     </div>
@@ -191,11 +195,11 @@ async function TasksBoard() {
       <div className={styles.taskBoard}>
         <article className={styles.taskRow}>
           <div>
-            <h3>No live tasks found</h3>
-            <p>Tasks from the Xeetrix Agent backend will appear here as soon as they are available.</p>
+            <h3>সক্রিয় কাজ পাওয়া যায়নি</h3>
+            <p>Xeetrix Agent ব্যাকএন্ডে কাজ পাওয়া গেলে সেগুলো এখানে দেখা যাবে।</p>
           </div>
           <span>—</span>
-          <strong data-priority="Low">Empty</strong>
+          <strong data-priority="Low">খালি</strong>
         </article>
       </div>
     );
@@ -210,7 +214,7 @@ async function TasksBoard() {
             <p>{task.project}</p>
           </div>
           <span>{task.due}</span>
-          <strong data-priority={task.priority}>{task.priority}</strong>
+          <strong data-priority={task.priorityTone}>{task.priorityLabel}</strong>
         </article>
       ))}
     </div>
@@ -222,15 +226,15 @@ function ProjectsLoadingState() {
     <div className={styles.projectGrid}>
       <article className={styles.projectCard}>
         <div className={styles.cardTopline}>
-          <span>Loading</span>
-          <strong>Live</strong>
+          <span>লোড হচ্ছে</span>
+          <strong>লাইভ</strong>
         </div>
-        <h3>Loading live projects…</h3>
-        <p>Connecting to the Xeetrix Agent backend for the latest project memory.</p>
-        <div className={styles.progressTrack} aria-label="Loading live projects progress">
+        <h3>সক্রিয় প্রকল্প লোড হচ্ছে…</h3>
+        <p>সর্বশেষ প্রকল্প মেমরির জন্য Xeetrix Agent ব্যাকএন্ডে সংযোগ করা হচ্ছে।</p>
+        <div className={styles.progressTrack} aria-label="সক্রিয় প্রকল্প লোড হচ্ছে—অগ্রগতি">
           <span style={{ width: '42%' }} />
         </div>
-        <small>Next: Syncing project lanes.</small>
+        <small>পরবর্তী: প্রকল্প কর্মক্ষেত্র সিঙ্ক হচ্ছে।</small>
       </article>
     </div>
   );
@@ -241,11 +245,11 @@ function TasksLoadingState() {
     <div className={styles.taskBoard}>
       <article className={styles.taskRow}>
         <div>
-          <h3>Loading live tasks…</h3>
-          <p>Connecting to the Xeetrix Agent backend.</p>
+          <h3>সক্রিয় কাজ লোড হচ্ছে…</h3>
+          <p>Xeetrix Agent ব্যাকএন্ডে সংযোগ করা হচ্ছে।</p>
         </div>
         <span>—</span>
-        <strong data-priority="Medium">Loading</strong>
+        <strong data-priority="Medium">লোড হচ্ছে</strong>
       </article>
     </div>
   );
