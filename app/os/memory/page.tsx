@@ -1,60 +1,81 @@
 import type { Metadata } from 'next';
 import OsPage, { styles } from '../_components/OsPage';
-import { getIntentLabel, memoryItems, type MemoryIntent } from '@/lib/shaikh-os-memory';
+import { formatBanglaDateTime, getIntentLabel, groupMemoryByDay, memoryItems, type MemoryIntent } from '@/lib/shaikh-os-memory';
 
-export const metadata: Metadata = { title: 'Memory Center | Shaikh OS' };
+export const metadata: Metadata = { title: 'Memory | Shaikh OS' };
 
-const filters: Array<{ label: string; intents?: MemoryIntent[] }> = [
-  { label: 'All' },
-  { label: 'Tasks', intents: ['task', 'reminder'] },
-  { label: 'Notes', intents: ['note'] },
-  { label: 'Ideas', intents: ['idea'] },
-  { label: 'Health', intents: ['health_log'] },
-  { label: 'Finance', intents: ['finance_log'] },
-  { label: 'Meetings', intents: ['meeting'] },
-  { label: 'Decisions', intents: ['decision'] },
+const memorySections: Array<{ label: string; description: string; intents: MemoryIntent[] }> = [
+  { label: 'Notes', description: 'Observation এবং context যেগুলো এখনও task নয়।', intents: ['note'] },
+  { label: 'Ideas', description: 'Future product, growth বা operating improvement signal।', intents: ['idea'] },
+  { label: 'Decisions', description: 'Owner-approved choices যেগুলো future reasoning-এ context হবে।', intents: ['decision'] },
 ];
 
 export default function MemoryPage() {
+  const timelineGroups = groupMemoryByDay(memoryItems);
+  const days = Object.keys(timelineGroups).sort((a, b) => (a < b ? 1 : -1));
+
   return (
     <OsPage
-      eyebrow="Memory Center"
-      title="সব command, task, note, idea, decision — এক জায়গায়।"
-      subtitle="Shaikh OS-এ কোনো hidden record থাকবে না। প্রতিটি item category সহ দৃশ্যমান থাকবে এবং future database row হিসেবে map করা যাবে।"
-      stats={[{ label: 'Visible Memories', value: String(memoryItems.length), detail: 'প্রাথমিক unified memory seed' }]}
+      eyebrow="Memory"
+      title="আমি কী জানি?"
+      subtitle="Notes, ideas, decisions এবং timeline এখন Memory-এর অধীনে। কাজ, স্বাস্থ্য বা অর্থের raw records route হিসেবে থাকলেও primary navigation-এ clutter তৈরি করছে না।"
+      stats={[
+        { label: 'Notes', value: String(memoryItems.filter((item) => item.intent === 'note').length), detail: 'Context records' },
+        { label: 'Ideas', value: String(memoryItems.filter((item) => item.intent === 'idea').length), detail: 'Possible improvements' },
+        { label: 'Timeline Items', value: String(memoryItems.length), detail: 'Chronological memory history' },
+      ]}
     >
       <section className={styles.section}>
-        <div className={styles.filters} aria-label="Memory filters">
-          {filters.map((filter) => (
-            <a className={styles.filterLink} href={`#${filter.label.toLowerCase()}`} key={filter.label}>
-              {filter.label}
-            </a>
-          ))}
+        <div className={styles.filters} aria-label="Memory groups">
+          {memorySections.map((section) => <a className={styles.filterLink} href={`#${section.label.toLowerCase()}`} key={section.label}>{section.label}</a>)}
+          <a className={styles.filterLink} href="#timeline">Timeline</a>
         </div>
       </section>
-      {filters.map((filter) => {
-        const items = filter.intents ? memoryItems.filter((item) => filter.intents?.includes(item.intent)) : memoryItems;
+
+      {memorySections.map((section) => {
+        const items = memoryItems.filter((item) => section.intents.includes(item.intent));
         return (
-          <section className={styles.section} id={filter.label.toLowerCase()} key={filter.label}>
+          <section className={styles.section} id={section.label.toLowerCase()} key={section.label}>
             <div className={styles.sectionHeader}>
               <div>
-                <h2>{filter.label}</h2>
-                <p>{items.length} টি visible memory</p>
+                <h2>{section.label}</h2>
+                <p>{section.description}</p>
               </div>
             </div>
             <div className={styles.grid}>
-              {items.map((item) => (
+              {items.length ? items.map((item) => (
                 <article className={styles.card} key={item.id}>
                   <p className={styles.cardMeta}>{getIntentLabel(item.intent)} · {item.project}</p>
                   <h3>{item.title}</h3>
                   <p>{item.summary}</p>
                   <div className={styles.badgeRow}>{item.tags.map((tag) => <span className={styles.badge} key={tag}>{tag}</span>)}</div>
                 </article>
-              ))}
+              )) : <article className={styles.card}><h3>No {section.label.toLowerCase()} yet</h3><p>নতুন memory command থেকে এই group পূরণ হবে।</p></article>}
             </div>
           </section>
         );
       })}
+
+      <section className={styles.section} id="timeline">
+        <div className={styles.sectionHeader}>
+          <div>
+            <h2>Timeline</h2>
+            <p>Chronological history এখন Memory-এর অংশ; dedicated route /os/timeline এখনও কাজ করে।</p>
+          </div>
+        </div>
+        <div className={styles.timelineList}>
+          {days.map((day) => (
+            <article className={styles.timelineDay} key={day}>
+              <h3>{day === '2026-06-12' ? 'Today' : day === '2026-06-11' ? 'Yesterday' : day}</h3>
+              <ul>
+                {timelineGroups[day].map((item) => (
+                  <li key={item.id}><strong>{formatBanglaDateTime(item.createdAt)}</strong> — {getIntentLabel(item.intent)} saved: {item.title}</li>
+                ))}
+              </ul>
+            </article>
+          ))}
+        </div>
+      </section>
     </OsPage>
   );
 }
