@@ -40,13 +40,14 @@ export default function ShaikhOSPage() {
       <section className={styles.hero}>
         <div className={styles.heroCopy}>
           <p className={styles.eyebrow}>Shaikh OS ড্যাশবোর্ড</p>
-          <h1>প্রকল্প, কাজ, নোট ও ফোকাসের জন্য একীভূত গাঢ় কমান্ড সেন্টার।</h1>
+          <h1>আজ কী attention দরকার—তার জন্য Personal AI Chief of Staff command center।</h1>
           <p className={styles.subtitle}>
-            দৈনিক বাস্তবায়ন, ভবিষ্যৎ Supabase সংরক্ষণ এবং স্বাভাবিক ভাষাকে কাঠামোবদ্ধ কাজে রূপান্তরের জন্য তৈরি ডেস্কটপ-প্রথম ব্যক্তিগত অপারেটিং ড্যাশবোর্ড।
+            Command → Understand → Reason → Clarify → Confirm → Execute → Monitor → Report workflow-এ KNLTC, Islamic School, Xeetrix, Investment এবং Personal Life একত্রে পরিচালনা করুন।
           </p>
           <div className={styles.heroActions}>
             <a href="#projects" className={styles.primaryButton}>ড্যাশবোর্ড খুলুন</a>
             <a href="#command" className={styles.secondaryButton}>AI নির্দেশনা বক্স</a>
+            <a href="/os/briefing" className={styles.secondaryButton}>আজকের briefing</a>
           </div>
         </div>
 
@@ -67,6 +68,19 @@ export default function ShaikhOSPage() {
           </div>
         </aside>
       </section>
+
+      <nav className={styles.osNav} aria-label="Shaikh OS modules">
+        <a href="/os/memory">Memory Center</a>
+        <a href="/os/timeline">Timeline</a>
+        <a href="/os/briefing">Daily Briefing</a>
+        <a href="/os/agent">Agent Brain</a>
+        <a href="/os/contacts">Contacts</a>
+        <a href="/os/meetings">Meetings</a>
+        <a href="/os/health">Health</a>
+        <a href="/os/finance">Finance</a>
+        <a href="/os/sources">Sources</a>
+        <a href="/os/marketing">Marketing</a>
+      </nav>
 
       <section id="projects" className={styles.section}>
         <div className={styles.sectionHeader}>

@@ -20,7 +20,7 @@ type CommandRequest = {
 };
 
 type UnknownRecord = Record<string, unknown>;
-type SaveTarget = 'tasks' | 'notes' | 'none';
+type SaveTarget = 'tasks' | 'notes' | 'health_logs' | 'finance_logs' | 'none';
 
 const taskLikeIntents = new Set(['task', 'meeting', 'reminder']);
 const noteLikeIntents = new Set(['note', 'idea', 'decision', 'health_log', 'finance_log']);
@@ -156,15 +156,54 @@ function normalizeSubmittedPlan(submittedPlan: Partial<ShaikhOsPlan>, projects: 
     needs_confirmation: true,
     needs_clarification: needsClarification,
     clarification_question: needsClarification ? submittedPlan.clarification_question ?? fallback.clarification_question : null,
-    target: taskLikeIntents.has(intent) ? 'tasks' : noteLikeIntents.has(intent) ? 'notes' : 'inbox_items',
+    target: getTargetForIntent(intent),
     raw_command: rawCommand,
     parser: submittedPlan.parser ?? fallback.parser,
   };
 }
 
+
+function getTargetForIntent(intent: ShaikhOsPlan['intent']): ShaikhOsPlan['target'] {
+  if (taskLikeIntents.has(intent)) return 'tasks';
+  if (intent === 'health_log') return 'health_logs';
+  if (intent === 'finance_log') return 'finance_logs';
+  if (noteLikeIntents.has(intent)) return 'notes';
+  return 'inbox_items';
+}
+
+async function saveCommandLog(plan: ShaikhOsPlan) {
+  return saveToMemory('/memory/inbox_items', 'notes', {
+    title: plan.title,
+    raw_command: plan.raw_command,
+    intent: plan.intent,
+    project_name: plan.project_name,
+    confidence: plan.confidence,
+    needs_confirmation: plan.needs_confirmation,
+    executed_at: new Date().toISOString(),
+    metadata: {
+      parser: plan.parser,
+      target: plan.target,
+      original_plan: plan,
+      visibility: 'Memory Center / Timeline',
+    },
+  }).catch(() => null);
+}
+
 async function savePlan(plan: ShaikhOsPlan) {
+  await saveCommandLog(plan);
+
   if (taskLikeIntents.has(plan.intent)) {
     return saveToMemory('/memory/tasks', 'tasks', buildTaskPayload(plan));
+  }
+
+  if (plan.intent === 'health_log') {
+    const result = await saveToMemory('/memory/health_logs', 'health_logs', buildNotePayload(plan));
+    return result.ok ? result : saveToMemory('/memory/notes', 'notes', buildNotePayload(plan));
+  }
+
+  if (plan.intent === 'finance_log') {
+    const result = await saveToMemory('/memory/finance_logs', 'finance_logs', buildNotePayload(plan));
+    return result.ok ? result : saveToMemory('/memory/notes', 'notes', buildNotePayload(plan));
   }
 
   if (noteLikeIntents.has(plan.intent)) {
