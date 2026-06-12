@@ -2,24 +2,28 @@ import { NextResponse } from 'next/server';
 import {
   buildNotePayload,
   buildTaskPayload,
-  classifyCommand,
-  type CommandClassification,
-  type CommandProject,
-} from '@/lib/shaikh-os-command';
+  fallbackParseIntent,
+  formatBanglaPlanSummary,
+  mapProjectName,
+  parseIntentWithLLM,
+  type ShaikhOsPlan,
+} from '@/lib/shaikh-os-intent';
+import type { CommandProject } from '@/lib/shaikh-os-command';
 
 const AGENT_API_URL = process.env.NEXT_PUBLIC_AGENT_API_URL ?? 'https://api.xeetrix.com';
 const AGENT_API_SECRET = process.env.AGENT_API_SECRET;
 
 type CommandRequest = {
   command?: string;
+  confirm?: boolean;
+  plan?: Partial<ShaikhOsPlan>;
 };
 
 type UnknownRecord = Record<string, unknown>;
+type SaveTarget = 'tasks' | 'notes' | 'none';
 
-type SaveTarget = 'tasks' | 'notes' | 'inbox' | 'none';
-
-const taskLikeTypes = new Set(['task', 'meeting', 'reminder']);
-const noteLikeTypes = new Set(['note', 'idea', 'decision', 'health_log', 'finance_log']);
+const taskLikeIntents = new Set(['task', 'meeting', 'reminder']);
+const noteLikeIntents = new Set(['note', 'idea', 'decision', 'health_log', 'finance_log']);
 
 export async function POST(request: Request) {
   try {
@@ -28,62 +32,37 @@ export async function POST(request: Request) {
     }
 
     const body = (await request.json()) as CommandRequest;
-    const command = body.command?.trim();
+    const projects = await loadProjects();
 
+    if (body.confirm) {
+      return executeConfirmedPlan(body.plan, projects);
+    }
+
+    const command = body.command?.trim();
     if (!command) {
       return NextResponse.json({ error: 'নির্দেশনা লিখতে হবে।' }, { status: 400 });
     }
 
-    const projects = await loadProjects();
-    const classification = classifyCommand(command, projects);
-    const inboxResult = await saveInbox(classification);
+    const { plan, warning } = await parseCommand(command, projects);
 
-    if (classification.needs_review) {
+    if (plan.needs_clarification) {
       return NextResponse.json({
         ok: false,
+        mode: 'clarification',
         needs_clarification: true,
-        clarification: 'এটা কোন প্রকল্পের সাথে যুক্ত করব?',
-        classification,
-        saved: inboxResult.ok ? { target: 'inbox' as SaveTarget, record: inboxResult.record } : { target: 'none' as SaveTarget },
-        message: inboxResult.ok
-          ? 'নির্দেশনাটি ইনবক্সে রাখা হয়েছে, কিন্তু চূড়ান্ত করার আগে আরও তথ্য দরকার।'
-          : 'নির্দেশনাটি পরিষ্কার নয়, আর ইনবক্স রুটও পাওয়া যায়নি।',
-        warnings: inboxResult.warning ? [inboxResult.warning] : [],
+        clarification_question: plan.clarification_question,
+        plan,
+        message: formatBanglaPlanSummary(plan),
+        warnings: [warning].filter(Boolean),
       });
-    }
-
-    const finalResult = await saveStructuredClassification(classification);
-
-    if (!finalResult.ok) {
-      if (inboxResult.ok) {
-        return NextResponse.json({
-          ok: true,
-          classification,
-          saved: { target: 'inbox' as SaveTarget, record: inboxResult.record },
-          message: 'চূড়ান্ত টেবিলে সংরক্ষণ করা যায়নি, তাই নির্দেশনাটি ইনবক্সে নিরাপদে রাখা হয়েছে।',
-          warnings: [finalResult.warning, inboxResult.warning].filter(Boolean),
-        });
-      }
-
-      return NextResponse.json(
-        {
-          ok: false,
-          error: finalResult.warning ?? 'Shaikh OS মেমরিতে নির্দেশনা সংরক্ষণ করা যায়নি।',
-          classification,
-          saved: { target: 'none' as SaveTarget },
-          warnings: [inboxResult.warning].filter(Boolean),
-        },
-        { status: finalResult.status ?? 502 },
-      );
     }
 
     return NextResponse.json({
       ok: true,
-      classification,
-      saved: { target: finalResult.target, record: finalResult.record },
-      inbox: inboxResult.ok ? { target: 'inbox', record: inboxResult.record } : null,
-      message: successMessage(classification, finalResult.target),
-      warnings: [inboxResult.warning].filter(Boolean),
+      mode: 'parsed',
+      plan,
+      message: formatBanglaPlanSummary(plan),
+      warnings: [warning].filter(Boolean),
     });
   } catch (error) {
     return NextResponse.json(
@@ -91,6 +70,113 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
+}
+
+async function parseCommand(command: string, projects: CommandProject[]) {
+  try {
+    const plan = await parseIntentWithLLM(command, projects, {
+      apiUrl: AGENT_API_URL,
+      apiSecret: AGENT_API_SECRET ?? '',
+    });
+    return { plan, warning: null as string | null };
+  } catch (error) {
+    return {
+      plan: fallbackParseIntent(command, projects),
+      warning: `LLM parser fallback ব্যবহার হয়েছে: ${error instanceof Error ? error.message : 'invalid JSON response'}`,
+    };
+  }
+}
+
+async function executeConfirmedPlan(submittedPlan: Partial<ShaikhOsPlan> | undefined, projects: CommandProject[]) {
+  if (!submittedPlan || !submittedPlan.raw_command) {
+    return NextResponse.json({ error: 'সংরক্ষণের জন্য বৈধ plan দরকার।' }, { status: 400 });
+  }
+
+  const plan = normalizeSubmittedPlan(submittedPlan, projects);
+
+  if (plan.needs_clarification || plan.confidence < 0.6) {
+    return NextResponse.json(
+      {
+        ok: false,
+        mode: 'clarification',
+        needs_clarification: true,
+        clarification_question: plan.clarification_question ?? 'আরও পরিষ্কার তথ্য দরকার।',
+        plan,
+        message: plan.clarification_question ?? 'নির্দেশনাটি পরিষ্কার নয়।',
+      },
+      { status: 422 },
+    );
+  }
+
+  const result = await savePlan(plan);
+  if (!result.ok) {
+    return NextResponse.json(
+      {
+        ok: false,
+        mode: 'executed',
+        error: result.warning ?? 'Shaikh OS মেমরিতে সংরক্ষণ করা যায়নি।',
+        plan,
+        saved: { target: 'none' as SaveTarget },
+      },
+      { status: result.status ?? 502 },
+    );
+  }
+
+  return NextResponse.json({
+    ok: true,
+    mode: 'executed',
+    plan,
+    saved: { target: result.target, record: result.record },
+    message: 'সংরক্ষণ করা হয়েছে।',
+  });
+}
+
+function normalizeSubmittedPlan(submittedPlan: Partial<ShaikhOsPlan>, projects: CommandProject[]): ShaikhOsPlan {
+  const rawCommand = (submittedPlan.raw_command ?? submittedPlan.title ?? '').trim();
+  const fallback = fallbackParseIntent(rawCommand, projects);
+  const intent = submittedPlan.intent ?? fallback.intent;
+  const mappedProject = mapProjectName(submittedPlan.project_name ?? fallback.project_name, projects, intent, submittedPlan.raw_command ?? '');
+  const confidence = typeof submittedPlan.confidence === 'number' ? Math.max(0, Math.min(1, submittedPlan.confidence)) : fallback.confidence;
+  const needsClarification = Boolean(submittedPlan.needs_clarification) || confidence < 0.6;
+
+  return {
+    ...fallback,
+    ...submittedPlan,
+    intent,
+    project_name: mappedProject.project_name,
+    project_id: mappedProject.project_id,
+    title: submittedPlan.title?.trim() || fallback.title,
+    summary: submittedPlan.summary?.trim() || fallback.summary,
+    priority: submittedPlan.priority ?? fallback.priority,
+    due_date: submittedPlan.due_date ?? null,
+    reminder_at: submittedPlan.reminder_at ?? null,
+    amount: submittedPlan.amount ?? null,
+    direction: submittedPlan.direction ?? null,
+    confidence,
+    needs_confirmation: true,
+    needs_clarification: needsClarification,
+    clarification_question: needsClarification ? submittedPlan.clarification_question ?? fallback.clarification_question : null,
+    target: taskLikeIntents.has(intent) ? 'tasks' : noteLikeIntents.has(intent) ? 'notes' : 'inbox_items',
+    raw_command: rawCommand,
+    parser: submittedPlan.parser ?? fallback.parser,
+  };
+}
+
+async function savePlan(plan: ShaikhOsPlan) {
+  if (taskLikeIntents.has(plan.intent)) {
+    return saveToMemory('/memory/tasks', 'tasks', buildTaskPayload(plan));
+  }
+
+  if (noteLikeIntents.has(plan.intent)) {
+    return saveToMemory('/memory/notes', 'notes', buildNotePayload(plan));
+  }
+
+  return {
+    ok: false as const,
+    target: 'none' as SaveTarget,
+    status: 422,
+    warning: 'নির্দেশনার ধরন পরিষ্কার নয়, তাই task/note তৈরি করা হয়নি।',
+  };
 }
 
 async function loadProjects(): Promise<CommandProject[]> {
@@ -109,64 +195,7 @@ async function loadProjects(): Promise<CommandProject[]> {
     .filter((project) => project.name.trim());
 }
 
-async function saveInbox(classification: CommandClassification) {
-  const payload = {
-    raw_command: classification.raw_command,
-    item_type: classification.item_type,
-    project: classification.project_name,
-    project_id: classification.project_id,
-    priority: classification.priority,
-    due_date: classification.due_date,
-    confidence: classification.confidence,
-    needs_review: classification.needs_review,
-    metadata: classification,
-  };
-
-  for (const path of ['/memory/inbox_items', '/memory/inbox']) {
-    const response = await agentFetch(path, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-    const record = await readJson(response);
-
-    if (response.ok) {
-      return { ok: true as const, record };
-    }
-
-    if (response.status !== 404 && response.status !== 405) {
-      return {
-        ok: false as const,
-        status: response.status,
-        warning: `ইনবক্স রুটে সংরক্ষণ হয়নি (${response.status})।`,
-      };
-    }
-  }
-
-  return {
-    ok: false as const,
-    status: 404,
-    warning: 'ইনবক্স রুট পাওয়া যায়নি, তাই task/note fallback ব্যবহার করা হয়েছে।',
-  };
-}
-
-async function saveStructuredClassification(classification: CommandClassification) {
-  if (taskLikeTypes.has(classification.item_type)) {
-    return saveToMemory('/memory/tasks', 'tasks', buildTaskPayload(classification));
-  }
-
-  if (noteLikeTypes.has(classification.item_type)) {
-    return saveToMemory('/memory/notes', 'notes', buildNotePayload(classification));
-  }
-
-  return {
-    ok: false as const,
-    target: 'none' as SaveTarget,
-    status: 422,
-    warning: 'নির্দেশনার ধরন পরিষ্কার নয়, তাই চূড়ান্ত task/note তৈরি করা হয়নি।',
-  };
-}
-
-async function saveToMemory(path: string, target: Exclude<SaveTarget, 'inbox' | 'none'>, payload: unknown) {
+async function saveToMemory(path: string, target: Exclude<SaveTarget, 'none'>, payload: unknown) {
   const response = await agentFetch(path, {
     method: 'POST',
     body: JSON.stringify(payload),
@@ -200,24 +229,6 @@ async function agentFetch(path: string, init: RequestInit) {
 
 async function readJson(response: Response) {
   return response.json().catch(() => null) as Promise<unknown>;
-}
-
-function successMessage(classification: CommandClassification, target: SaveTarget) {
-  if (target === 'tasks') {
-    return `Shaikh OS কাজ হিসেবে সংরক্ষণ করেছে — ${classification.project_name} / ${priorityLabel(classification.priority)}।`;
-  }
-
-  if (target === 'notes') {
-    return `Shaikh OS নোট হিসেবে সংরক্ষণ করেছে — ${classification.project_name}।`;
-  }
-
-  return 'Shaikh OS নির্দেশনাটি সংরক্ষণ করেছে।';
-}
-
-function priorityLabel(priority: CommandClassification['priority']) {
-  if (priority === 'high') return 'জরুরি';
-  if (priority === 'low') return 'কম অগ্রাধিকার';
-  return 'মাঝারি অগ্রাধিকার';
 }
 
 function extractCollection(data: unknown): unknown[] {

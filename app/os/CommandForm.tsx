@@ -4,6 +4,54 @@ import { FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import styles from './page.module.css';
 
+type Plan = {
+  intent: 'task' | 'note' | 'idea' | 'meeting' | 'reminder' | 'health_log' | 'finance_log' | 'decision' | 'unknown';
+  project_name: string;
+  project_id: string | null;
+  title: string;
+  summary: string;
+  priority: 'low' | 'medium' | 'high';
+  due_date: string | null;
+  reminder_at: string | null;
+  amount: number | null;
+  direction: 'income' | 'expense' | null;
+  confidence: number;
+  needs_confirmation: boolean;
+  needs_clarification: boolean;
+  clarification_question: string | null;
+  target: 'tasks' | 'notes' | 'health_logs' | 'finance_logs' | 'reminders' | 'events' | 'inbox_items';
+  raw_command: string;
+  parser?: 'llm' | 'fallback';
+};
+
+const intentLabels: Record<Plan['intent'], string> = {
+  task: 'কাজ',
+  note: 'নোট',
+  idea: 'ধারণা',
+  meeting: 'মিটিং',
+  reminder: 'রিমাইন্ডার',
+  health_log: 'স্বাস্থ্য লগ',
+  finance_log: 'অর্থ লগ',
+  decision: 'সিদ্ধান্ত',
+  unknown: 'পরিষ্কার নয়',
+};
+
+const targetLabels: Record<Plan['target'], string> = {
+  tasks: 'কাজ',
+  notes: 'নোট',
+  health_logs: 'স্বাস্থ্য লগ',
+  finance_logs: 'অর্থ লগ',
+  reminders: 'রিমাইন্ডার',
+  events: 'ইভেন্ট',
+  inbox_items: 'ইনবক্স',
+};
+
+const priorityLabels: Record<Plan['priority'], string> = {
+  high: 'জরুরি',
+  medium: 'মাঝারি',
+  low: 'কম',
+};
+
 export default function CommandForm() {
   const router = useRouter();
   const [command, setCommand] = useState('');
@@ -11,6 +59,7 @@ export default function CommandForm() {
   const [toastMessage, setToastMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [clarificationMessage, setClarificationMessage] = useState('');
+  const [plan, setPlan] = useState<Plan | null>(null);
 
   useEffect(() => {
     if (!toastMessage) {
@@ -36,6 +85,7 @@ export default function CommandForm() {
     setErrorMessage('');
     setToastMessage('');
     setClarificationMessage('');
+    setPlan(null);
 
     try {
       const response = await fetch('/api/os/command', {
@@ -48,28 +98,68 @@ export default function CommandForm() {
 
       const data = await response.json().catch(() => null);
 
-      if (!response.ok) {
-        throw new Error(data?.error ?? 'Shaikh OS-এ নির্দেশনা সংরক্ষণ করা যায়নি।');
+      if (!response.ok && data?.mode !== 'clarification') {
+        throw new Error(data?.error ?? 'Shaikh OS নির্দেশনাটি বুঝতে পারেনি।');
       }
 
       if (data?.needs_clarification) {
-        setClarificationMessage(data.clarification ?? 'আরও তথ্য দরকার।');
-        setToastMessage(data.message ?? 'নির্দেশনাটি পর্যালোচনার জন্য রাখা হয়েছে।');
+        setClarificationMessage(data.clarification_question ?? data.message ?? 'আরও তথ্য দরকার।');
+        setPlan(data.plan ?? null);
         return;
       }
 
-      if (!data?.ok) {
+      if (!data?.ok || !data?.plan) {
+        throw new Error(data?.error ?? 'Shaikh OS নির্দেশনাটি বুঝতে পারেনি।');
+      }
+
+      setPlan(data.plan);
+      setToastMessage(data.message ?? 'নিশ্চিত করলে সংরক্ষণ করা হবে।');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Shaikh OS নির্দেশনাটি বুঝতে পারেনি।');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleConfirm() {
+    if (!plan || isSubmitting) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    setErrorMessage('');
+    setToastMessage('');
+
+    try {
+      const response = await fetch('/api/os/command', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ confirm: true, plan }),
+      });
+
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.ok) {
         throw new Error(data?.error ?? 'Shaikh OS-এ নির্দেশনা সংরক্ষণ করা যায়নি।');
       }
 
       setCommand('');
-      setToastMessage(data.message ?? 'Shaikh OS-এ নির্দেশনা সংরক্ষণ হয়েছে');
+      setPlan(null);
+      setClarificationMessage('');
+      setToastMessage(data.message ?? 'সংরক্ষণ করা হয়েছে।');
       router.refresh();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Shaikh OS-এ নির্দেশনা সংরক্ষণ করা যায়নি।');
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  function handleCancel() {
+    setPlan(null);
+    setClarificationMessage('');
+    setToastMessage('বাতিল করা হয়েছে।');
   }
 
   return (
@@ -81,15 +171,15 @@ export default function CommandForm() {
           type="text"
           value={command}
           onChange={(event) => setCommand(event.target.value)}
-          placeholder="উদাহরণ: আগামীকাল সকালে KNLTC ফলোআপটি জরুরি অগ্রাধিকার দিয়ে যোগ করুন"
+          placeholder="উদাহরণ: আগামীকাল KNLTC এর ৫টা lead follow-up করতে হবে"
           aria-label="Shaikh OS নির্দেশনা ইনপুট"
           disabled={isSubmitting}
         />
         <button type="submit" disabled={isSubmitting || !command.trim()}>
-          {isSubmitting ? 'তালিকাভুক্ত হচ্ছে…' : 'তালিকাভুক্ত করুন'}
+          {isSubmitting ? 'Shaikh OS নির্দেশনাটি বুঝছে...' : 'বুঝে নিন'}
         </button>
       </div>
-      <small>Shaikh OS মেমরির সঙ্গে যুক্ত — স্বাভাবিক ভাষার নির্দেশনা থেকে কাজ তৈরি হয়।</small>
+      <small>Shaikh OS আগে নির্দেশনাটি বুঝবে, তারপর আপনার নিশ্চিতকরণের পরই সংরক্ষণ করবে।</small>
       {errorMessage ? (
         <p className={styles.commandError} role="alert">
           {errorMessage}
@@ -97,8 +187,49 @@ export default function CommandForm() {
       ) : null}
       {clarificationMessage ? (
         <p className={styles.commandClarification} role="status" aria-live="polite">
-          {clarificationMessage}
+          <strong>পরিষ্কার নয়:</strong> {clarificationMessage}
         </p>
+      ) : null}
+      {plan && !plan.needs_clarification ? (
+        <div className={styles.confirmationCard} role="region" aria-label="নিশ্চিত করুন">
+          <div>
+            <span>{intentLabels[plan.intent]}</span>
+            <h3>নিশ্চিত করুন</h3>
+            <p>আমি বুঝেছি: “{plan.title}” যোগ করব। নিশ্চিত করবেন?</p>
+          </div>
+          <dl>
+            <div>
+              <dt>প্রকল্প</dt>
+              <dd>{plan.project_name}</dd>
+            </div>
+            <div>
+              <dt>শিরোনাম</dt>
+              <dd>{plan.title}</dd>
+            </div>
+            {plan.due_date ? (
+              <div>
+                <dt>সময়</dt>
+                <dd>{formatDate(plan.due_date)}</dd>
+              </div>
+            ) : null}
+            <div>
+              <dt>অগ্রাধিকার</dt>
+              <dd>{priorityLabels[plan.priority]}</dd>
+            </div>
+            <div>
+              <dt>সংরক্ষণের জায়গা</dt>
+              <dd>{targetLabels[plan.target]}</dd>
+            </div>
+          </dl>
+          <div className={styles.confirmationActions}>
+            <button type="button" onClick={handleConfirm} disabled={isSubmitting}>
+              {isSubmitting ? 'সংরক্ষণ হচ্ছে…' : 'নিশ্চিত করুন ও সংরক্ষণ'}
+            </button>
+            <button type="button" onClick={handleCancel} disabled={isSubmitting}>
+              বাতিল
+            </button>
+          </div>
+        </div>
       ) : null}
       {toastMessage ? (
         <div className={styles.commandToast} role="status" aria-live="polite">
@@ -107,4 +238,17 @@ export default function CommandForm() {
       ) : null}
     </form>
   );
+}
+
+function formatDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat('bn-BD', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'Asia/Dhaka',
+  }).format(date);
 }
