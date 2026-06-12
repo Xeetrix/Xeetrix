@@ -10,6 +10,7 @@ export default function CommandForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [clarificationMessage, setClarificationMessage] = useState('');
 
   useEffect(() => {
     if (!toastMessage) {
@@ -34,6 +35,7 @@ export default function CommandForm() {
     setIsSubmitting(true);
     setErrorMessage('');
     setToastMessage('');
+    setClarificationMessage('');
 
     try {
       const response = await fetch('/api/os/command', {
@@ -44,16 +46,27 @@ export default function CommandForm() {
         body: JSON.stringify({ command: trimmedCommand }),
       });
 
+      const data = await response.json().catch(() => null);
+
       if (!response.ok) {
-        const data = await response.json().catch(() => null);
-        throw new Error(data?.error ?? 'Shaikh OS-এ কাজ যোগ করা যায়নি।');
+        throw new Error(data?.error ?? 'Shaikh OS-এ নির্দেশনা সংরক্ষণ করা যায়নি।');
+      }
+
+      if (data?.needs_clarification) {
+        setClarificationMessage(data.clarification ?? 'আরও তথ্য দরকার।');
+        setToastMessage(data.message ?? 'নির্দেশনাটি পর্যালোচনার জন্য রাখা হয়েছে।');
+        return;
+      }
+
+      if (!data?.ok) {
+        throw new Error(data?.error ?? 'Shaikh OS-এ নির্দেশনা সংরক্ষণ করা যায়নি।');
       }
 
       setCommand('');
-      setToastMessage('Shaikh OS-এ কাজ যোগ হয়েছে');
+      setToastMessage(data.message ?? 'Shaikh OS-এ নির্দেশনা সংরক্ষণ হয়েছে');
       router.refresh();
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Shaikh OS-এ কাজ যোগ করা যায়নি।');
+      setErrorMessage(error instanceof Error ? error.message : 'Shaikh OS-এ নির্দেশনা সংরক্ষণ করা যায়নি।');
     } finally {
       setIsSubmitting(false);
     }
@@ -80,6 +93,11 @@ export default function CommandForm() {
       {errorMessage ? (
         <p className={styles.commandError} role="alert">
           {errorMessage}
+        </p>
+      ) : null}
+      {clarificationMessage ? (
+        <p className={styles.commandClarification} role="status" aria-live="polite">
+          {clarificationMessage}
         </p>
       ) : null}
       {toastMessage ? (
