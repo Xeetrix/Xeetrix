@@ -566,11 +566,19 @@
   font-size: 0.9rem;
 }
 
-.commandError {
+.commandError,
+.commandClarification {
   margin: 0;
-  color: #ff9db8;
   font-size: 0.9rem;
   font-weight: 800;
+}
+
+.commandError {
+  color: #ff9db8;
+}
+
+.commandClarification {
+  color: #ffe29a;
 }
 
 .commandToast {

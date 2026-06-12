@@ -1,255 +1,25 @@
 import { NextResponse } from 'next/server';
+import {
+  buildNotePayload,
+  buildTaskPayload,
+  classifyCommand,
+  type CommandClassification,
+  type CommandProject,
+} from '@/lib/shaikh-os-command';
 
-const runtimeEnv = process.env;
-const AGENT_API_URL = runtimeEnv.NEXT_PUBLIC_AGENT_API_URL ?? 'https://api.xeetrix.com';
-const AGENT_API_SECRET = runtimeEnv.AGENT_API_SECRET;
-
-type Project = 'KNLTC' | 'Islamic School' | 'Xeetrix' | 'Investment' | 'Personal';
-type Priority = 'high' | 'medium' | 'low';
+const AGENT_API_URL = process.env.NEXT_PUBLIC_AGENT_API_URL ?? 'https://api.xeetrix.com';
+const AGENT_API_SECRET = process.env.AGENT_API_SECRET;
 
 type CommandRequest = {
   command?: string;
 };
 
-type StructuredTask = {
-  title: string;
-  project: Project;
-  priority: Priority;
-  status: 'pending';
-  due_date?: string;
-};
+type UnknownRecord = Record<string, unknown>;
 
-type ProjectRule = {
-  project: Project;
-  keywords: string[];
-};
+type SaveTarget = 'tasks' | 'notes' | 'inbox' | 'none';
 
-const projectRules: ProjectRule[] = [
-  {
-    project: 'KNLTC',
-    keywords: ['knltc'],
-  },
-  {
-    project: 'Islamic School',
-    keywords: ['islamic school', 'school', 'স্কুল', 'ভর্তি', 'ছাত্র', 'ছাত্রী'],
-  },
-  {
-    project: 'Xeetrix',
-    keywords: ['xeetrix', 'জিট্রিক্স', 'dashboard', 'ড্যাশবোর্ড'],
-  },
-  {
-    project: 'Investment',
-    keywords: ['investment', 'invest', 'বিনিয়োগ', 'ইনভেস্টমেন্ট', 'কবুতর', 'pigeon'],
-  },
-  {
-    project: 'Personal',
-    keywords: ['personal', 'ব্যক্তিগত', 'নিজের', 'পরিবার'],
-  },
-];
-
-const highPriorityKeywords = ['জরুরি', 'urgent', 'আজকেই', 'immediately'];
-const lowPriorityKeywords = ['পরে', 'low priority', 'সময় পেলে'];
-
-const bengaliDigitMap: Record<string, string> = {
-  '০': '0',
-  '১': '1',
-  '২': '2',
-  '৩': '3',
-  '৪': '4',
-  '৫': '5',
-  '৬': '6',
-  '৭': '7',
-  '৮': '8',
-  '৯': '9',
-};
-
-const monthNameToIndex: Record<string, number> = {
-  january: 0,
-  jan: 0,
-  জানুয়ারি: 0,
-  জানুয়ারি: 0,
-  february: 1,
-  feb: 1,
-  ফেব্রুয়ারি: 1,
-  ফেব্রুয়ারি: 1,
-  march: 2,
-  mar: 2,
-  মার্চ: 2,
-  april: 3,
-  apr: 3,
-  এপ্রিল: 3,
-  may: 4,
-  মে: 4,
-  june: 5,
-  jun: 5,
-  জুন: 5,
-  july: 6,
-  jul: 6,
-  জুলাই: 6,
-  august: 7,
-  aug: 7,
-  আগস্ট: 7,
-  september: 8,
-  sep: 8,
-  sept: 8,
-  সেপ্টেম্বর: 8,
-  october: 9,
-  oct: 9,
-  অক্টোবর: 9,
-  november: 10,
-  nov: 10,
-  নভেম্বর: 10,
-  december: 11,
-  dec: 11,
-  ডিসেম্বর: 11,
-};
-
-const weekdayNameToIndex: Record<string, number> = {
-  sunday: 0,
-  sun: 0,
-  রবিবার: 0,
-  রোববার: 0,
-  monday: 1,
-  mon: 1,
-  সোমবার: 1,
-  tuesday: 2,
-  tue: 2,
-  tues: 2,
-  মঙ্গলবার: 2,
-  wednesday: 3,
-  wed: 3,
-  বুধবার: 3,
-  thursday: 4,
-  thu: 4,
-  thur: 4,
-  thurs: 4,
-  বৃহস্পতিবার: 4,
-  friday: 5,
-  fri: 5,
-  শুক্রবার: 5,
-  saturday: 6,
-  sat: 6,
-  শনিবার: 6,
-};
-
-function normalizeDateCommand(command: string) {
-  return command
-    .toLowerCase()
-    .replace(/[০-৯]/g, (digit) => bengaliDigitMap[digit] ?? digit)
-    .replace(/[,،]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function addDays(date: Date, days: number) {
-  const result = new Date(date);
-  result.setDate(result.getDate() + days);
-  return result;
-}
-
-function toDateOnly(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-
-  return `${year}-${month}-${day}`;
-}
-
-function createDate(year: number, month: number, day: number) {
-  return new Date(year, month, day);
-}
-
-function isValidCalendarDate(year: number, month: number, day: number) {
-  const date = createDate(year, month, day);
-
-  return date.getFullYear() === year && date.getMonth() === month && date.getDate() === day;
-}
-
-function inferDueDate(command: string, currentDate = new Date()): string | undefined {
-  const normalizedCommand = normalizeDateCommand(command);
-  const today = createDate(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
-
-  if (normalizedCommand.includes('আগামীকাল') || /\btomorrow\b/.test(normalizedCommand)) {
-    return toDateOnly(addDays(today, 1));
-  }
-
-  if (normalizedCommand.includes('আজ') || /\btoday\b/.test(normalizedCommand)) {
-    return toDateOnly(today);
-  }
-
-  if (normalizedCommand.includes('এই সপ্তাহে') || /\bthis week\b/.test(normalizedCommand)) {
-    return toDateOnly(addDays(today, (7 - today.getDay()) % 7));
-  }
-
-  const dateMatch = normalizedCommand.match(
-    new RegExp(`(?:^|\\s)(\\d{1,2})\\s+(${Object.keys(monthNameToIndex).join('|')})(?:\\s+(\\d{4}))?(?=\\s|$)`),
-  );
-
-  if (dateMatch) {
-    const day = Number.parseInt(dateMatch[1], 10);
-    const month = monthNameToIndex[dateMatch[2]];
-    const explicitYear = dateMatch[3] ? Number.parseInt(dateMatch[3], 10) : undefined;
-    const year = explicitYear ?? today.getFullYear();
-
-    if (Number.isInteger(month) && isValidCalendarDate(year, month, day)) {
-      const candidate = createDate(year, month, day);
-      const dueDate = !explicitYear && candidate < today ? createDate(year + 1, month, day) : candidate;
-
-      return toDateOnly(dueDate);
-    }
-  }
-
-  const weekdayMatch = Object.entries(weekdayNameToIndex).find(([weekday]) => {
-    const escapedWeekday = weekday.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return new RegExp(`(^|\\s)${escapedWeekday}(?=\\s|$)`).test(normalizedCommand);
-  });
-
-  if (weekdayMatch) {
-    const targetWeekday = weekdayMatch[1];
-    const daysUntilTarget = (targetWeekday - today.getDay() + 7) % 7 || 7;
-
-    return toDateOnly(addDays(today, daysUntilTarget));
-  }
-
-  return undefined;
-}
-
-function includesAnyKeyword(command: string, keywords: string[]) {
-  return keywords.some((keyword) => command.includes(keyword));
-}
-
-function inferProject(command: string): Project {
-  const normalizedCommand = command.toLowerCase();
-  const matchedRule = projectRules.find((rule) => includesAnyKeyword(normalizedCommand, rule.keywords));
-
-  return matchedRule?.project ?? 'Personal';
-}
-
-function inferPriority(command: string): Priority {
-  const normalizedCommand = command.toLowerCase();
-
-  if (includesAnyKeyword(normalizedCommand, highPriorityKeywords)) {
-    return 'high';
-  }
-
-  if (includesAnyKeyword(normalizedCommand, lowPriorityKeywords)) {
-    return 'low';
-  }
-
-  return 'medium';
-}
-
-function createStructuredTask(command: string): StructuredTask {
-  const dueDate = inferDueDate(command);
-
-  return {
-    title: command,
-    project: inferProject(command),
-    priority: inferPriority(command),
-    status: 'pending',
-    ...(dueDate ? { due_date: dueDate } : {}),
-  };
-}
+const taskLikeTypes = new Set(['task', 'meeting', 'reminder']);
+const noteLikeTypes = new Set(['note', 'idea', 'decision', 'health_log', 'finance_log']);
 
 export async function POST(request: Request) {
   try {
@@ -264,32 +34,227 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'নির্দেশনা লিখতে হবে।' }, { status: 400 });
     }
 
-    const task = createStructuredTask(command);
+    const projects = await loadProjects();
+    const classification = classifyCommand(command, projects);
+    const inboxResult = await saveInbox(classification);
 
-    const response = await fetch(new URL('/memory/tasks', AGENT_API_URL), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-agent-key': AGENT_API_SECRET,
-      },
-      body: JSON.stringify(task),
-      cache: 'no-store',
-    });
+    if (classification.needs_review) {
+      return NextResponse.json({
+        ok: false,
+        needs_clarification: true,
+        clarification: 'এটা কোন প্রকল্পের সাথে যুক্ত করব?',
+        classification,
+        saved: inboxResult.ok ? { target: 'inbox' as SaveTarget, record: inboxResult.record } : { target: 'none' as SaveTarget },
+        message: inboxResult.ok
+          ? 'নির্দেশনাটি ইনবক্সে রাখা হয়েছে, কিন্তু চূড়ান্ত করার আগে আরও তথ্য দরকার।'
+          : 'নির্দেশনাটি পরিষ্কার নয়, আর ইনবক্স রুটও পাওয়া যায়নি।',
+        warnings: inboxResult.warning ? [inboxResult.warning] : [],
+      });
+    }
 
-    const data = await response.json().catch(() => null);
+    const finalResult = await saveStructuredClassification(classification);
 
-    if (!response.ok) {
+    if (!finalResult.ok) {
+      if (inboxResult.ok) {
+        return NextResponse.json({
+          ok: true,
+          classification,
+          saved: { target: 'inbox' as SaveTarget, record: inboxResult.record },
+          message: 'চূড়ান্ত টেবিলে সংরক্ষণ করা যায়নি, তাই নির্দেশনাটি ইনবক্সে নিরাপদে রাখা হয়েছে।',
+          warnings: [finalResult.warning, inboxResult.warning].filter(Boolean),
+        });
+      }
+
       return NextResponse.json(
-        { error: 'Shaikh OS মেমরিতে নির্দেশনা সংরক্ষণ করা যায়নি।', details: data },
-        { status: response.status },
+        {
+          ok: false,
+          error: finalResult.warning ?? 'Shaikh OS মেমরিতে নির্দেশনা সংরক্ষণ করা যায়নি।',
+          classification,
+          saved: { target: 'none' as SaveTarget },
+          warnings: [inboxResult.warning].filter(Boolean),
+        },
+        { status: finalResult.status ?? 502 },
       );
     }
 
-    return NextResponse.json({ ok: true, task: data?.task ?? data ?? task, parsedTask: task });
+    return NextResponse.json({
+      ok: true,
+      classification,
+      saved: { target: finalResult.target, record: finalResult.record },
+      inbox: inboxResult.ok ? { target: 'inbox', record: inboxResult.record } : null,
+      message: successMessage(classification, finalResult.target),
+      warnings: [inboxResult.warning].filter(Boolean),
+    });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'অজানা সার্ভার ত্রুটি।' },
       { status: 500 },
     );
   }
+}
+
+async function loadProjects(): Promise<CommandProject[]> {
+  const response = await agentFetch('/memory/projects', { method: 'GET' });
+  if (!response.ok) {
+    return [];
+  }
+
+  const data = await readJson(response);
+  return extractCollection(data)
+    .filter(isRecord)
+    .map((project, index) => ({
+      id: asText(project.id) ?? asText(project._id) ?? asText(project.uuid) ?? `project-${index}`,
+      name: asText(project.name) ?? asText(project.title) ?? asText(project.project) ?? 'নামহীন প্রকল্প',
+    }))
+    .filter((project) => project.name.trim());
+}
+
+async function saveInbox(classification: CommandClassification) {
+  const payload = {
+    raw_command: classification.raw_command,
+    item_type: classification.item_type,
+    project: classification.project_name,
+    project_id: classification.project_id,
+    priority: classification.priority,
+    due_date: classification.due_date,
+    confidence: classification.confidence,
+    needs_review: classification.needs_review,
+    metadata: classification,
+  };
+
+  for (const path of ['/memory/inbox_items', '/memory/inbox']) {
+    const response = await agentFetch(path, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    const record = await readJson(response);
+
+    if (response.ok) {
+      return { ok: true as const, record };
+    }
+
+    if (response.status !== 404 && response.status !== 405) {
+      return {
+        ok: false as const,
+        status: response.status,
+        warning: `ইনবক্স রুটে সংরক্ষণ হয়নি (${response.status})।`,
+      };
+    }
+  }
+
+  return {
+    ok: false as const,
+    status: 404,
+    warning: 'ইনবক্স রুট পাওয়া যায়নি, তাই task/note fallback ব্যবহার করা হয়েছে।',
+  };
+}
+
+async function saveStructuredClassification(classification: CommandClassification) {
+  if (taskLikeTypes.has(classification.item_type)) {
+    return saveToMemory('/memory/tasks', 'tasks', buildTaskPayload(classification));
+  }
+
+  if (noteLikeTypes.has(classification.item_type)) {
+    return saveToMemory('/memory/notes', 'notes', buildNotePayload(classification));
+  }
+
+  return {
+    ok: false as const,
+    target: 'none' as SaveTarget,
+    status: 422,
+    warning: 'নির্দেশনার ধরন পরিষ্কার নয়, তাই চূড়ান্ত task/note তৈরি করা হয়নি।',
+  };
+}
+
+async function saveToMemory(path: string, target: Exclude<SaveTarget, 'inbox' | 'none'>, payload: unknown) {
+  const response = await agentFetch(path, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  const record = await readJson(response);
+
+  if (!response.ok) {
+    return {
+      ok: false as const,
+      target,
+      status: response.status,
+      warning: `${target === 'tasks' ? 'কাজ' : 'নোট'} সংরক্ষণ করা যায়নি (${response.status})।`,
+      record,
+    };
+  }
+
+  return { ok: true as const, target, record };
+}
+
+async function agentFetch(path: string, init: RequestInit) {
+  return fetch(new URL(path, AGENT_API_URL), {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      'x-agent-key': AGENT_API_SECRET ?? '',
+      ...init.headers,
+    },
+    cache: 'no-store',
+  });
+}
+
+async function readJson(response: Response) {
+  return response.json().catch(() => null) as Promise<unknown>;
+}
+
+function successMessage(classification: CommandClassification, target: SaveTarget) {
+  if (target === 'tasks') {
+    return `Shaikh OS কাজ হিসেবে সংরক্ষণ করেছে — ${classification.project_name} / ${priorityLabel(classification.priority)}।`;
+  }
+
+  if (target === 'notes') {
+    return `Shaikh OS নোট হিসেবে সংরক্ষণ করেছে — ${classification.project_name}।`;
+  }
+
+  return 'Shaikh OS নির্দেশনাটি সংরক্ষণ করেছে।';
+}
+
+function priorityLabel(priority: CommandClassification['priority']) {
+  if (priority === 'high') return 'জরুরি';
+  if (priority === 'low') return 'কম অগ্রাধিকার';
+  return 'মাঝারি অগ্রাধিকার';
+}
+
+function extractCollection(data: unknown): unknown[] {
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  if (!isRecord(data)) {
+    return [];
+  }
+
+  const candidates = [data.data, data.projects, data.items, data.results, data.memory];
+  const collection = candidates.find(Array.isArray);
+  if (collection) {
+    return collection;
+  }
+
+  const nestedRecord = candidates.find(isRecord);
+  if (nestedRecord) {
+    return extractCollection(nestedRecord);
+  }
+
+  return [];
+}
+
+function asText(value: unknown): string | undefined {
+  if (typeof value === 'string' && value.trim()) {
+    return value.trim();
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+
+  return undefined;
+}
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
