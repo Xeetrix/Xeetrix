@@ -16,23 +16,17 @@ export type OsPageProps = {
 };
 
 const navItems = [
-  { href: '/os', label: 'Home' },
+  { href: '/os', label: 'Today' },
   { href: '/os/memory', label: 'Memory' },
-  { href: '/os/timeline', label: 'Timeline' },
-  { href: '/os/briefing', label: 'Briefing' },
-  { href: '/os/agent', label: 'Agent Brain' },
-  { href: '/os/contacts', label: 'Contacts' },
-  { href: '/os/meetings', label: 'Meetings' },
-  { href: '/os/health', label: 'Health' },
-  { href: '/os/finance', label: 'Finance' },
-  { href: '/os/sources', label: 'Sources' },
-  { href: '/os/marketing', label: 'Marketing' },
+  { href: '/os/operations', label: 'Operations' },
+  { href: '/os/personal', label: 'Personal' },
+  { href: '/os/agent', label: 'Agent' },
 ];
 
 export default function OsPage({ eyebrow, title, subtitle, stats = [], children }: OsPageProps) {
   return (
     <main className={styles.shell}>
-      <nav className={styles.nav} aria-label="Shaikh OS sections">
+      <nav className={styles.nav} aria-label="Shaikh OS primary sections">
         {navItems.map((item) => (
           <Link key={item.href} href={item.href}>
             {item.label}

@@ -759,3 +759,81 @@
   font-size: 0.9rem;
   font-weight: 850;
 }
+
+.todayGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 1rem;
+}
+
+.todayCard {
+  position: relative;
+  overflow: hidden;
+  min-height: 260px;
+  border: 1px solid var(--line);
+  border-radius: 26px;
+  padding: 1.25rem;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.03));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 28px 90px rgba(0, 0, 0, 0.2);
+}
+
+.todayCard::before {
+  content: "";
+  position: absolute;
+  top: -6rem;
+  right: -6rem;
+  width: 12rem;
+  height: 12rem;
+  border-radius: 999px;
+  background: rgba(71, 215, 255, 0.12);
+  filter: blur(20px);
+  pointer-events: none;
+}
+
+.todayCard span {
+  position: relative;
+  color: #a5f0ff;
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.todayCard h3 {
+  position: relative;
+  margin: 0.8rem 0 0;
+  color: #fff;
+  font-size: 1.45rem;
+  letter-spacing: -0.04em;
+}
+
+.todayCard p,
+.todayCard li {
+  position: relative;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.todayCard ul {
+  position: relative;
+  margin: 1rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.todayCard a {
+  position: relative;
+  display: inline-flex;
+  margin-top: 1rem;
+  color: #a5f0ff;
+  font-weight: 900;
+}
+
+.warningCard {
+  border-color: rgba(255, 209, 102, 0.28);
+  background: rgba(255, 209, 102, 0.08);
+}
+
+.focusTodayCard {
+  border-color: rgba(77, 255, 181, 0.24);
+  background: rgba(77, 255, 181, 0.08);
+}
