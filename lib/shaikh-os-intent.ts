@@ -221,7 +221,7 @@ Allowed project_name values: KNLTC, Islamic School, Xeetrix, Investment, Persona
 Project inference rules: Personal for health/finance/personal; KNLTC for lead/visa/marketing/client; Islamic School for school/admission/teacher/student; Xeetrix for tech/AI/platform/software; otherwise General.
 Allowed priority values: low, medium, high.
 Allowed target values: tasks, notes, health_logs, finance_logs, reminders, events, inbox_items.
-For health_log or finance_log, prefer project_name Personal. If no specific backend route exists, the app will save it as a note after confirmation.
+For health_log or finance_log, prefer project_name Personal. If a specific backend route exists, save to that route; otherwise the command log preserves the original command.
 Return this JSON shape exactly:
 {"intent":"task | note | idea | meeting | reminder | health_log | finance_log | decision | unknown","project_name":"KNLTC | Islamic School | Xeetrix | Investment | Personal | General","title":"short title","summary":"short summary","priority":"low | medium | high","due_date":"ISO datetime with +06:00 or null","reminder_at":"ISO datetime with +06:00 or null","amount":number or null,"direction":"income | expense | null","confidence":0.0,"needs_confirmation":true,"needs_clarification":false,"clarification_question":null,"target":"tasks | notes | health_logs | finance_logs | reminders | events | inbox_items"}
 Command: ${JSON.stringify(command)}`;
@@ -260,15 +260,16 @@ function normalizePlan(raw: UnknownRecord, command: string, projects: CommandPro
 
 function targetForIntent(intent: ShaikhOsIntent): ShaikhOsTarget {
   if (TASK_INTENTS.has(intent)) return 'tasks';
-  if (intent === 'health_log') return 'notes';
-  if (intent === 'finance_log') return 'notes';
+  if (intent === 'health_log') return 'health_logs';
+  if (intent === 'finance_log') return 'finance_logs';
   if (NOTE_INTENTS.has(intent)) return 'notes';
   return 'inbox_items';
 }
 
 function normalizeTarget(target: string | undefined, intent: ShaikhOsIntent): ShaikhOsTarget {
   if (target && TARGETS.includes(target as ShaikhOsTarget)) {
-    if (intent === 'health_log' || intent === 'finance_log') return 'notes';
+    if (intent === 'health_log') return 'health_logs';
+    if (intent === 'finance_log') return 'finance_logs';
     if (TASK_INTENTS.has(intent)) return 'tasks';
     if (NOTE_INTENTS.has(intent)) return 'notes';
     return target as ShaikhOsTarget;
