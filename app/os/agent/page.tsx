@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import OsPage, { styles } from '../_components/OsPage';
 import { contacts, memoryItems } from '@/lib/shaikh-os-memory';
 import { buildChiefOfStaffBriefing, type BriefingItem } from '@/lib/shaikh-os-intelligence';
+import { getRelatedItems } from '@/lib/shaikh-os-relationships';
 
 export const metadata: Metadata = { title: 'Agent | Shaikh OS' };
 
@@ -9,6 +10,7 @@ export default function AgentPage() {
   const briefing = buildChiefOfStaffBriefing();
   const decisions = memoryItems.filter((item) => item.intent === 'decision');
   const openTasks = memoryItems.filter((item) => item.intent === 'task');
+  const admissionReviewRelated = getRelatedItems('meeting', 'meeting-admission');
 
   return (
     <OsPage
@@ -26,6 +28,20 @@ export default function AgentPage() {
       <AgentSection id="recommendations" title="Recommendations" description="আজকের suggested action order।" items={briefing.recommendations} />
       <AgentSection id="opportunities" title="Opportunities" description="Memory-তে থাকা upside signals।" items={briefing.opportunities} good empty="নতুন opportunity নেই। Memory-তে idea যোগ করলে এখানে agent review হবে।" />
       <AgentSection id="questions" title="Open Questions" description="যেসব clarification পেলে assistant আরও ভালো সিদ্ধান্ত সাজাতে পারবে।" items={briefing.openQuestions} />
+
+      <section className={styles.section} id="relationship-map">
+        <div className={styles.sectionHeader}><div><h2>Relationship Map</h2><p>Agent এখন generic relationships থেকে meeting, contact, report এবং project context একসাথে পড়ে।</p></div></div>
+        <div className={styles.grid}>
+          <article className={styles.card}>
+            <p className={styles.cardMeta}>Meeting context</p>
+            <h3>School Admission Review</h3>
+            <p>Related:</p>
+            <ul>
+              {admissionReviewRelated.map((item) => <li key={`${item.type}-${item.id}`}>{item.title}</li>)}
+            </ul>
+          </article>
+        </div>
+      </section>
 
       <section className={styles.section} id="knows">
         <div className={styles.sectionHeader}><div><h2>What Agent Knows</h2><p>Projects, contacts, decisions এবং open tasks-এর current context map।</p></div></div>

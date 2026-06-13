@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import OsPage, { styles } from '../_components/OsPage';
+import RelatedItems from '../_components/RelatedItems';
 import { contacts, financeEntries, formatBanglaDateTime, getIntentLabel, groupMemoryByDay, healthEntries, meetings, memoryItems, type MemoryIntent } from '@/lib/shaikh-os-memory';
 import UniversalSearch from './UniversalSearch';
 
@@ -53,6 +54,7 @@ export default function MemoryPage() {
                   <h3>{item.title}</h3>
                   <p>{item.summary}</p>
                   <div className={styles.badgeRow}>{item.tags.map((tag) => <span className={styles.badge} key={tag}>{tag}</span>)}</div>
+                  <RelatedItems type={item.intent} id={item.id} />
                 </article>
               )) : <article className={styles.card}><h3>No {section.label.toLowerCase()} yet</h3><p>নতুন memory command থেকে এই group পূরণ হবে।</p></article>}
             </div>
