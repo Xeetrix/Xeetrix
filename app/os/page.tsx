@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
-import { Suspense } from 'react';
-import { getAgentTasks } from '@/lib/xeetrix-agent';
 import { meetings, memoryItems, marketingMetrics } from '@/lib/shaikh-os-memory';
+import { buildChiefOfStaffBriefing, type BriefingItem } from '@/lib/shaikh-os-intelligence';
 import CommandForm from './CommandForm';
 import styles from './page.module.css';
 
@@ -20,19 +19,12 @@ const primaryNav = [
   { href: '/os/agent', label: 'Agent' },
 ];
 
-const focusBlocks = [
-  { label: 'প্রধান ফোকাস', value: 'আয়ের চক্র সম্পন্ন করুন', detail: 'প্রশাসনিক কাজের আগে একটি বিক্রয়-সম্পর্কিত পদক্ষেপ শেষ করুন।' },
-  { label: 'শক্তি সুরক্ষা', value: 'আগে গভীর কাজ', detail: 'প্রধান কাজ শেষ না হওয়া পর্যন্ত ছড়ানো মনোযোগে কাজ বদলাবেন না।' },
-  { label: 'দিনশেষ পর্যালোচনা', value: '১৫ মিনিট রিসেট', detail: 'অসমাপ্ত কাজ সরান, ছোট নোট লিখুন, আগামীকাল পরিকল্পনা করুন।' },
-];
-
 export const dynamic = 'force-dynamic';
 
 export default function ShaikhOSPage() {
+  const briefing = buildChiefOfStaffBriefing();
   const urgentTasks = memoryItems.filter((item) => item.intent === 'task' && item.priority === 'high');
   const pendingFollowUps = marketingMetrics.find((metric) => metric.label === 'Pending Follow Ups');
-  const healthSignals = memoryItems.filter((item) => item.intent === 'health_log');
-  const agentIdeas = memoryItems.filter((item) => item.intent === 'idea');
 
   return (
     <main className={styles.dashboardShell}>
@@ -77,70 +69,17 @@ export default function ShaikhOSPage() {
       <section id="briefing" className={styles.section}>
         <div className={styles.sectionHeader}>
           <p className={styles.eyebrow}>Daily Briefing</p>
-          <h2>আজকের executive scan</h2>
-          <p>Homepage data dump নয়—শুধু যেগুলো আজ owner attention, decision বা follow-up দরকার সেগুলো দেখানো হচ্ছে।</p>
+          <h2>Agent Daily Briefing</h2>
+          <p>AI Chief of Staff আজ urgent কাজ, meeting, follow-up, health/finance warning, opportunity এবং open question একসাথে সাজিয়েছে।</p>
         </div>
-        <div className={styles.todayGrid}>
-          <article className={styles.todayCard}>
-            <span>Briefing</span>
-            <h3>Revenue এবং delivery আগে</h3>
-            <p>KNLTC lead follow-up ও Islamic School admission report আজকের প্রধান operational lane।</p>
-            <a href="/os/briefing">Full briefing route</a>
-          </article>
-          <article id="urgent" className={styles.todayCard}>
-            <span>Urgent Tasks</span>
-            <h3>{urgentTasks.length} urgent কাজ</h3>
-            <ul>{urgentTasks.map((task) => <li key={task.id}>{task.title}</li>)}</ul>
-            <Suspense fallback={<TodayTasksLoadingState />}>
-              <TodayTasksPreview />
-            </Suspense>
-          </article>
-          <article className={styles.todayCard}>
-            <span>Upcoming Meetings</span>
-            <h3>পরবর্তী আলোচনা</h3>
-            <ul>{meetings.map((meeting) => <li key={meeting.id}>{meeting.title} — {meeting.project}</li>)}</ul>
-            <a href="/os/meetings">Meetings খুলুন</a>
-          </article>
-          <article className={styles.todayCard}>
-            <span>Pending Follow Ups</span>
-            <h3>{pendingFollowUps?.value ?? '০'} pending</h3>
-            <p>{pendingFollowUps?.detail ?? 'Follow-up queue পরিষ্কার।'}</p>
-            <a href="/os/marketing">Marketing follow ups</a>
-          </article>
-          <article className={`${styles.todayCard} ${styles.warningCard}`}>
-            <span>Agent Alerts</span>
-            <h3>Risk signals</h3>
-            <ul>
-              <li>{healthSignals.length} health notes — sleep/headache pattern monitor করুন।</li>
-              <li>{agentIdeas.length} product idea agent review-এর জন্য অপেক্ষায়।</li>
-            </ul>
-            <a href="/os/agent">Agent view</a>
-          </article>
-          <article className={`${styles.todayCard} ${styles.focusTodayCard}`}>
-            <span>Focus Project</span>
-            <h3>KNLTC</h3>
-            <p>আজ একটি sales-related action শেষ করুন, তারপর reporting/admin work-এ যান।</p>
-            <a href="/os/operations">Operations workspace</a>
-          </article>
-        </div>
-      </section>
-
-      <section id="focus" className={styles.section}>
-        <div className={styles.focusPanel}>
-          <div className={styles.sectionHeader}>
-            <p className={styles.eyebrow}>দৈনিক ফোকাস</p>
-            <h2>আজকের কর্মপরিকল্পনা</h2>
-            <p>এই অংশকে দৈনিক রিসেট স্তর হিসেবে ব্যবহার করুন: গুরুত্বপূর্ণ বিষয় ঠিক করুন, মনোযোগ সুরক্ষিত রাখুন এবং কাজের চক্র সম্পন্ন করুন।</p>
-          </div>
-          <div className={styles.focusGrid}>
-            {focusBlocks.map((block) => (
-              <article key={block.label}>
-                <span>{block.label}</span>
-                <h3>{block.value}</h3>
-                <p>{block.detail}</p>
-              </article>
-            ))}
-          </div>
+        <div className={styles.briefingGrid}>
+          <BriefingColumn title="আজকের জরুরি কাজ" items={briefing.urgentTasks} empty="আজ high-priority task নেই। Command box থেকে নতুন priority যোগ করুন।" />
+          <BriefingColumn title="Upcoming meetings" items={briefing.upcomingMeetings} empty="আজ কোনো upcoming meeting পাওয়া যায়নি।" />
+          <BriefingColumn title="Pending follow-ups" items={briefing.pendingFollowUps} empty="Follow-up queue পরিষ্কার।" />
+          <BriefingColumn title="Health warnings" items={briefing.healthWarnings} empty="স্বাস্থ্য warning নেই—energy routine বজায় রাখুন।" />
+          <BriefingColumn title="Finance warnings" items={briefing.financeWarnings} empty="অর্থ warning নেই—নতুন expense/income log করলে এখানে আসবে।" />
+          <BriefingColumn title="Opportunities" items={briefing.opportunities} empty="নতুন opportunity নেই। Idea capture করলে Memory ও Agent-এ দেখা যাবে।" />
+          <BriefingColumn title="Open questions" items={briefing.openQuestions} empty="আজ agent-এর কোনো open question নেই।" />
         </div>
       </section>
 
@@ -160,36 +99,27 @@ export default function ShaikhOSPage() {
   );
 }
 
-function formatPercent(value: number) {
-  return `${banglaNumber.format(value)}%`;
-}
 
-async function TodayTasksPreview() {
-  const tasks = await loadTasks();
-  const preview = tasks.slice(0, 2);
-
-  if (preview.length === 0) {
-    return <p>Live task board সংযুক্ত হলে Today preview এখানে দেখা যাবে।</p>;
-  }
-
+function BriefingColumn({ title, items, empty }: { title: string; items: BriefingItem[]; empty: string }) {
   return (
-    <ul>
-      {preview.map((task) => (
-        <li key={task.id}>{task.title} — {task.priorityLabel}</li>
-      ))}
-    </ul>
+    <article className={styles.briefingCard}>
+      <h3>{title}</h3>
+      {items.length ? (
+        <ul>
+          {items.map((item) => (
+            <li data-tone={item.tone ?? 'neutral'} key={item.id}>
+              <a href={item.href}>
+                <strong>{item.title}</strong>
+                <span>{item.detail}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      ) : <p>{empty}</p>}
+    </article>
   );
 }
 
-function TodayTasksLoadingState() {
-  return <p>Live task preview লোড হচ্ছে…</p>;
-}
-
-async function loadTasks() {
-  try {
-    return await getAgentTasks();
-  } catch (error) {
-    console.error(error);
-    return [];
-  }
+function formatPercent(value: number) {
+  return `${banglaNumber.format(value)}%`;
 }

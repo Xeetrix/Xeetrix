@@ -127,8 +127,22 @@ async function executeConfirmedPlan(submittedPlan: Partial<ShaikhOsPlan> | undef
     mode: 'executed',
     plan,
     saved: { target: result.target, record: result.record },
-    message: 'সংরক্ষণ করা হয়েছে।',
+    message: buildSavedMessage(plan, result.target),
   });
+}
+
+
+function buildSavedMessage(plan: ShaikhOsPlan, target: SaveTarget) {
+  const visibleArea = getVisibleArea(plan, target);
+  return `এটি ${visibleArea}-তে সংরক্ষণ হয়েছে। Dashboard ও briefing refresh করা হয়েছে।`;
+}
+
+function getVisibleArea(plan: ShaikhOsPlan, target: SaveTarget) {
+  if (target === 'tasks') return 'Operations → Tasks এবং Today urgent briefing';
+  if (target === 'health_logs') return 'Personal → Health memory';
+  if (target === 'finance_logs') return 'Personal → Finance memory';
+  if (plan.intent === 'idea' || plan.intent === 'note' || plan.intent === 'decision') return 'Memory এবং Agent';
+  return 'Memory Center';
 }
 
 function normalizeSubmittedPlan(submittedPlan: Partial<ShaikhOsPlan>, projects: CommandProject[]): ShaikhOsPlan {

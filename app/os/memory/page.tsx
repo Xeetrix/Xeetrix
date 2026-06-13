@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import OsPage, { styles } from '../_components/OsPage';
-import { formatBanglaDateTime, getIntentLabel, groupMemoryByDay, memoryItems, type MemoryIntent } from '@/lib/shaikh-os-memory';
+import { contacts, financeEntries, formatBanglaDateTime, getIntentLabel, groupMemoryByDay, healthEntries, meetings, memoryItems, type MemoryIntent } from '@/lib/shaikh-os-memory';
+import UniversalSearch from './UniversalSearch';
 
 export const metadata: Metadata = { title: 'Memory | Shaikh OS' };
 
@@ -25,6 +26,9 @@ export default function MemoryPage() {
         { label: 'Timeline Items', value: String(memoryItems.length), detail: 'Chronological memory history' },
       ]}
     >
+
+      <UniversalSearch items={buildSearchItems()} />
+
       <section className={styles.section}>
         <div className={styles.filters} aria-label="Memory groups">
           {memorySections.map((section) => <a className={styles.filterLink} href={`#${section.label.toLowerCase()}`} key={section.label}>{section.label}</a>)}
@@ -78,4 +82,50 @@ export default function MemoryPage() {
       </section>
     </OsPage>
   );
+}
+
+
+function buildSearchItems() {
+  return [
+    ...memoryItems.map((item) => ({
+      id: item.id,
+      type: getIntentLabel(item.intent),
+      title: item.title,
+      detail: `${item.project} · ${item.summary}`,
+      href: item.intent === 'task' ? '/os/operations' : item.intent === 'health_log' || item.intent === 'finance_log' ? '/os/personal' : '/os/memory',
+      keywords: item.tags.join(' '),
+    })),
+    ...healthEntries.map((entry) => ({
+      id: entry.id,
+      type: 'স্বাস্থ্য',
+      title: `${entry.date} health log`,
+      detail: `${entry.sleep} sleep · ${entry.mood} mood · ${entry.symptoms}`,
+      href: '/os/personal',
+      keywords: `${entry.energy} ${entry.symptoms}`,
+    })),
+    ...financeEntries.map((entry) => ({
+      id: entry.id,
+      type: 'অর্থ',
+      title: `${entry.category} ${entry.direction}`,
+      detail: `৳${entry.amount} · ${entry.description}`,
+      href: '/os/personal',
+      keywords: `${entry.category} ${entry.direction}`,
+    })),
+    ...meetings.map((meeting) => ({
+      id: meeting.id,
+      type: 'মিটিং',
+      title: meeting.title,
+      detail: `${meeting.project} · ${meeting.participants.join(', ')} · ${meeting.outcome}`,
+      href: '/os/meetings',
+      keywords: meeting.notes,
+    })),
+    ...contacts.map((contact) => ({
+      id: contact.id,
+      type: 'মানুষ',
+      title: contact.name,
+      detail: `${contact.relation} · ${contact.organization}`,
+      href: '/os/contacts',
+      keywords: `${contact.email} ${contact.phone} ${contact.projects.join(' ')}`,
+    })),
+  ];
 }
