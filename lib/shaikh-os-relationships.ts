@@ -121,17 +121,17 @@ export function getRelatedItems(type: RelationshipEntityType, id: string): Relat
 
 export function describeEntity(type: RelationshipEntityType, id: string): EntityDescriptor | null {
   if (type === 'project' || type === 'personal') {
-    return { id, type, title: id, detail: type === 'personal' ? 'Personal wellbeing and capacity' : 'Operational project workspace', href: type === 'personal' ? '/os/personal' : `/os/operations#projects` };
+    return { id, type, title: id, detail: type === 'personal' ? 'Personal wellbeing and capacity' : 'Operational project workspace', href: type === 'personal' ? '/os/personal' : `/os/projects/${encodeURIComponent(id)}` };
   }
   const memory = memoryItems.find((item) => item.id === id);
-  if (memory) return { id, type, title: memory.title, detail: memory.summary, href: memory.intent === 'task' ? '/os/operations#tasks' : '/os/memory' };
+  if (memory) return { id, type, title: memory.title, detail: memory.summary, href: memory.intent === 'task' ? `/os/tasks/${memory.id}` : `/os/memory/${memory.id}` };
   const meeting = meetings.find((item) => item.id === id);
-  if (meeting) return { id, type, title: meeting.title, detail: `${meeting.project} · ${meeting.participants.join(', ')}`, href: '/os/meetings' };
+  if (meeting) return { id, type, title: meeting.title, detail: `${meeting.project} · ${meeting.participants.join(', ')}`, href: `/os/meetings/${meeting.id}` };
   const contact = contacts.find((item) => item.id === id);
   if (contact) return { id, type, title: contact.name, detail: `${contact.relation} · ${contact.organization}`, href: '/os/contacts' };
   const health = healthEntries.find((item) => item.id === id);
   if (health) return { id, type, title: `${health.date} health log`, detail: `${health.sleep} sleep · ${health.mood} mood · ${health.symptoms}`, href: '/os/health' };
   const finance = financeEntries.find((item) => item.id === id);
   if (finance) return { id, type, title: `${finance.category} ${finance.direction}`, detail: `৳${finance.amount} · ${finance.description}`, href: '/os/finance' };
-  return projectIds.includes(id as LifeProject) ? { id, type, title: id, detail: 'Known workspace', href: '/os/operations#projects' } : null;
+  return projectIds.includes(id as LifeProject) ? { id, type, title: id, detail: 'Known workspace', href: `/os/projects/${encodeURIComponent(id)}` } : null;
 }

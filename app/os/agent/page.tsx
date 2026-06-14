@@ -11,6 +11,7 @@ export default function AgentPage() {
   const decisions = memoryItems.filter((item) => item.intent === 'decision');
   const openTasks = memoryItems.filter((item) => item.intent === 'task');
   const admissionReviewRelated = getRelatedItems('meeting', 'meeting-admission');
+  const knltcConnections = getRelatedItems('project', 'KNLTC');
 
   return (
     <OsPage
@@ -40,6 +41,26 @@ export default function AgentPage() {
               {admissionReviewRelated.map((item) => <li key={`${item.type}-${item.id}`}>{item.title}</li>)}
             </ul>
           </article>
+        </div>
+      </section>
+
+      <section className={styles.section} id="related-context">
+        <div className={styles.sectionHeader}><div><h2>Related Context</h2><p>Relationship intelligence remains visible here for agent reasoning instead of overview card clutter.</p></div></div>
+        <div className={styles.grid}>
+          <article className={styles.card}>
+            <p className={styles.cardMeta}>KNLTC context</p>
+            <h3>Connections</h3>
+            <ul>{knltcConnections.map((item) => <li key={`${item.type}-${item.id}`}>{item.title} — {item.relationshipType}</li>)}</ul>
+          </article>
+        </div>
+      </section>
+
+      <section className={styles.section} id="connections">
+        <div className={styles.sectionHeader}><div><h2>Connections</h2><p>People, decisions, and open work remain available to the agent as connected context.</p></div></div>
+        <div className={styles.grid}>
+          <article className={styles.card}><h3>Contacts</h3><ul>{contacts.map((contact) => <li key={contact.id}>{contact.name} — {contact.organization}</li>)}</ul></article>
+          <article className={styles.card}><h3>Decisions</h3><ul>{decisions.length ? decisions.map((decision) => <li key={decision.id}>{decision.title}</li>) : <li>এখনও decision নেই।</li>}</ul></article>
+          <article className={styles.card}><h3>Open Tasks</h3><ul>{openTasks.length ? openTasks.map((task) => <li key={task.id}>{task.title}</li>) : <li>Open task নেই।</li>}</ul></article>
         </div>
       </section>
 

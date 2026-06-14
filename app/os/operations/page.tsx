@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { getAgentProjects, getAgentTasks } from '@/lib/xeetrix-agent';
 import { contacts, formatBanglaDateTime, marketingMetrics, meetings } from '@/lib/shaikh-os-memory';
 import OsPage, { styles } from '../_components/OsPage';
-import RelatedItems from '../_components/RelatedItems';
 
 export const metadata: Metadata = { title: 'Operations | Shaikh OS' };
 export const dynamic = 'force-dynamic';
@@ -42,11 +42,9 @@ export default async function OperationsPage() {
         <div className={styles.grid}>
           {(projects.length ? projects : fallbackProjects).map((project) => (
             <article className={styles.card} key={project.id}>
-              <p className={styles.cardMeta}>{project.status}</p>
-              <h3>{project.name}</h3>
+              <h3><Link href={`/os/projects/${encodeURIComponent(project.name)}`}>{project.name}</Link></h3>
               <p>{project.description}</p>
               <p><strong>Next:</strong> {project.next}</p>
-              <RelatedItems type="project" id={project.name} />
             </article>
           ))}
         </div>
@@ -65,7 +63,7 @@ export default async function OperationsPage() {
               <p className={styles.cardMeta}>{task.project} · {task.due}</p>
               <h3>{task.title}</h3>
               <p>Priority: {task.priorityLabel}</p>
-              <RelatedItems type="task" id={task.id} />
+              <Link className={styles.filterLink} href={`/os/tasks/${task.id}`}>Open detail</Link>
             </article>
           )) : <article className={styles.card}><h3>সক্রিয় কাজ পাওয়া যায়নি</h3><p>Xeetrix Agent ব্যাকএন্ডে কাজ পাওয়া গেলে সেগুলো এখানে দেখা যাবে।</p></article>}
         </div>
@@ -85,7 +83,7 @@ export default async function OperationsPage() {
               <h3>{meeting.title}</h3>
               <p>Participants: {meeting.participants.join(', ')}</p>
               <p><strong>Outcome:</strong> {meeting.outcome}</p>
-              <RelatedItems type="meeting" id={meeting.id} />
+              <Link className={styles.filterLink} href={`/os/meetings/${meeting.id}`}>Open detail</Link>
             </article>
           ))}
         </div>
@@ -108,7 +106,7 @@ export default async function OperationsPage() {
             <p>People context operational handoff ও follow-up-এর সাথে রাখা হয়েছে।</p>
           </div>
         </div>
-        <div className={styles.grid}>{contacts.map((contact) => <article className={styles.card} key={contact.id}><p className={styles.cardMeta}>{contact.relation}</p><h3>{contact.name}</h3><p>{contact.organization}</p><div className={styles.badgeRow}>{contact.projects.map((project) => <span className={styles.badge} key={project}>{project}</span>)}</div><RelatedItems type="contact" id={contact.id} /></article>)}</div>
+        <div className={styles.grid}>{contacts.map((contact) => <article className={styles.card} key={contact.id}><p className={styles.cardMeta}>{contact.relation}</p><h3>{contact.name}</h3><p>{contact.organization}</p><div className={styles.badgeRow}>{contact.projects.map((project) => <span className={styles.badge} key={project}>{project}</span>)}</div></article>)}</div>
       </section>
     </OsPage>
   );
