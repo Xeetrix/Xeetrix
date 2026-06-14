@@ -61,14 +61,6 @@ export type FinanceEntry = {
   description: string;
 };
 
-export type SourceConnection = {
-  id: string;
-  name: string;
-  status: 'planned' | 'metadata_ready' | 'paused';
-  accountHint: string;
-  lastSync: string;
-};
-
 export type MarketingMetric = {
   label: string;
   value: string;
@@ -179,17 +171,6 @@ export const financeEntries: FinanceEntry[] = [
   { id: 'fin-1', date: '2026-06-11', amount: 5000, direction: 'expense', category: 'KNLTC', description: 'Lead campaign ad spend' },
   { id: 'fin-2', date: '2026-06-09', amount: 12000, direction: 'income', category: 'Investment', description: 'Investment return note' },
   { id: 'fin-3', date: '2026-06-08', amount: 2500, direction: 'expense', category: 'Personal', description: 'Personal family expense' },
-];
-
-export const sourceConnections: SourceConnection[] = [
-  { id: 'google-accounts', name: 'Google Accounts', status: 'metadata_ready', accountHint: 'OAuth foundation only', lastSync: 'Not connected' },
-  { id: 'google-docs', name: 'Google Docs', status: 'planned', accountHint: 'Docs memory import future', lastSync: 'Not connected' },
-  { id: 'google-sheets', name: 'Google Sheets', status: 'planned', accountHint: 'Finance/CRM sheets future', lastSync: 'Not connected' },
-  { id: 'google-calendar', name: 'Google Calendar', status: 'planned', accountHint: 'Meeting sync future', lastSync: 'Not connected' },
-  { id: 'facebook', name: 'Facebook', status: 'planned', accountHint: 'Lead inbox future', lastSync: 'Not connected' },
-  { id: 'instagram', name: 'Instagram', status: 'planned', accountHint: 'DM/comment future', lastSync: 'Not connected' },
-  { id: 'youtube', name: 'YouTube', status: 'planned', accountHint: 'Content analytics future', lastSync: 'Not connected' },
-  { id: 'whatsapp-business', name: 'WhatsApp Business', status: 'planned', accountHint: 'Business chats future', lastSync: 'Not connected' },
 ];
 
 export const marketingMetrics: MarketingMetric[] = [
