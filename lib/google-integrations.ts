@@ -43,6 +43,42 @@ export type GoogleServiceConnection = {
 export type GoogleServiceName = 'gmail' | 'calendar' | 'docs' | 'sheets';
 export type GoogleSyncDiagnostic = { endpoint: string; httpStatus: number; errorCode: string | null; errorMessage: string; missingScope: string | null; rawResponse: unknown };
 export type GoogleWorkspaceItem = { id: string; title: string; detail: string; timestamp: string | null; status?: string | null };
+export type GmailSignal = {
+  id: string;
+  source_id: string;
+  google_message_id: string;
+  from_email: string | null;
+  from_name: string | null;
+  subject: string | null;
+  snippet: string | null;
+  received_at: string | null;
+  project_id: string | null;
+  contact_name: string | null;
+  organization: string | null;
+  intent: string | null;
+  priority: string | null;
+  needs_follow_up: boolean;
+  is_unread: boolean;
+  status: string;
+  metadata: Record<string, unknown>;
+};
+export type DriveSignal = {
+  id: string;
+  source_id: string;
+  google_file_id: string;
+  name: string | null;
+  web_url: string | null;
+  project_id: string | null;
+  organization: string | null;
+  document_type: string | null;
+  owner_email: string | null;
+  owner_name: string | null;
+  updated_at: string;
+  status: string;
+  metadata: Record<string, unknown>;
+  workspace_type: 'doc' | 'sheet';
+};
+export type ContactCandidate = { id: string; name: string; email: string | null; organization: string | null; source: string; project: string | null; last_seen_at: string | null };
 export type ConnectedGoogleAccount = ConnectedSource & {
   last_sync: string | null;
   services: GoogleServiceConnection[];
@@ -289,10 +325,44 @@ function parseGmailAddress(value = '') {
   const match = value.match(/^(.*)<(.+)>$/);
   return match ? { name: match[1].trim().replace(/^"|"$/g, '') || null, email: match[2].trim() } : { name: null, email: value.trim() };
 }
-function classifyEmail(subject: string, snippet: string) {
-  const text = `${subject} ${snippet}`.toLowerCase();
-  return { intent: text.includes('?') || text.includes('please') ? 'follow_up' : 'information', priority: /(urgent|asap|deadline|important)/.test(text) ? 'high' : 'normal', needs_follow_up: /\?|please|reply|confirm|follow up/.test(text) };
+
+const PROJECT_RULES = [
+  { project: 'Islamic School', organization: 'Islamic School', pattern: /admission|school|student|teacher|guardian|parent|academic|islamic/i },
+  { project: 'KNLTC', organization: 'KNLTC', pattern: /knltc|lead|marketing|campaign|ad spend|budget|client|training/i },
+  { project: 'Finance', organization: 'Finance', pattern: /invoice|receipt|payment|paid|due|expense|finance|billing|statement/i },
+  { project: 'Xeetrix', organization: 'Xeetrix', pattern: /xeetrix|agent|shaikh os|product|platform|website|app/i },
+  { project: 'Investment', organization: 'Investment', pattern: /investment|portfolio|stock|return|dividend|fund/i },
+] as const;
+
+function classifyProject(text: string) {
+  return PROJECT_RULES.find((rule) => rule.pattern.test(text)) ?? { project: 'General', organization: null };
 }
+
+function classifyIntent(text: string) {
+  if (/meeting|schedule|calendar|invite|appointment|call/i.test(text)) return 'meeting_request';
+  if (/invoice|receipt|payment|paid|due|billing|statement/i.test(text)) return 'finance';
+  if (/report|update|status|summary/i.test(text)) return 'report';
+  if (/approve|confirm|reply|respond|please|\?|follow up|follow-up/i.test(text)) return 'follow_up';
+  return 'information';
+}
+
+function classifyEmail(subject: string, snippet: string, labels: string[] = [], fromName: string | null = null, fromEmail: string | null = null) {
+  const text = `${subject} ${snippet}`;
+  const project = classifyProject(text);
+  const intent = classifyIntent(text);
+  const isUnread = labels.includes('UNREAD');
+  const priority = /(urgent|asap|deadline|important|overdue|immediate)/i.test(text) || labels.includes('IMPORTANT') ? 'high' : isUnread ? 'medium' : 'normal';
+  const needs_follow_up = intent === 'follow_up' || intent === 'meeting_request' || /\?|please|reply|confirm|follow up|follow-up|respond/i.test(text);
+  return { project_id: project.project, contact_name: fromName, organization: project.organization, intent, priority, needs_follow_up, is_unread: isUnread, metadata: { classification: 'google_intelligence_v1', labels, contact: { name: fromName, email: fromEmail } } };
+}
+
+function classifyDriveFile(name: string, mimeType: string, owners: { emailAddress?: string; displayName?: string }[] = []) {
+  const project = classifyProject(name);
+  const document_type = /spreadsheet/i.test(mimeType) ? (/budget|invoice|finance|expense/i.test(name) ? 'financial_sheet' : 'spreadsheet') : /report|proposal|plan|notes|minutes|admission/i.test(name) ? (name.match(/report/i) ? 'report' : 'document') : 'document';
+  const owner = owners[0];
+  return { project_id: project.project, organization: project.organization, document_type, owner_email: owner?.emailAddress ?? null, owner_name: owner?.displayName ?? null };
+}
+
 async function logSync(sourceId: string, syncType: string, status: string, message: string, diagnostic: GoogleSyncDiagnostic | null = null) {
   await supabaseRequest<SourceSyncLog[]>('source_sync_logs', { method: 'POST', body: JSON.stringify({ source_id: sourceId, sync_type: syncType, status, message, endpoint: diagnostic?.endpoint ?? null, http_status: diagnostic?.httpStatus ?? null, error_code: diagnostic?.errorCode ?? null, missing_scope: diagnostic?.missingScope ?? null, raw_response: diagnostic?.rawResponse ?? null }) });
 }
@@ -307,11 +377,11 @@ export async function syncGmail(sourceId: string) {
     const list = await fetchGoogleJson<{ messages?: { id: string; threadId: string }[] }>('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=20&q=newer_than:30d', accessToken, 'gmail', 'Gmail list failed', grantedScopes);
     const rows = [];
     for (const message of list.messages ?? []) {
-      const item = await fetchGoogleJson<{ id: string; threadId: string; snippet?: string; internalDate?: string; payload?: { headers?: { name: string; value: string }[] } }>(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${message.id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date`, accessToken, 'gmail', 'Gmail message lookup failed', grantedScopes);
+      const item = await fetchGoogleJson<{ id: string; threadId: string; snippet?: string; internalDate?: string; labelIds?: string[]; payload?: { headers?: { name: string; value: string }[] } }>(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${message.id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date`, accessToken, 'gmail', 'Gmail message lookup failed', grantedScopes);
       const headers = Object.fromEntries((item.payload?.headers ?? []).map((header) => [header.name.toLowerCase(), header.value]));
       const from = parseGmailAddress(headers.from);
-      const classified = classifyEmail(headers.subject ?? '', item.snippet ?? '');
-      rows.push({ source_id: sourceId, google_message_id: item.id, thread_id: item.threadId, from_email: from.email, from_name: from.name, to_emails: headers.to ? headers.to.split(',').map((email) => email.trim()) : [], subject: headers.subject ?? '(No subject)', snippet: item.snippet ?? '', received_at: item.internalDate ? new Date(Number(item.internalDate)).toISOString() : null, project_id: null, ...classified, status: 'imported', metadata: { classification: 'local_lightweight' }, updated_at: new Date().toISOString() });
+      const classified = classifyEmail(headers.subject ?? '', item.snippet ?? '', item.labelIds ?? [], from.name, from.email);
+      rows.push({ source_id: sourceId, google_message_id: item.id, thread_id: item.threadId, from_email: from.email, from_name: from.name, to_emails: headers.to ? headers.to.split(',').map((email) => email.trim()) : [], subject: headers.subject ?? '(No subject)', snippet: item.snippet ?? '', received_at: item.internalDate ? new Date(Number(item.internalDate)).toISOString() : null, ...classified, status: 'imported', updated_at: new Date().toISOString() });
     }
     if (rows.length) await supabaseRequest('gmail_messages?on_conflict=source_id,google_message_id', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=representation' }, body: JSON.stringify(rows) });
     await ensureServiceConnection(sourceId, 'gmail', 'enabled', { last_sync_at: new Date().toISOString(), last_error: null });
@@ -350,14 +420,52 @@ export async function syncDrive(sourceId: string) {
     const grantedScopes = await getGrantedScopes(accessToken);
     const missingScopes = [...new Set([...missingScopesFor('docs', grantedScopes), ...missingScopesFor('sheets', grantedScopes)])];
     const q = "mimeType='application/vnd.google-apps.document' or mimeType='application/vnd.google-apps.spreadsheet'";
-    const params = new URLSearchParams({ pageSize: '20', orderBy: 'modifiedTime desc', fields: 'files(id,name,mimeType,webViewLink,modifiedTime)', q });
-    const data = await fetchGoogleJson<{ files?: { id: string; name: string; mimeType: string; webViewLink?: string; modifiedTime?: string }[] }>(`https://www.googleapis.com/drive/v3/files?${params}`, accessToken, 'docs', 'Drive sync failed', grantedScopes);
-    const docs = (data.files ?? []).filter((file) => file.mimeType === 'application/vnd.google-apps.document').map((file) => ({ source_id: sourceId, google_file_id: file.id, name: file.name, mime_type: file.mimeType, web_url: file.webViewLink ?? null, project_id: null, summary: null, status: 'imported', metadata: { modified_time: file.modifiedTime }, updated_at: new Date().toISOString() }));
-    const sheets = (data.files ?? []).filter((file) => file.mimeType === 'application/vnd.google-apps.spreadsheet').map((file) => ({ source_id: sourceId, google_file_id: file.id, name: file.name, web_url: file.webViewLink ?? null, project_id: null, summary: null, status: 'imported', metadata: { modified_time: file.modifiedTime, mime_type: file.mimeType }, updated_at: new Date().toISOString() }));
+    const params = new URLSearchParams({ pageSize: '20', orderBy: 'modifiedTime desc', fields: 'files(id,name,mimeType,webViewLink,modifiedTime,owners(displayName,emailAddress))', q });
+    const data = await fetchGoogleJson<{ files?: { id: string; name: string; mimeType: string; webViewLink?: string; modifiedTime?: string; owners?: { displayName?: string; emailAddress?: string }[] }[] }>(`https://www.googleapis.com/drive/v3/files?${params}`, accessToken, 'docs', 'Drive sync failed', grantedScopes);
+    const docs = (data.files ?? []).filter((file) => file.mimeType === 'application/vnd.google-apps.document').map((file) => ({ source_id: sourceId, google_file_id: file.id, name: file.name, mime_type: file.mimeType, web_url: file.webViewLink ?? null, ...classifyDriveFile(file.name, file.mimeType, file.owners ?? []), summary: null, status: 'imported', metadata: { classification: 'google_intelligence_v1', modified_time: file.modifiedTime, owners: file.owners ?? [] }, updated_at: new Date().toISOString() }));
+    const sheets = (data.files ?? []).filter((file) => file.mimeType === 'application/vnd.google-apps.spreadsheet').map((file) => ({ source_id: sourceId, google_file_id: file.id, name: file.name, web_url: file.webViewLink ?? null, ...classifyDriveFile(file.name, file.mimeType, file.owners ?? []), summary: null, status: 'imported', metadata: { classification: 'google_intelligence_v1', modified_time: file.modifiedTime, mime_type: file.mimeType, owners: file.owners ?? [] }, updated_at: new Date().toISOString() }));
     if (docs.length) await supabaseRequest('google_documents?on_conflict=source_id,google_file_id', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=representation' }, body: JSON.stringify(docs) });
     if (sheets.length) await supabaseRequest('google_sheets?on_conflict=source_id,google_file_id', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=representation' }, body: JSON.stringify(sheets) });
     const now = new Date().toISOString(); await Promise.all([ensureServiceConnection(sourceId, 'docs', missingScopes.length ? 'missing_scope' : 'enabled', { last_sync_at: now, last_error: null, granted_scopes: grantedScopes, missing_scopes: missingScopes }), ensureServiceConnection(sourceId, 'sheets', missingScopes.length ? 'missing_scope' : 'enabled', { last_sync_at: now, last_error: null, granted_scopes: grantedScopes, missing_scopes: missingScopes })]);
     await logSync(sourceId, 'drive', 'success', `${docs.length + sheets.length} Drive files imported.`);
     return { imported: docs.length + sheets.length };
   } catch (error) { const message = error instanceof Error ? error.message : 'Drive sync failed'; const diagnostic = diagnosticFromError(error); await Promise.all([ensureServiceConnection(sourceId, 'docs', diagnostic?.missingScope ? 'missing_scope' : 'error', { last_error: message, diagnostic, missing_scopes: diagnostic?.missingScope ? [diagnostic.missingScope] : undefined }), ensureServiceConnection(sourceId, 'sheets', diagnostic?.missingScope ? 'missing_scope' : 'error', { last_error: message, diagnostic, missing_scopes: diagnostic?.missingScope ? [diagnostic.missingScope] : undefined })]); await logSync(sourceId, 'drive', 'error', message, diagnostic); throw error; }
+}
+
+
+export async function listGoogleIntelligence() {
+  if (!supabaseConfig()) return { gmailSignals: [] as GmailSignal[], driveSignals: [] as DriveSignal[], contactCandidates: [] as ContactCandidate[] };
+  const accounts = await supabaseRequest<ConnectedSource[]>('connected_sources?provider=eq.google&select=id,provider,account_email,display_name,status,expires_at,created_at,updated_at&order=created_at.desc');
+  if (!accounts.length) return { gmailSignals: [], driveSignals: [], contactCandidates: [] };
+  const ids = accounts.map((account) => account.id).join(',');
+  const [gmailSignals, documents, sheets, events] = await Promise.all([
+    supabaseRequest<GmailSignal[]>(`gmail_messages?source_id=in.(${ids})&select=id,source_id,google_message_id,from_email,from_name,subject,snippet,received_at,project_id,contact_name,organization,intent,priority,needs_follow_up,is_unread,status,metadata&order=received_at.desc&limit=30`),
+    supabaseRequest<Omit<DriveSignal, 'workspace_type'>[]>(`google_documents?source_id=in.(${ids})&select=id,source_id,google_file_id,name,web_url,project_id,organization,document_type,owner_email,owner_name,updated_at,status,metadata&order=updated_at.desc&limit=20`),
+    supabaseRequest<Omit<DriveSignal, 'workspace_type'>[]>(`google_sheets?source_id=in.(${ids})&select=id,source_id,google_file_id,name,web_url,project_id,organization,document_type,owner_email,owner_name,updated_at,status,metadata&order=updated_at.desc&limit=20`),
+    supabaseRequest<{ id: string; title: string | null; start_at: string | null; project_id: string | null; attendees: unknown }[]>(`calendar_events?source_id=in.(${ids})&select=id,title,start_at,project_id,attendees&order=start_at.asc&limit=20`),
+  ]);
+  const driveSignals: DriveSignal[] = [
+    ...documents.map((item) => ({ ...item, workspace_type: 'doc' as const })),
+    ...sheets.map((item) => ({ ...item, workspace_type: 'sheet' as const })),
+  ].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+  const contacts = new Map<string, ContactCandidate>();
+  for (const message of gmailSignals) {
+    const key = message.from_email || message.from_name;
+    if (!key) continue;
+    contacts.set(`gmail-${key}`, { id: `gmail-${message.id}`, name: message.from_name || message.from_email || 'Unknown sender', email: message.from_email, organization: message.organization, source: 'Gmail sender', project: message.project_id, last_seen_at: message.received_at });
+  }
+  for (const doc of driveSignals) {
+    const key = doc.owner_email || doc.owner_name;
+    if (!key) continue;
+    contacts.set(`drive-${key}`, { id: `drive-${doc.id}`, name: doc.owner_name || doc.owner_email || 'Unknown owner', email: doc.owner_email, organization: doc.organization, source: `${doc.workspace_type === 'doc' ? 'Document' : 'Sheet'} owner`, project: doc.project_id, last_seen_at: doc.updated_at });
+  }
+  for (const event of events) {
+    const attendees = Array.isArray(event.attendees) ? event.attendees as { email?: string; displayName?: string; responseStatus?: string }[] : [];
+    for (const attendee of attendees) {
+      const key = attendee.email || attendee.displayName;
+      if (!key) continue;
+      contacts.set(`calendar-${key}`, { id: `calendar-${event.id}-${key}`, name: attendee.displayName || attendee.email || 'Unknown attendee', email: attendee.email ?? null, organization: null, source: 'Calendar attendee', project: event.project_id, last_seen_at: event.start_at });
+    }
+  }
+  return { gmailSignals, driveSignals, contactCandidates: [...contacts.values()].sort((a, b) => new Date(b.last_seen_at ?? 0).getTime() - new Date(a.last_seen_at ?? 0).getTime()) };
 }
