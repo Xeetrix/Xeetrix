@@ -94,7 +94,7 @@ async function executeConfirmedPlan(submittedPlan: Partial<ShaikhOsPlan> | undef
 
   const plan = normalizeSubmittedPlan(submittedPlan, projects);
 
-  if (plan.needs_clarification || plan.confidence < 0.65) {
+  if (plan.needs_clarification || plan.confidence < 0.7) {
     return NextResponse.json(
       {
         ok: false,
@@ -151,7 +151,7 @@ function normalizeSubmittedPlan(submittedPlan: Partial<ShaikhOsPlan>, projects: 
   const intent = submittedPlan.intent ?? fallback.intent;
   const mappedProject = mapProjectName(submittedPlan.project_name ?? fallback.project_name, projects, intent, submittedPlan.raw_command ?? '');
   const confidence = typeof submittedPlan.confidence === 'number' ? Math.max(0, Math.min(1, submittedPlan.confidence)) : fallback.confidence;
-  const needsClarification = Boolean(submittedPlan.needs_clarification) || confidence < 0.65;
+  const needsClarification = Boolean(submittedPlan.needs_clarification) || confidence < 0.7;
 
   return {
     ...fallback,

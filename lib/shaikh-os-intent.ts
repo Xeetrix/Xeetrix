@@ -30,6 +30,11 @@ export type ShaikhOsPlan = {
   title: string;
   summary: string;
   priority: OsPriority;
+  urgency: OsPriority;
+  importance: OsPriority;
+  topic: string | null;
+  symptoms: string[];
+  extracted_entities: Record<string, unknown>;
   due_date: string | null;
   reminder_at: string | null;
   amount: number | null;
@@ -97,7 +102,7 @@ export function fallbackParseIntent(command: string, projects: CommandProject[] 
   const amount = classification.amount ?? null;
   const direction = classification.direction === 'income' || classification.direction === 'expense' ? classification.direction : null;
   const confidence = clampConfidence(classification.confidence);
-  const needsClarification = confidence < 0.65 || intent === 'unknown' || isAmbiguousSchoolAdmission(command) || isAmbiguousPersonalDiscussion(command) || hasMissingCriticalField(intent, { amount, direction, category: inferFallbackCategory(command, intent, direction), command });
+  const needsClarification = confidence < 0.7 || intent === 'unknown' || isAmbiguousSchoolAdmission(command) || isAmbiguousPersonalDiscussion(command) || hasMissingCriticalField(intent, { amount, direction, category: inferFallbackCategory(command, intent, direction), command });
 
   return {
     intent,
@@ -106,6 +111,11 @@ export function fallbackParseIntent(command: string, projects: CommandProject[] 
     title: classification.title,
     summary: command,
     priority: classification.priority,
+    urgency: classification.priority,
+    importance: inferImportance(intent, command, classification.priority),
+    topic: inferTopic(command, intent),
+    symptoms: extractSymptoms(command),
+    extracted_entities: extractStructuredEntities(command, intent, { amount, direction, due_date: classification.due_date, priority: classification.priority }),
     due_date: classification.due_date,
     reminder_at: intent === 'reminder' ? classification.due_date : null,
     amount,
@@ -114,7 +124,7 @@ export function fallbackParseIntent(command: string, projects: CommandProject[] 
     needs_confirmation: !needsClarification,
     needs_clarification: needsClarification,
     clarification_question: needsClarification ? buildClarificationQuestion(command, intent) : null,
-    category: inferFallbackCategory(command, intent, direction),
+    category: normalizeCategory(undefined, intent),
     people: [],
     save_target: targetForIntent(intent),
     save_location_label: buildSaveLocationLabel(targetForIntent(intent), project.project_name, intent),
@@ -180,6 +190,12 @@ export function buildTaskPayload(plan: ShaikhOsPlan) {
       target: plan.save_target,
       save_location_label: plan.save_location_label,
       category: plan.category,
+      topic: plan.topic,
+      symptoms: plan.symptoms,
+      importance: plan.importance,
+      urgency: plan.urgency,
+      extracted_entities: plan.extracted_entities,
+      confidence_label: `Confidence: ${Math.round(plan.confidence * 100)}%`,
       people: plan.people,
       confidence: plan.confidence,
       needs_confirmation: plan.needs_confirmation,
@@ -210,6 +226,12 @@ export function buildNotePayload(plan: ShaikhOsPlan) {
       target: plan.save_target,
       save_location_label: plan.save_location_label,
       category: plan.category,
+      topic: plan.topic,
+      symptoms: plan.symptoms,
+      importance: plan.importance,
+      urgency: plan.urgency,
+      extracted_entities: plan.extracted_entities,
+      confidence_label: `Confidence: ${Math.round(plan.confidence * 100)}%`,
       people: plan.people,
       confidence: plan.confidence,
       needs_confirmation: plan.needs_confirmation,
@@ -240,7 +262,7 @@ Return strict JSON only. No markdown, no prose, no comments.
 Never execute or save directly. Your job is only to parse and propose a plan.
 If ambiguous, set needs_clarification true and ask exactly one helpful Bangla clarification_question.
 If clear, set needs_confirmation true and needs_clarification false.
-If confidence is below 0.65, set needs_clarification true.
+Separate category, topic, symptoms, importance, and urgency. Urgency means time/risk pressure only; importance means personal/business significance. Never mark anything high/urgent without explicit evidence. If confidence is below 0.70, set needs_clarification true.
 If critical fields are missing, ask clarification.
 Use Asia/Dhaka timezone for relative dates and times. Current server time: ${now.toISOString()}.
 Available live projects: ${projectNames}.
@@ -248,8 +270,10 @@ Allowed intents: task, reminder, note, idea, decision, meeting, health_log, fina
 Allowed project_name values: KNLTC, Islamic School, Xeetrix, Investment, Personal, General, null, or a matching live project name.
 Project reasoning guidance: health/mental/sleep/symptoms usually Personal; general personal spending usually Personal; KNLTC for lead/follow-up/client/visa/commission/marketing; Islamic School for admission/school/madrasa/teacher/student; Xeetrix for tech/AI/platform/software; Investment for investment/profit/loss. If unclear use null and ask clarification.
 Intent guidance: sleep/symptom/mood/weakness = health_log; money received/spent = finance_log; "korte hobe" work = task; lead follow-up can be task or follow_up, save_target tasks; ideas = idea; chosen focus/decision = decision; unclear references like "oi kajta" require clarification.
+Urgency rules: Health mild symptom = low, repeated symptom = medium, serious warning signs = high; Finance small expense = low, payment deadline = high; Operations meeting today = high, idea only = low.
+Health examples: itching + poor sleep without repeated/severe warning signs => category Health, symptoms [Itching, Poor Sleep], urgency low, suggested_action Monitor.
 Required JSON shape exactly:
-{"intent":"task | reminder | note | idea | decision | meeting | health_log | finance_log | contact | follow_up | unknown","title":"short Bangla title","summary":"short Bangla summary","project_name":"KNLTC | Islamic School | Xeetrix | Investment | Personal | General | null","category":"sleep | symptom | mental_health | income | expense | admission | marketing | lead_followup | etc | null","priority":"low | medium | high","due_date":"ISO date or null","reminder_at":"ISO date or null","amount":number or null,"direction":"income | expense | null","people":["..."],"confidence":0.0,"needs_clarification":boolean,"clarification_question":"Bangla question or null","needs_confirmation":boolean,"save_target":"tasks | notes","save_location_label":"Bangla label"}
+{"intent":"task | reminder | note | idea | decision | meeting | health_log | finance_log | contact | follow_up | unknown","title":"short Bangla title","summary":"short Bangla summary","project_name":"KNLTC | Islamic School | Xeetrix | Investment | Personal | General | null","category":"Health | Finance | Operations | Personal | Project | General | null","topic":"sleep | symptom | mental_health | income | expense | admission | marketing | lead_followup | etc | null","symptoms":["..."],"importance":"low | medium | high","urgency":"low | medium | high","priority":"low | medium | high","due_date":"ISO date or null","reminder_at":"ISO date or null","amount":number or null,"direction":"income | expense | null","people":["..."],"confidence":0.0,"extracted_entities":{"suggested_action":"Monitor | Ask confirmation | Act now | etc"},"needs_clarification":boolean,"clarification_question":"Bangla question or null","needs_confirmation":boolean,"save_target":"tasks | notes","save_location_label":"Bangla label"}
 Command: ${JSON.stringify(command)}`;
 }
 
@@ -275,12 +299,16 @@ function normalizePlan(raw: UnknownRecord, command: string, projects: CommandPro
   const mappedProject = mapProjectName(raw.project_name, projects, intent, command);
   const confidence = clampConfidence(asNumber(raw.confidence) ?? 0.5);
   const saveTarget = normalizeTarget(asText(raw.save_target) ?? asText(raw.target), intent);
-  const category = asText(raw.category) ?? inferFallbackCategory(command, intent, normalizeDirection(raw.direction));
+  const category = normalizeCategory(asText(raw.category), intent);
   const amount = asNumber(raw.amount);
   const direction = normalizeDirection(raw.direction);
   const people = Array.isArray(raw.people) ? raw.people.map(asText).filter((value): value is string => Boolean(value)) : [];
-  const missingCriticalField = hasMissingCriticalField(intent, { amount, direction, category, command });
-  const needsClarification = Boolean(raw.needs_clarification) || confidence < 0.65 || intent === 'unknown' || missingCriticalField;
+  const topic = asText(raw.topic) ?? inferFallbackCategory(command, intent, direction);
+  const urgency = applyUrgencyRules(command, intent, normalizePriority(asText(raw.urgency) ?? asText(raw.priority)), amount, direction);
+  const symptoms = Array.isArray(raw.symptoms) ? raw.symptoms.map(asText).filter((value): value is string => Boolean(value)) : extractSymptoms(command);
+  const extractedEntities = isRecord(raw.extracted_entities) ? raw.extracted_entities : extractStructuredEntities(command, intent, { amount, direction, due_date: asText(raw.due_date) ?? null, priority: urgency });
+  const missingCriticalField = hasMissingCriticalField(intent, { amount, direction, category: topic, command });
+  const needsClarification = Boolean(raw.needs_clarification) || confidence < 0.7 || intent === 'unknown' || missingCriticalField;
 
   return {
     intent,
@@ -289,7 +317,12 @@ function normalizePlan(raw: UnknownRecord, command: string, projects: CommandPro
     title: asText(raw.title) ?? command.trim(),
     summary: asText(raw.summary) ?? command.trim(),
     category,
-    priority: normalizePriority(asText(raw.priority)),
+    topic,
+    symptoms,
+    importance: asText(raw.importance) ? normalizePriority(asText(raw.importance)) : inferImportance(intent, command, urgency),
+    urgency,
+    extracted_entities: extractedEntities,
+    priority: urgency,
     due_date: asText(raw.due_date) ?? null,
     reminder_at: asText(raw.reminder_at) ?? null,
     amount,
@@ -309,6 +342,62 @@ function normalizePlan(raw: UnknownRecord, command: string, projects: CommandPro
   };
 }
 
+
+function normalizeCategory(category: string | undefined, intent: ShaikhOsIntent) {
+  if (intent === 'health_log') return 'Health';
+  if (intent === 'finance_log') return 'Finance';
+  if (TASK_INTENTS.has(intent) || intent === 'meeting') return 'Operations';
+  if (intent === 'idea' || intent === 'decision') return 'Project';
+  return category ?? 'General';
+}
+
+function applyUrgencyRules(command: string, intent: ShaikhOsIntent, proposed: OsPriority, amount: number | null, direction: ShaikhOsDirection): OsPriority {
+  const text = command.toLowerCase();
+  if (intent === 'health_log') {
+    if (includesAny(text, ['chest pain', 'বুকে ব্যথা', 'শ্বাসকষ্ট', 'bleeding', 'রক্ত', 'অজ্ঞান', 'severe', 'high fever', '103', '১০৩'])) return 'high';
+    if (includesAny(text, ['বারবার', 'প্রতিদিন', 'কয়েকদিন', 'কয়েকদিন', 'repeated', 'again', 'দিন ধরে'])) return 'medium';
+    return 'low';
+  }
+  if (intent === 'finance_log') {
+    if (includesAny(text, ['deadline', 'due', 'last date', 'শেষ তারিখ', 'আজকে দিতে হবে', 'আজ দিতে হবে'])) return 'high';
+    if (direction === 'expense' && amount !== null && amount <= 5000) return 'low';
+  }
+  if (intent === 'idea') return 'low';
+  if (intent === 'meeting' && includesAny(text, ['আজকে', 'আজ', 'today'])) return 'high';
+  return proposed;
+}
+
+function inferTopic(command: string, intent: ShaikhOsIntent) {
+  return inferFallbackCategory(command, intent, null);
+}
+
+function inferImportance(intent: ShaikhOsIntent, command: string, urgency: OsPriority): OsPriority {
+  if (urgency === 'high') return 'high';
+  if (intent === 'health_log' || intent === 'finance_log') return 'medium';
+  if (intent === 'idea') return 'low';
+  return includesAny(command.toLowerCase(), ['important', 'গুরুত্বপূর্ণ']) ? 'high' : 'medium';
+}
+
+function extractSymptoms(command: string) {
+  const text = command.toLowerCase();
+  const symptoms: string[] = [];
+  if (includesAny(text, ['চুলক', 'chulk', 'itch'])) symptoms.push('Itching');
+  if (includesAny(text, ['ঘুম', 'ghum', 'sleep']) && includesAny(text, ['ভালো হয়নি', 'valo hoyni', 'হয়নি', 'hoyni', 'poor'])) symptoms.push('Poor Sleep');
+  if (includesAny(text, ['মাথা', 'headache'])) symptoms.push('Headache');
+  if (includesAny(text, ['জ্বর', 'fever'])) symptoms.push('Fever');
+  return symptoms;
+}
+
+function extractStructuredEntities(command: string, intent: ShaikhOsIntent, values: { amount: number | null; direction: ShaikhOsDirection; due_date: string | null; priority: OsPriority }) {
+  return {
+    amount: values.amount,
+    direction: values.direction,
+    due_date: values.due_date,
+    symptoms: extractSymptoms(command),
+    suggested_action: intent === 'health_log' && values.priority !== 'high' ? 'Monitor' : values.priority === 'high' ? 'Act now' : 'Save for reference',
+  };
+}
+
 function targetForIntent(intent: ShaikhOsIntent): ShaikhOsTarget {
   if (TASK_INTENTS.has(intent)) return 'tasks';
 
@@ -324,7 +413,7 @@ function normalizeTarget(target: string | undefined, intent: ShaikhOsIntent): Sh
 function inferProjectName(projectName: string, intent: ShaikhOsIntent, command: string) {
   const text = `${projectName} ${command}`.toLowerCase();
   if (intent === 'health_log') return 'Personal';
-  if (includesAny(text, ['health', 'sleep', 'ghum', 'durbol', 'মাথা', 'ব্যথা', 'শরীর', 'টাকা দিলাম', 'খরচ', 'personal', 'আব্বু', 'mon ta valo nei'])) return 'Personal';
+  if (includesAny(text, ['health', 'sleep', 'ghum', 'durbol', 'chulk', 'itch', 'মাথা', 'ব্যথা', 'শরীর', 'চুলক', 'টাকা দিলাম', 'খরচ', 'personal', 'আব্বু', 'mon ta valo nei'])) return 'Personal';
   if (includesAny(text, ['knltc', 'lead', 'visa', 'marketing', 'client', 'japan'])) return 'KNLTC';
   if (includesAny(text, ['school', 'admission', 'teacher', 'student', 'স্কুল', 'ভর্তি', 'শিক্ষক', 'শিক্ষার্থী', 'মাদরাসা', 'মাদ্রাসা'])) return 'Islamic School';
   if (includesAny(text, ['xeetrix', 'tech', 'ai', 'platform', 'software', 'api', 'agent'])) return 'Xeetrix';
