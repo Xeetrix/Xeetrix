@@ -22,8 +22,8 @@ type CommandRequest = {
 type UnknownRecord = Record<string, unknown>;
 type SaveTarget = 'tasks' | 'notes' | 'health_logs' | 'finance_logs' | 'none';
 
-const taskLikeIntents = new Set(['task', 'meeting', 'reminder']);
-const noteLikeIntents = new Set(['note', 'idea', 'decision', 'health_log', 'finance_log']);
+const taskLikeIntents = new Set(['task', 'meeting', 'reminder', 'follow_up']);
+const noteLikeIntents = new Set(['note', 'idea', 'decision', 'health_log', 'finance_log', 'contact']);
 
 export async function POST(request: Request) {
   try {
@@ -94,7 +94,7 @@ async function executeConfirmedPlan(submittedPlan: Partial<ShaikhOsPlan> | undef
 
   const plan = normalizeSubmittedPlan(submittedPlan, projects);
 
-  if (plan.needs_clarification || plan.confidence < 0.6) {
+  if (plan.needs_clarification || plan.confidence < 0.65) {
     return NextResponse.json(
       {
         ok: false,
@@ -134,7 +134,7 @@ async function executeConfirmedPlan(submittedPlan: Partial<ShaikhOsPlan> | undef
 
 function buildSavedMessage(plan: ShaikhOsPlan, target: SaveTarget) {
   const visibleArea = getVisibleArea(plan, target);
-  return `এটি ${visibleArea}-তে সংরক্ষণ হয়েছে। Dashboard ও briefing refresh করা হয়েছে।`;
+  return `সংরক্ষণ সম্পন্ন হয়েছে: ${plan.save_location_label || visibleArea}`;
 }
 
 function getVisibleArea(plan: ShaikhOsPlan, target: SaveTarget) {
@@ -151,7 +151,7 @@ function normalizeSubmittedPlan(submittedPlan: Partial<ShaikhOsPlan>, projects: 
   const intent = submittedPlan.intent ?? fallback.intent;
   const mappedProject = mapProjectName(submittedPlan.project_name ?? fallback.project_name, projects, intent, submittedPlan.raw_command ?? '');
   const confidence = typeof submittedPlan.confidence === 'number' ? Math.max(0, Math.min(1, submittedPlan.confidence)) : fallback.confidence;
-  const needsClarification = Boolean(submittedPlan.needs_clarification) || confidence < 0.6;
+  const needsClarification = Boolean(submittedPlan.needs_clarification) || confidence < 0.65;
 
   return {
     ...fallback,
@@ -170,6 +170,8 @@ function normalizeSubmittedPlan(submittedPlan: Partial<ShaikhOsPlan>, projects: 
     needs_confirmation: true,
     needs_clarification: needsClarification,
     clarification_question: needsClarification ? submittedPlan.clarification_question ?? fallback.clarification_question : null,
+    save_target: getTargetForIntent(intent),
+    save_location_label: submittedPlan.save_location_label ?? fallback.save_location_label,
     target: getTargetForIntent(intent),
     raw_command: rawCommand,
     parser: submittedPlan.parser ?? fallback.parser,
@@ -179,10 +181,8 @@ function normalizeSubmittedPlan(submittedPlan: Partial<ShaikhOsPlan>, projects: 
 
 function getTargetForIntent(intent: ShaikhOsPlan['intent']): ShaikhOsPlan['target'] {
   if (taskLikeIntents.has(intent)) return 'tasks';
-  if (intent === 'health_log') return 'health_logs';
-  if (intent === 'finance_log') return 'finance_logs';
   if (noteLikeIntents.has(intent)) return 'notes';
-  return 'inbox_items';
+  return 'notes';
 }
 
 async function saveCommandLog(plan: ShaikhOsPlan) {
@@ -196,7 +196,7 @@ async function saveCommandLog(plan: ShaikhOsPlan) {
     executed_at: new Date().toISOString(),
     metadata: {
       parser: plan.parser,
-      target: plan.target,
+      target: plan.save_target,
       original_plan: plan,
       visibility: 'Memory Center / Timeline',
     },
@@ -208,16 +208,6 @@ async function savePlan(plan: ShaikhOsPlan) {
 
   if (taskLikeIntents.has(plan.intent)) {
     return saveToMemory('/memory/tasks', 'tasks', buildTaskPayload(plan));
-  }
-
-  if (plan.intent === 'health_log') {
-    const result = await saveToMemory('/memory/health_logs', 'health_logs', buildNotePayload(plan));
-    return result.ok ? result : saveToMemory('/memory/notes', 'notes', buildNotePayload(plan));
-  }
-
-  if (plan.intent === 'finance_log') {
-    const result = await saveToMemory('/memory/finance_logs', 'finance_logs', buildNotePayload(plan));
-    return result.ok ? result : saveToMemory('/memory/notes', 'notes', buildNotePayload(plan));
   }
 
   if (noteLikeIntents.has(plan.intent)) {

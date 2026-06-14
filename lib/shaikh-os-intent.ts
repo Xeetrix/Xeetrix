@@ -8,8 +8,19 @@ import {
   type OsPriority,
 } from './shaikh-os-command';
 
-export type ShaikhOsTarget = 'tasks' | 'notes' | 'health_logs' | 'finance_logs' | 'reminders' | 'events' | 'inbox_items';
-export type ShaikhOsIntent = OsItemType;
+export type ShaikhOsTarget = 'tasks' | 'notes';
+export type ShaikhOsIntent =
+  | 'task'
+  | 'reminder'
+  | 'note'
+  | 'idea'
+  | 'decision'
+  | 'meeting'
+  | 'health_log'
+  | 'finance_log'
+  | 'contact'
+  | 'follow_up'
+  | 'unknown';
 export type ShaikhOsDirection = Exclude<FinanceDirection, 'unknown'> | null;
 
 export type ShaikhOsPlan = {
@@ -23,10 +34,14 @@ export type ShaikhOsPlan = {
   reminder_at: string | null;
   amount: number | null;
   direction: ShaikhOsDirection;
+  category: string | null;
+  people: string[];
   confidence: number;
   needs_confirmation: boolean;
   needs_clarification: boolean;
   clarification_question: string | null;
+  save_target: ShaikhOsTarget;
+  save_location_label: string;
   target: ShaikhOsTarget;
   raw_command: string;
   parser: 'llm' | 'fallback';
@@ -40,12 +55,12 @@ export type IntentParserConfig = {
 
 type UnknownRecord = Record<string, unknown>;
 
-const INTENTS: ShaikhOsIntent[] = ['task', 'note', 'idea', 'meeting', 'reminder', 'health_log', 'finance_log', 'decision', 'unknown'];
-const TARGETS: ShaikhOsTarget[] = ['tasks', 'notes', 'health_logs', 'finance_logs', 'reminders', 'events', 'inbox_items'];
+const INTENTS: ShaikhOsIntent[] = ['task', 'reminder', 'note', 'idea', 'decision', 'meeting', 'health_log', 'finance_log', 'contact', 'follow_up', 'unknown'];
+const TARGETS: ShaikhOsTarget[] = ['tasks', 'notes'];
 const PRIORITIES: OsPriority[] = ['low', 'medium', 'high'];
 const PROJECT_FALLBACKS = ['KNLTC', 'Islamic School', 'Xeetrix', 'Investment', 'Personal', 'General'];
-const TASK_INTENTS = new Set<ShaikhOsIntent>(['task', 'meeting', 'reminder']);
-const NOTE_INTENTS = new Set<ShaikhOsIntent>(['note', 'idea', 'decision', 'health_log', 'finance_log']);
+const TASK_INTENTS = new Set<ShaikhOsIntent>(['task', 'meeting', 'reminder', 'follow_up']);
+const NOTE_INTENTS = new Set<ShaikhOsIntent>(['note', 'idea', 'decision', 'health_log', 'finance_log', 'contact']);
 
 export async function parseIntentWithLLM(command: string, projects: CommandProject[], config: IntentParserConfig): Promise<ShaikhOsPlan> {
   const response = await fetch(new URL('/chat', config.apiUrl), {
@@ -67,9 +82,9 @@ export async function parseIntentWithLLM(command: string, projects: CommandProje
   }
 
   const reply = asText(data?.reply) ?? asText(data?.message) ?? '';
-  const parsed = safeJsonParse(reply);
+  const parsed = safeJsonParse(reply) ?? await repairInvalidJson(reply, command, projects, config);
   if (!parsed) {
-    throw new Error('Shaikh Agent JSON parsing failed.');
+    throw new Error('Shaikh Agent JSON parsing failed after repair.');
   }
 
   return normalizePlan(parsed, command, projects, 'llm');
@@ -82,7 +97,7 @@ export function fallbackParseIntent(command: string, projects: CommandProject[] 
   const amount = classification.amount ?? null;
   const direction = classification.direction === 'income' || classification.direction === 'expense' ? classification.direction : null;
   const confidence = clampConfidence(classification.confidence);
-  const needsClarification = confidence < 0.6 || intent === 'unknown' || isAmbiguousSchoolAdmission(command);
+  const needsClarification = confidence < 0.65 || intent === 'unknown' || isAmbiguousSchoolAdmission(command) || isAmbiguousPersonalDiscussion(command) || hasMissingCriticalField(intent, { amount, direction, category: inferFallbackCategory(command, intent, direction), command });
 
   return {
     intent,
@@ -99,6 +114,10 @@ export function fallbackParseIntent(command: string, projects: CommandProject[] 
     needs_confirmation: !needsClarification,
     needs_clarification: needsClarification,
     clarification_question: needsClarification ? buildClarificationQuestion(command, intent) : null,
+    category: inferFallbackCategory(command, intent, direction),
+    people: [],
+    save_target: targetForIntent(intent),
+    save_location_label: buildSaveLocationLabel(targetForIntent(intent), project.project_name, intent),
     target: targetForIntent(intent),
     raw_command: command.trim(),
     parser: 'fallback',
@@ -158,7 +177,11 @@ export function buildTaskPayload(plan: ShaikhOsPlan) {
       parser: plan.parser,
       intent: plan.intent,
       summary: plan.summary,
-      target: plan.target,
+      target: plan.save_target,
+      save_location_label: plan.save_location_label,
+      category: plan.category,
+      people: plan.people,
+      confidence: plan.confidence,
       needs_confirmation: plan.needs_confirmation,
       original_plan: plan,
     },
@@ -184,8 +207,13 @@ export function buildNotePayload(plan: ShaikhOsPlan) {
       parser: plan.parser,
       intent: plan.intent,
       summary: plan.summary,
-      target: plan.target,
+      target: plan.save_target,
+      save_location_label: plan.save_location_label,
+      category: plan.category,
+      people: plan.people,
+      confidence: plan.confidence,
       needs_confirmation: plan.needs_confirmation,
+      note_type: plan.intent,
       fallback_reason: NOTE_INTENTS.has(plan.intent) && plan.target !== 'notes' ? `${plan.target} route is not enabled; saved as note.` : null,
       original_plan: plan,
     },
@@ -199,32 +227,46 @@ export function formatBanglaPlanSummary(plan: ShaikhOsPlan) {
 
   const intentLabel = banglaIntentLabel(plan.intent);
   const dueText = plan.due_date ? ` ${formatBanglaDueDate(plan.due_date)} সময়ে` : '';
-  const targetText = plan.target === 'tasks' ? 'কাজ/মিটিং' : 'নোট';
-  return `আমি বুঝেছি:${dueText} ${plan.project_name} প্রকল্পে “${plan.title}” ${targetText} হিসেবে যোগ করব। নিশ্চিত করবেন? (${intentLabel})`;
+  const targetText = plan.save_location_label || (plan.save_target === 'tasks' ? 'কাজ' : 'নোট');
+  return `আমি যা বুঝেছি:${dueText} ${plan.project_name} প্রকল্পে “${plan.title}” ${targetText}-এ সংরক্ষণ করব। নিশ্চিত করবেন? (${intentLabel})`;
 }
 
 function buildParserPrompt(command: string, projects: CommandProject[], now: Date) {
   const projectNames = projects.map((project) => project.name).filter(Boolean).join(', ') || PROJECT_FALLBACKS.join(', ');
-  return `You are Shaikh OS Intent Parser.
-Understand Bangla, Banglish, and English.
-Return strict JSON only. Do not include markdown. Do not include explanation outside JSON.
-Never execute directly.
-If unclear, set needs_clarification true and include one Bangla clarification_question.
-If clear, set needs_confirmation true before execution.
-If confidence is below 0.6, set needs_clarification true.
-Infer project, intent, due_date, reminder_at, priority, amount, direction, title, summary, and target.
-Use Asia/Dhaka timezone for all relative dates and times.
-Current server time: ${now.toISOString()}.
+  return `You are Shaikh OS Intent Parser v3.
+Understand Bangla, Banglish, English, mixed informal language, emotional language, and incomplete sentences.
+Use contextual LLM reasoning as the primary method. Do not depend on keyword matching only.
+Return strict JSON only. No markdown, no prose, no comments.
+Never execute or save directly. Your job is only to parse and propose a plan.
+If ambiguous, set needs_clarification true and ask exactly one helpful Bangla clarification_question.
+If clear, set needs_confirmation true and needs_clarification false.
+If confidence is below 0.65, set needs_clarification true.
+If critical fields are missing, ask clarification.
+Use Asia/Dhaka timezone for relative dates and times. Current server time: ${now.toISOString()}.
 Available live projects: ${projectNames}.
-Allowed intents: task, note, idea, meeting, reminder, health_log, finance_log, decision, unknown.
-Allowed project_name values: KNLTC, Islamic School, Xeetrix, Investment, Personal, General, or a matching live project name.
-Project inference rules: Personal for health/finance/personal; KNLTC for lead/visa/marketing/client; Islamic School for school/admission/teacher/student; Xeetrix for tech/AI/platform/software; otherwise General.
-Allowed priority values: low, medium, high.
-Allowed target values: tasks, notes, health_logs, finance_logs, reminders, events, inbox_items.
-For health_log or finance_log, prefer project_name Personal. If a specific backend route exists, save to that route; otherwise the command log preserves the original command.
-Return this JSON shape exactly:
-{"intent":"task | note | idea | meeting | reminder | health_log | finance_log | decision | unknown","project_name":"KNLTC | Islamic School | Xeetrix | Investment | Personal | General","title":"short title","summary":"short summary","priority":"low | medium | high","due_date":"ISO datetime with +06:00 or null","reminder_at":"ISO datetime with +06:00 or null","amount":number or null,"direction":"income | expense | null","confidence":0.0,"needs_confirmation":true,"needs_clarification":false,"clarification_question":null,"target":"tasks | notes | health_logs | finance_logs | reminders | events | inbox_items"}
+Allowed intents: task, reminder, note, idea, decision, meeting, health_log, finance_log, contact, follow_up, unknown.
+Allowed project_name values: KNLTC, Islamic School, Xeetrix, Investment, Personal, General, null, or a matching live project name.
+Project reasoning guidance: health/mental/sleep/symptoms usually Personal; general personal spending usually Personal; KNLTC for lead/follow-up/client/visa/commission/marketing; Islamic School for admission/school/madrasa/teacher/student; Xeetrix for tech/AI/platform/software; Investment for investment/profit/loss. If unclear use null and ask clarification.
+Intent guidance: sleep/symptom/mood/weakness = health_log; money received/spent = finance_log; "korte hobe" work = task; lead follow-up can be task or follow_up, save_target tasks; ideas = idea; chosen focus/decision = decision; unclear references like "oi kajta" require clarification.
+Required JSON shape exactly:
+{"intent":"task | reminder | note | idea | decision | meeting | health_log | finance_log | contact | follow_up | unknown","title":"short Bangla title","summary":"short Bangla summary","project_name":"KNLTC | Islamic School | Xeetrix | Investment | Personal | General | null","category":"sleep | symptom | mental_health | income | expense | admission | marketing | lead_followup | etc | null","priority":"low | medium | high","due_date":"ISO date or null","reminder_at":"ISO date or null","amount":number or null,"direction":"income | expense | null","people":["..."],"confidence":0.0,"needs_clarification":boolean,"clarification_question":"Bangla question or null","needs_confirmation":boolean,"save_target":"tasks | notes","save_location_label":"Bangla label"}
 Command: ${JSON.stringify(command)}`;
+}
+
+async function repairInvalidJson(reply: string, command: string, projects: CommandProject[], config: IntentParserConfig): Promise<UnknownRecord | null> {
+  const response = await fetch(new URL('/chat', config.apiUrl), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-agent-key': config.apiSecret },
+    body: JSON.stringify({
+      taskType: 'primary',
+      message: `You are Shaikh OS Intent Parser JSON repairer. Return strict valid JSON only matching the required Shaikh OS parser shape. Do not add markdown. Original command: ${JSON.stringify(command)}. Available projects: ${projects.map((p) => p.name).join(', ')}. Broken response: ${JSON.stringify(reply)}`,
+    }),
+    cache: 'no-store',
+  });
+  if (!response.ok) return null;
+  const data = await response.json().catch(() => null) as UnknownRecord | null;
+  const repaired = asText(data?.reply) ?? asText(data?.message) ?? '';
+  return safeJsonParse(repaired);
 }
 
 function normalizePlan(raw: UnknownRecord, command: string, projects: CommandProject[], parser: ShaikhOsPlan['parser']): ShaikhOsPlan {
@@ -232,8 +274,13 @@ function normalizePlan(raw: UnknownRecord, command: string, projects: CommandPro
   const intent = INTENTS.includes(rawIntent as ShaikhOsIntent) ? rawIntent as ShaikhOsIntent : 'unknown';
   const mappedProject = mapProjectName(raw.project_name, projects, intent, command);
   const confidence = clampConfidence(asNumber(raw.confidence) ?? 0.5);
-  const needsClarification = Boolean(raw.needs_clarification) || confidence < 0.6 || intent === 'unknown' || isAmbiguousSchoolAdmission(command);
-  const target = normalizeTarget(asText(raw.target), intent);
+  const saveTarget = normalizeTarget(asText(raw.save_target) ?? asText(raw.target), intent);
+  const category = asText(raw.category) ?? inferFallbackCategory(command, intent, normalizeDirection(raw.direction));
+  const amount = asNumber(raw.amount);
+  const direction = normalizeDirection(raw.direction);
+  const people = Array.isArray(raw.people) ? raw.people.map(asText).filter((value): value is string => Boolean(value)) : [];
+  const missingCriticalField = hasMissingCriticalField(intent, { amount, direction, category, command });
+  const needsClarification = Boolean(raw.needs_clarification) || confidence < 0.65 || intent === 'unknown' || missingCriticalField;
 
   return {
     intent,
@@ -241,18 +288,22 @@ function normalizePlan(raw: UnknownRecord, command: string, projects: CommandPro
     project_id: mappedProject.project_id,
     title: asText(raw.title) ?? command.trim(),
     summary: asText(raw.summary) ?? command.trim(),
+    category,
     priority: normalizePriority(asText(raw.priority)),
     due_date: asText(raw.due_date) ?? null,
     reminder_at: asText(raw.reminder_at) ?? null,
-    amount: asNumber(raw.amount),
-    direction: normalizeDirection(raw.direction),
+    amount,
+    direction,
+    people,
     confidence,
     needs_confirmation: !needsClarification && raw.needs_confirmation !== false,
     needs_clarification: needsClarification,
     clarification_question: needsClarification
       ? asText(raw.clarification_question) ?? buildClarificationQuestion(command, intent)
       : null,
-    target,
+    save_target: saveTarget,
+    save_location_label: asText(raw.save_location_label) ?? buildSaveLocationLabel(saveTarget, mappedProject.project_name, intent),
+    target: saveTarget,
     raw_command: command.trim(),
     parser,
   };
@@ -260,27 +311,20 @@ function normalizePlan(raw: UnknownRecord, command: string, projects: CommandPro
 
 function targetForIntent(intent: ShaikhOsIntent): ShaikhOsTarget {
   if (TASK_INTENTS.has(intent)) return 'tasks';
-  if (intent === 'health_log') return 'health_logs';
-  if (intent === 'finance_log') return 'finance_logs';
+
   if (NOTE_INTENTS.has(intent)) return 'notes';
-  return 'inbox_items';
+  return 'notes';
 }
 
 function normalizeTarget(target: string | undefined, intent: ShaikhOsIntent): ShaikhOsTarget {
-  if (target && TARGETS.includes(target as ShaikhOsTarget)) {
-    if (intent === 'health_log') return 'health_logs';
-    if (intent === 'finance_log') return 'finance_logs';
-    if (TASK_INTENTS.has(intent)) return 'tasks';
-    if (NOTE_INTENTS.has(intent)) return 'notes';
-    return target as ShaikhOsTarget;
-  }
+  if (target && TARGETS.includes(target as ShaikhOsTarget)) return target as ShaikhOsTarget;
   return targetForIntent(intent);
 }
 
 function inferProjectName(projectName: string, intent: ShaikhOsIntent, command: string) {
   const text = `${projectName} ${command}`.toLowerCase();
-  if (intent === 'health_log' || intent === 'finance_log') return 'Personal';
-  if (includesAny(text, ['health', 'sleep', 'মাথা', 'ব্যথা', 'শরীর', 'টাকা দিলাম', 'খরচ', 'personal', 'আব্বু'])) return 'Personal';
+  if (intent === 'health_log') return 'Personal';
+  if (includesAny(text, ['health', 'sleep', 'ghum', 'durbol', 'মাথা', 'ব্যথা', 'শরীর', 'টাকা দিলাম', 'খরচ', 'personal', 'আব্বু', 'mon ta valo nei'])) return 'Personal';
   if (includesAny(text, ['knltc', 'lead', 'visa', 'marketing', 'client', 'japan'])) return 'KNLTC';
   if (includesAny(text, ['school', 'admission', 'teacher', 'student', 'স্কুল', 'ভর্তি', 'শিক্ষক', 'শিক্ষার্থী', 'মাদরাসা', 'মাদ্রাসা'])) return 'Islamic School';
   if (includesAny(text, ['xeetrix', 'tech', 'ai', 'platform', 'software', 'api', 'agent'])) return 'Xeetrix';
@@ -292,10 +336,46 @@ function buildClarificationQuestion(command: string, intent: ShaikhOsIntent) {
   if (isAmbiguousSchoolAdmission(command)) {
     return 'এটা কি task হিসেবে যোগ করব, নাকি admission improvement plan/idea হিসেবে সংরক্ষণ করব?';
   }
+  if (isAmbiguousPersonalDiscussion(command)) {
+    return 'এটা Personal note, KNLTC discussion, নাকি অন্য কোনো প্রসঙ্গ?';
+  }
+  if (/oi kajta|ওই কাজটা|ঐ কাজটা/i.test(command)) {
+    return 'কোন কাজটার কথা বলছেন?';
+  }
   if (intent === 'unknown') {
     return 'নির্দেশনাটি পরিষ্কার নয়—এটা কি কাজ, নোট, ধারণা, মিটিং, রিমাইন্ডার, স্বাস্থ্য লগ, অর্থ লগ, নাকি সিদ্ধান্ত হিসেবে যোগ করব?';
   }
   return 'আরও একটু পরিষ্কার করবেন—এটা কীভাবে সংরক্ষণ করব?';
+}
+
+function hasMissingCriticalField(intent: ShaikhOsIntent, values: { amount: number | null; direction: ShaikhOsDirection; category: string | null; command: string }) {
+  if (intent === 'finance_log') return values.amount === null || values.direction === null;
+  if (intent === 'health_log') return values.category === null;
+  if (['task', 'follow_up'].includes(intent) && /oi kajta|ওই কাজটা|ঐ কাজটা/i.test(values.command)) return true;
+  return false;
+}
+
+function inferFallbackCategory(command: string, intent: ShaikhOsIntent, direction: ShaikhOsDirection) {
+  const text = command.toLowerCase();
+  if (intent === 'finance_log') return direction ?? (text.includes('commission') || text.includes('pelam') || text.includes('পেলাম') ? 'income' : 'expense');
+  if (intent === 'health_log' && /ghum|ঘুম|sleep/.test(text)) return 'sleep';
+  if (intent === 'health_log' && /mon|মন|mental|stress/.test(text)) return 'mental_health';
+  if (intent === 'health_log') return 'symptom';
+  if (intent === 'follow_up' || /lead|follow/.test(text)) return 'lead_followup';
+  if (/admission|ভর্তি/.test(text)) return 'admission';
+  if (/marketing/.test(text)) return 'marketing';
+  return null;
+}
+
+function buildSaveLocationLabel(target: ShaikhOsTarget, projectName: string, intent: ShaikhOsIntent) {
+  const place = target === 'tasks' ? 'Tasks' : 'Notes';
+  const type = banglaIntentLabel(intent);
+  return `${projectName} → ${place} (${type})`;
+}
+
+function isAmbiguousPersonalDiscussion(command: string) {
+  const normalized = command.toLowerCase();
+  return (normalized.includes('abbur') || normalized.includes('আব্বু')) && (normalized.includes('kotha') || normalized.includes('কথা')) && !includesAny(normalized, ['knltc', 'business', 'marketing', 'lead', 'client']);
 }
 
 function isAmbiguousSchoolAdmission(command: string) {
@@ -305,7 +385,7 @@ function isAmbiguousSchoolAdmission(command: string) {
 
 function planToClassification(plan: ShaikhOsPlan) {
   return {
-    item_type: plan.intent,
+    item_type: toFallbackItemType(plan.intent),
     project_name: plan.project_name,
     project_id: plan.project_id,
     priority: plan.priority,
@@ -317,6 +397,12 @@ function planToClassification(plan: ShaikhOsPlan) {
     ...(plan.amount === null ? {} : { amount: plan.amount }),
     ...(plan.direction === null ? {} : { direction: plan.direction }),
   };
+}
+
+function toFallbackItemType(intent: ShaikhOsIntent): OsItemType {
+  if (intent === 'contact') return 'note';
+  if (intent === 'follow_up') return 'task';
+  return intent as OsItemType;
 }
 
 function findProject(projects: CommandProject[], name: string) {
@@ -349,6 +435,8 @@ function banglaIntentLabel(intent: ShaikhOsIntent) {
     reminder: 'রিমাইন্ডার',
     health_log: 'স্বাস্থ্য লগ',
     finance_log: 'অর্থ লগ',
+    contact: 'কন্টাক্ট',
+    follow_up: 'ফলো-আপ',
     decision: 'সিদ্ধান্ত',
     unknown: 'পরিষ্কার নয়',
   };
