@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import styles from './page.module.css';
 
 type Plan = {
-  intent: 'task' | 'note' | 'idea' | 'meeting' | 'reminder' | 'health_log' | 'finance_log' | 'decision' | 'unknown';
+  intent: 'task' | 'reminder' | 'note' | 'idea' | 'decision' | 'meeting' | 'health_log' | 'finance_log' | 'contact' | 'follow_up' | 'unknown';
   project_name: string;
   project_id: string | null;
   title: string;
@@ -15,11 +15,15 @@ type Plan = {
   reminder_at: string | null;
   amount: number | null;
   direction: 'income' | 'expense' | null;
+  category: string | null;
+  people: string[];
   confidence: number;
   needs_confirmation: boolean;
   needs_clarification: boolean;
   clarification_question: string | null;
-  target: 'tasks' | 'notes' | 'health_logs' | 'finance_logs' | 'reminders' | 'events' | 'inbox_items';
+  save_target: 'tasks' | 'notes';
+  save_location_label: string;
+  target: 'tasks' | 'notes';
   raw_command: string;
   parser?: 'llm' | 'fallback';
 };
@@ -32,6 +36,8 @@ const intentLabels: Record<Plan['intent'], string> = {
   reminder: 'রিমাইন্ডার',
   health_log: 'স্বাস্থ্য লগ',
   finance_log: 'অর্থ লগ',
+  contact: 'কন্টাক্ট',
+  follow_up: 'ফলো-আপ',
   decision: 'সিদ্ধান্ত',
   unknown: 'পরিষ্কার নয়',
 };
@@ -39,11 +45,6 @@ const intentLabels: Record<Plan['intent'], string> = {
 const targetLabels: Record<Plan['target'], string> = {
   tasks: 'কাজ',
   notes: 'নোট',
-  health_logs: 'স্বাস্থ্য লগ',
-  finance_logs: 'অর্থ লগ',
-  reminders: 'রিমাইন্ডার',
-  events: 'ইভেন্ট',
-  inbox_items: 'ইনবক্স',
 };
 
 const priorityLabels: Record<Plan['priority'], string> = {
@@ -194,10 +195,14 @@ export default function CommandForm() {
         <div className={styles.confirmationCard} role="region" aria-label="নিশ্চিত করুন">
           <div>
             <span>{intentLabels[plan.intent]}</span>
-            <h3>নিশ্চিত করুন</h3>
-            <p>আমি বুঝেছি: “{plan.title}” যোগ করব। নিশ্চিত করবেন?</p>
+            <h3>আমি যা বুঝেছি</h3>
+            <p>নিশ্চিত করলে তবেই সংরক্ষণ হবে: “{plan.title}”।</p>
           </div>
           <dl>
+            <div>
+              <dt>ধরন</dt>
+              <dd>{intentLabels[plan.intent]}</dd>
+            </div>
             <div>
               <dt>প্রকল্প</dt>
               <dd>{plan.project_name}</dd>
@@ -206,10 +211,16 @@ export default function CommandForm() {
               <dt>শিরোনাম</dt>
               <dd>{plan.title}</dd>
             </div>
-            {plan.due_date ? (
+            {(plan.due_date || plan.reminder_at) ? (
               <div>
                 <dt>সময়</dt>
-                <dd>{formatDate(plan.due_date)}</dd>
+                <dd>{formatDate(plan.due_date ?? plan.reminder_at ?? '')}</dd>
+              </div>
+            ) : null}
+            {plan.amount !== null ? (
+              <div>
+                <dt>পরিমাণ</dt>
+                <dd>{formatAmount(plan.amount, plan.direction)}</dd>
               </div>
             ) : null}
             <div>
@@ -218,7 +229,7 @@ export default function CommandForm() {
             </div>
             <div>
               <dt>সংরক্ষণের জায়গা</dt>
-              <dd>{targetLabels[plan.target]}</dd>
+              <dd>{plan.save_location_label || targetLabels[plan.target]}</dd>
             </div>
           </dl>
           <div className={styles.confirmationActions}>
@@ -251,4 +262,9 @@ function formatDate(value: string) {
     timeStyle: 'short',
     timeZone: 'Asia/Dhaka',
   }).format(date);
+}
+
+function formatAmount(amount: number, direction: Plan['direction']) {
+  const label = direction === 'income' ? 'আয়' : direction === 'expense' ? 'খরচ' : 'পরিমাণ';
+  return `${label}: ${new Intl.NumberFormat('bn-BD').format(amount)} টাকা`;
 }

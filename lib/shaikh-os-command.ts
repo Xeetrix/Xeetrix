@@ -1,5 +1,7 @@
 export type OsItemType =
   | 'task'
+  | 'contact'
+  | 'follow_up'
   | 'note'
   | 'idea'
   | 'meeting'
@@ -115,8 +117,8 @@ const weekdayNameToIndex: Record<string, number> = {
   শনিবার: 6,
 };
 
-const healthKeywords = ['মাথা', 'ব্যথা', 'ঘুম', 'শরীর', 'জ্বর', 'অসুস্থ', 'health', 'sleep', 'sick', 'pain', 'মানসিক', 'stress', 'চাপ'];
-const financeKeywords = ['টাকা', '৳', 'taka', 'bdt', 'amount', 'payment', 'commission', 'কমিশন', 'দিলাম', 'পেলাম', 'খরচ', 'আয়', 'income', 'expense', 'paid', 'received', 'লাভ', 'ক্ষতি'];
+const healthKeywords = ['মাথা', 'ব্যথা', 'ঘুম', 'শরীর', 'জ্বর', 'অসুস্থ', 'health', 'sleep', 'ghum', 'durbol', 'weak', 'weakness', 'shorir', 'mon ta valo nei', 'sick', 'pain', 'মানসিক', 'stress', 'চাপ'];
+const financeKeywords = ['টাকা', '৳', 'taka', 'bdt', 'amount', 'payment', 'commission', 'কমিশন', 'dilam', 'pelam', 'khoroc', 'khoroch', 'দিলাম', 'পেলাম', 'খরচ', 'আয়', 'income', 'expense', 'paid', 'received', 'লাভ', 'ক্ষতি'];
 const ideaKeywords = ['idea', 'আইডিয়া', 'ধারণা', 'ভাবনা'];
 const decisionKeywords = ['সিদ্ধান্ত', 'decision', 'decided', 'নিলাম', 'final'];
 const meetingKeywords = ['meeting', 'মিটিং', 'কথা বলতে', 'সাথে দেখা', 'কল', 'call', 'আলোচনা'];
@@ -280,9 +282,9 @@ export function extractAmount(command: string): AmountResult {
   }
 
   let direction: FinanceDirection = 'unknown';
-  if (includesAny(normalized, ['পেলাম', 'কমিশন', 'আয়', 'income', 'received', 'লাভ'])) {
+  if (includesAny(normalized, ['পেলাম', 'pelam', 'কমিশন', 'commission', 'আয়', 'income', 'received', 'লাভ'])) {
     direction = 'income';
-  } else if (includesAny(normalized, ['দিলাম', 'খরচ', 'expense', 'paid', 'payment', 'ক্ষতি'])) {
+  } else if (includesAny(normalized, ['দিলাম', 'dilam', 'খরচ', 'khoroc', 'khoroch', 'expense', 'paid', 'payment', 'ক্ষতি'])) {
     direction = 'expense';
   }
 
@@ -312,6 +314,7 @@ export function detectItemType(command: string): OsItemType {
   const amount = extractAmount(command);
 
   if (amount && (includesAny(normalized, financeKeywords) || amount.direction !== 'unknown')) return 'finance_log';
+  if (includesAny(normalized, ['lead follow-up', 'lead follow up', 'follow-up', 'follow up'])) return 'follow_up';
   if (includesAny(normalized, healthKeywords)) return 'health_log';
   if (includesAny(normalized, decisionKeywords)) return 'decision';
   if (includesAny(normalized, ideaKeywords)) return 'idea';
@@ -419,6 +422,8 @@ function createTitle(command: string, itemType: OsItemType) {
     reminder: 'Reminder: ',
     idea: 'Idea: ',
     decision: 'Decision: ',
+    contact: 'Contact: ',
+    follow_up: 'Follow-up: ',
   };
   const compact = command.replace(/\s+/g, ' ').trim();
   const title = compact.length > 96 ? `${compact.slice(0, 93)}...` : compact;
