@@ -79,6 +79,10 @@ export type DriveSignal = {
   workspace_type: 'doc' | 'sheet';
 };
 export type ContactCandidate = { id: string; name: string; email: string | null; organization: string | null; source: string; project: string | null; last_seen_at: string | null };
+export type KnowledgeEntity = { id: string; type: 'person' | 'organization' | 'project' | 'document' | 'email' | 'lead' | 'follow_up'; name: string; project: string | null; source: string; confidence: 'high' | 'medium' | 'needs_review' };
+export type KnowledgeSignal = { id: string; kind: 'email' | 'document' | 'calendar' | 'follow_up' | 'project' | 'security' | 'review'; title: string; detail: string; project: string; source: string; href: string; priority: 'high' | 'medium' | 'normal'; needsReview?: boolean };
+export type GoogleKnowledgeGraph = { entities: KnowledgeEntity[]; signals: KnowledgeSignal[]; needsReview: KnowledgeSignal[]; projectLinks: Record<string, KnowledgeSignal[]> };
+export type GoogleIntelligence = { gmailSignals: GmailSignal[]; driveSignals: DriveSignal[]; contactCandidates: ContactCandidate[]; knowledgeGraph: GoogleKnowledgeGraph };
 export type ConnectedGoogleAccount = ConnectedSource & {
   last_sync: string | null;
   services: GoogleServiceConnection[];
@@ -327,18 +331,18 @@ function parseGmailAddress(value = '') {
 }
 
 const PROJECT_RULES = [
-  { project: 'Islamic School', organization: 'Islamic School', pattern: /admission|school|student|teacher|guardian|parent|academic|islamic/i },
-  { project: 'KNLTC', organization: 'KNLTC', pattern: /knltc|lead|marketing|campaign|ad spend|budget|client|training/i },
-  { project: 'Finance', organization: 'Finance', pattern: /invoice|receipt|payment|paid|due|expense|finance|billing|statement/i },
-  { project: 'Xeetrix', organization: 'Xeetrix', pattern: /xeetrix|agent|shaikh os|product|platform|website|app/i },
-  { project: 'Investment', organization: 'Investment', pattern: /investment|portfolio|stock|return|dividend|fund/i },
+  { project: 'KNLTC', organization: 'KNLTC', pattern: /knltc|lead|marketing|campaign|ad spend|budget|client|training|course|cohort/i },
+  { project: 'Islamic School', organization: 'Islamic School', pattern: /islamic school|admission|school|student|teacher|guardian|parent|academic|madrasa|class|tuition/i },
+  { project: 'Xeetrix', organization: 'Xeetrix', pattern: /xeetrix|agent|shaikh os|product|platform|website|app|software|dashboard/i },
+  { project: 'Personal/Investment', organization: 'Personal', pattern: /investment|portfolio|stock|return|dividend|fund|personal|bank|invoice|receipt|payment|paid|due|expense|finance|billing|statement|tax/i },
 ] as const;
 
 function classifyProject(text: string) {
-  return PROJECT_RULES.find((rule) => rule.pattern.test(text)) ?? { project: 'General', organization: null };
+  return PROJECT_RULES.find((rule) => rule.pattern.test(text)) ?? { project: 'Needs Review', organization: null };
 }
 
 function classifyIntent(text: string) {
+  if (/security alert|new sign-in|password|2-step|verification|suspicious|login/i.test(text)) return 'security_alert';
   if (/meeting|schedule|calendar|invite|appointment|call/i.test(text)) return 'meeting_request';
   if (/invoice|receipt|payment|paid|due|billing|statement/i.test(text)) return 'finance';
   if (/report|update|status|summary/i.test(text)) return 'report';
@@ -353,7 +357,7 @@ function classifyEmail(subject: string, snippet: string, labels: string[] = [], 
   const isUnread = labels.includes('UNREAD');
   const priority = /(urgent|asap|deadline|important|overdue|immediate)/i.test(text) || labels.includes('IMPORTANT') ? 'high' : isUnread ? 'medium' : 'normal';
   const needs_follow_up = intent === 'follow_up' || intent === 'meeting_request' || /\?|please|reply|confirm|follow up|follow-up|respond/i.test(text);
-  return { project_id: project.project, contact_name: fromName, organization: project.organization, intent, priority, needs_follow_up, is_unread: isUnread, metadata: { classification: 'google_intelligence_v1', labels, contact: { name: fromName, email: fromEmail } } };
+  return { project_id: project.project, contact_name: fromName, organization: project.organization, intent, priority, needs_follow_up, is_unread: isUnread, metadata: { classification: 'google_knowledge_graph_v1', labels, contact: { name: fromName, email: fromEmail }, needs_review: project.project === 'Needs Review', possible_lead: /lead|proposal|quote|interested|pricing|client/i.test(text) } };
 }
 
 function classifyDriveFile(name: string, mimeType: string, owners: { emailAddress?: string; displayName?: string }[] = []) {
@@ -405,7 +409,7 @@ export async function syncCalendar(sourceId: string) {
     await ensureServiceConnection(sourceId, 'calendar', missingScopes.length ? 'missing_scope' : 'enabled', { granted_scopes: grantedScopes, missing_scopes: missingScopes });
     const params = new URLSearchParams({ timeMin: new Date().toISOString(), timeMax: new Date(Date.now() + 14 * 86400000).toISOString(), singleEvents: 'true', orderBy: 'startTime', maxResults: '50' });
     const data = await fetchGoogleJson<{ items?: { id: string; summary?: string; description?: string; start?: { dateTime?: string; date?: string }; end?: { dateTime?: string; date?: string }; attendees?: unknown[]; status?: string }[] }>(`https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`, accessToken, 'calendar', 'Calendar sync failed', grantedScopes);
-    const rows = (data.items ?? []).map((event) => ({ source_id: sourceId, google_event_id: event.id, title: event.summary ?? '(Untitled event)', description: event.description ?? null, start_at: event.start?.dateTime ?? event.start?.date ?? null, end_at: event.end?.dateTime ?? event.end?.date ?? null, attendees: event.attendees ?? [], project_id: null, status: event.status ?? 'confirmed', metadata: {}, updated_at: new Date().toISOString() }));
+    const rows = (data.items ?? []).map((event) => ({ source_id: sourceId, google_event_id: event.id, title: event.summary ?? '(Untitled event)', description: event.description ?? null, start_at: event.start?.dateTime ?? event.start?.date ?? null, end_at: event.end?.dateTime ?? event.end?.date ?? null, attendees: event.attendees ?? [], project_id: classifyProject(`${event.summary ?? ''} ${event.description ?? ''}`).project, status: event.status ?? 'confirmed', metadata: { classification: 'google_knowledge_graph_v1', needs_review: classifyProject(`${event.summary ?? ''} ${event.description ?? ''}`).project === 'Needs Review' }, updated_at: new Date().toISOString() }));
     if (rows.length) await supabaseRequest('calendar_events?on_conflict=source_id,google_event_id', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=representation' }, body: JSON.stringify(rows) });
     await ensureServiceConnection(sourceId, 'calendar', 'enabled', { last_sync_at: new Date().toISOString(), last_error: null });
     await logSync(sourceId, 'calendar', 'success', `${rows.length} calendar events imported.`);
@@ -422,8 +426,8 @@ export async function syncDrive(sourceId: string) {
     const q = "mimeType='application/vnd.google-apps.document' or mimeType='application/vnd.google-apps.spreadsheet'";
     const params = new URLSearchParams({ pageSize: '20', orderBy: 'modifiedTime desc', fields: 'files(id,name,mimeType,webViewLink,modifiedTime,owners(displayName,emailAddress))', q });
     const data = await fetchGoogleJson<{ files?: { id: string; name: string; mimeType: string; webViewLink?: string; modifiedTime?: string; owners?: { displayName?: string; emailAddress?: string }[] }[] }>(`https://www.googleapis.com/drive/v3/files?${params}`, accessToken, 'docs', 'Drive sync failed', grantedScopes);
-    const docs = (data.files ?? []).filter((file) => file.mimeType === 'application/vnd.google-apps.document').map((file) => ({ source_id: sourceId, google_file_id: file.id, name: file.name, mime_type: file.mimeType, web_url: file.webViewLink ?? null, ...classifyDriveFile(file.name, file.mimeType, file.owners ?? []), summary: null, status: 'imported', metadata: { classification: 'google_intelligence_v1', modified_time: file.modifiedTime, owners: file.owners ?? [] }, updated_at: new Date().toISOString() }));
-    const sheets = (data.files ?? []).filter((file) => file.mimeType === 'application/vnd.google-apps.spreadsheet').map((file) => ({ source_id: sourceId, google_file_id: file.id, name: file.name, web_url: file.webViewLink ?? null, ...classifyDriveFile(file.name, file.mimeType, file.owners ?? []), summary: null, status: 'imported', metadata: { classification: 'google_intelligence_v1', modified_time: file.modifiedTime, mime_type: file.mimeType, owners: file.owners ?? [] }, updated_at: new Date().toISOString() }));
+    const docs = (data.files ?? []).filter((file) => file.mimeType === 'application/vnd.google-apps.document').map((file) => ({ source_id: sourceId, google_file_id: file.id, name: file.name, mime_type: file.mimeType, web_url: file.webViewLink ?? null, ...classifyDriveFile(file.name, file.mimeType, file.owners ?? []), summary: null, status: 'imported', metadata: { classification: 'google_knowledge_graph_v1', modified_time: file.modifiedTime, owners: file.owners ?? [] }, updated_at: new Date().toISOString() }));
+    const sheets = (data.files ?? []).filter((file) => file.mimeType === 'application/vnd.google-apps.spreadsheet').map((file) => ({ source_id: sourceId, google_file_id: file.id, name: file.name, web_url: file.webViewLink ?? null, ...classifyDriveFile(file.name, file.mimeType, file.owners ?? []), summary: null, status: 'imported', metadata: { classification: 'google_knowledge_graph_v1', modified_time: file.modifiedTime, mime_type: file.mimeType, owners: file.owners ?? [] }, updated_at: new Date().toISOString() }));
     if (docs.length) await supabaseRequest('google_documents?on_conflict=source_id,google_file_id', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=representation' }, body: JSON.stringify(docs) });
     if (sheets.length) await supabaseRequest('google_sheets?on_conflict=source_id,google_file_id', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=representation' }, body: JSON.stringify(sheets) });
     const now = new Date().toISOString(); await Promise.all([ensureServiceConnection(sourceId, 'docs', missingScopes.length ? 'missing_scope' : 'enabled', { last_sync_at: now, last_error: null, granted_scopes: grantedScopes, missing_scopes: missingScopes }), ensureServiceConnection(sourceId, 'sheets', missingScopes.length ? 'missing_scope' : 'enabled', { last_sync_at: now, last_error: null, granted_scopes: grantedScopes, missing_scopes: missingScopes })]);
@@ -434,9 +438,9 @@ export async function syncDrive(sourceId: string) {
 
 
 export async function listGoogleIntelligence() {
-  if (!supabaseConfig()) return { gmailSignals: [] as GmailSignal[], driveSignals: [] as DriveSignal[], contactCandidates: [] as ContactCandidate[] };
+  if (!supabaseConfig()) return emptyGoogleIntelligence();
   const accounts = await supabaseRequest<ConnectedSource[]>('connected_sources?provider=eq.google&select=id,provider,account_email,display_name,status,expires_at,created_at,updated_at&order=created_at.desc');
-  if (!accounts.length) return { gmailSignals: [], driveSignals: [], contactCandidates: [] };
+  if (!accounts.length) return emptyGoogleIntelligence();
   const ids = accounts.map((account) => account.id).join(',');
   const [gmailSignals, documents, sheets, events] = await Promise.all([
     supabaseRequest<GmailSignal[]>(`gmail_messages?source_id=in.(${ids})&select=id,source_id,google_message_id,from_email,from_name,subject,snippet,received_at,project_id,contact_name,organization,intent,priority,needs_follow_up,is_unread,status,metadata&order=received_at.desc&limit=30`),
@@ -467,5 +471,44 @@ export async function listGoogleIntelligence() {
       contacts.set(`calendar-${key}`, { id: `calendar-${event.id}-${key}`, name: attendee.displayName || attendee.email || 'Unknown attendee', email: attendee.email ?? null, organization: null, source: 'Calendar attendee', project: event.project_id, last_seen_at: event.start_at });
     }
   }
-  return { gmailSignals, driveSignals, contactCandidates: [...contacts.values()].sort((a, b) => new Date(b.last_seen_at ?? 0).getTime() - new Date(a.last_seen_at ?? 0).getTime()) };
+  const contactCandidates = [...contacts.values()].sort((a, b) => new Date(b.last_seen_at ?? 0).getTime() - new Date(a.last_seen_at ?? 0).getTime());
+  return { gmailSignals, driveSignals, contactCandidates, knowledgeGraph: buildKnowledgeGraph(gmailSignals, driveSignals, contactCandidates, events) };
 }
+
+function emptyGoogleIntelligence(): GoogleIntelligence {
+  return { gmailSignals: [], driveSignals: [], contactCandidates: [], knowledgeGraph: { entities: [], signals: [], needsReview: [], projectLinks: {} } };
+}
+
+function signalProject(project: string | null) { return project && project !== 'General' ? project : 'Needs Review'; }
+
+function buildKnowledgeGraph(gmail: GmailSignal[], drive: DriveSignal[], contacts: ContactCandidate[], events: { id: string; title: string | null; start_at: string | null; project_id: string | null; attendees: unknown }[]): GoogleKnowledgeGraph {
+  const entities = new Map<string, KnowledgeEntity>();
+  const signals: KnowledgeSignal[] = [];
+  for (const contact of contacts) {
+    entities.set(`person-${contact.id}`, { id: `person-${contact.id}`, type: 'person', name: contact.name, project: signalProject(contact.project), source: contact.source, confidence: contact.project === 'Needs Review' || !contact.project ? 'needs_review' : 'medium' });
+    if (contact.organization) entities.set(`org-${contact.organization}`, { id: `org-${contact.organization}`, type: 'organization', name: contact.organization, project: signalProject(contact.project), source: contact.source, confidence: 'medium' });
+  }
+  for (const rule of PROJECT_RULES) entities.set(`project-${rule.project}`, { id: `project-${rule.project}`, type: 'project', name: rule.project, project: rule.project, source: 'Project linking rules', confidence: 'high' });
+  for (const message of gmail) {
+    const project = signalProject(message.project_id);
+    const needsReview = project === 'Needs Review';
+    entities.set(`email-${message.id}`, { id: `email-${message.id}`, type: 'email', name: message.subject || 'Untitled email', project, source: 'Gmail', confidence: needsReview ? 'needs_review' : 'medium' });
+    if (message.needs_follow_up) entities.set(`follow-${message.id}`, { id: `follow-${message.id}`, type: 'follow_up', name: message.subject || 'Email follow-up', project, source: 'Gmail', confidence: needsReview ? 'needs_review' : 'medium' });
+    if (message.metadata?.possible_lead) entities.set(`lead-${message.id}`, { id: `lead-${message.id}`, type: 'lead', name: message.subject || 'Possible lead', project, source: 'Gmail', confidence: needsReview ? 'needs_review' : 'medium' });
+    signals.push({ id: `gmail-${message.id}`, kind: message.intent === 'security_alert' ? 'security' : message.needs_follow_up ? 'follow_up' : 'email', title: message.intent === 'security_alert' ? 'Security alert পাওয়া গেছে' : message.needs_follow_up ? '১টি email follow-up দরকার হতে পারে' : `Important email signal: ${message.subject || 'Untitled email'}`, detail: `${message.contact_name || message.from_email || 'Unknown sender'} · ${message.subject || 'No subject'}`, project, source: 'Gmail', href: '/os/sources', priority: message.priority === 'high' ? 'high' : message.needs_follow_up || message.is_unread ? 'medium' : 'normal', needsReview });
+  }
+  for (const doc of drive) {
+    const project = signalProject(doc.project_id);
+    const needsReview = project === 'Needs Review';
+    entities.set(`document-${doc.id}`, { id: `document-${doc.id}`, type: 'document', name: doc.name || 'Untitled document', project, source: doc.workspace_type === 'sheet' ? 'Google Sheets' : 'Google Docs', confidence: needsReview ? 'needs_review' : 'medium' });
+    signals.push({ id: `drive-${doc.workspace_type}-${doc.id}`, kind: 'document', title: `${project} সম্পর্কিত নতুন document পাওয়া গেছে`, detail: `${doc.name || 'Untitled'} · ${doc.document_type || 'document'}`, project, source: doc.workspace_type === 'sheet' ? 'Google Sheets' : 'Google Docs', href: doc.web_url || '/os/sources', priority: needsReview ? 'normal' : 'medium', needsReview });
+  }
+  for (const event of events) {
+    const project = signalProject(event.project_id);
+    const needsReview = project === 'Needs Review';
+    signals.push({ id: `calendar-${event.id}`, kind: 'calendar', title: `${project} calendar signal`, detail: `${event.title || 'Untitled event'}${event.start_at ? ` · ${event.start_at}` : ''}`, project, source: 'Google Calendar', href: '/os/sources', priority: 'normal', needsReview });
+  }
+  const deduped = signals.sort((a, b) => Number(a.needsReview) - Number(b.needsReview));
+  return { entities: [...entities.values()], signals: deduped, needsReview: deduped.filter((signal) => signal.needsReview), projectLinks: deduped.reduce<Record<string, KnowledgeSignal[]>>((acc, signal) => { (acc[signal.project] ??= []).push(signal); return acc; }, {}) };
+}
+

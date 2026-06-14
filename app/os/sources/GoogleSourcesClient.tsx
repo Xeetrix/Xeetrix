@@ -2,9 +2,9 @@
 
 import { useState } from 'react';
 import { styles } from '../_components/OsPage';
-import type { ConnectedGoogleAccount, GoogleServiceName } from '@/lib/google-integrations';
+import type { ConnectedGoogleAccount, GoogleKnowledgeGraph, GoogleServiceName } from '@/lib/google-integrations';
 
-type Props = { accounts: ConnectedGoogleAccount[] };
+type Props = { accounts: ConnectedGoogleAccount[]; knowledgeGraph: GoogleKnowledgeGraph };
 type SyncResult = { status: string; message: string; endpoint?: string; httpStatus?: number; errorCode?: string; missingScope?: string };
 const serviceLabels: Record<GoogleServiceName, string> = { gmail: 'Gmail', calendar: 'Calendar', docs: 'Docs', sheets: 'Sheets' };
 
@@ -13,7 +13,7 @@ function formatDate(value: string | null) {
   return new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
 }
 
-export default function GoogleSourcesClient({ accounts }: Props) {
+export default function GoogleSourcesClient({ accounts, knowledgeGraph }: Props) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<Record<string, SyncResult>>({});
@@ -119,6 +119,15 @@ export default function GoogleSourcesClient({ accounts }: Props) {
         </div>
       </section>
 
+
+      <section className={styles.section}>
+        <div className={styles.sectionHeader}><div><h2>Google থেকে পাওয়া গুরুত্বপূর্ণ সংকেত</h2><p>Only real imported Gmail, Drive, and Calendar data is linked into projects; unclear items stay in Needs Review.</p></div></div>
+        <div className={styles.grid}>
+          <article className={styles.card}><p className={styles.cardMeta}>Knowledge Graph v1</p><h3>Signals</h3><ul>{knowledgeGraph.signals.length ? knowledgeGraph.signals.slice(0, 5).map((signal) => <li key={signal.id}>{signal.title} — {signal.project}</li>) : <li>Real Google sync data না থাকলে signal দেখানো হবে না।</li>}</ul></article>
+          <article className={styles.card}><p className={styles.cardMeta}>Extracted entities</p><h3>People / orgs / docs / leads</h3><p>{knowledgeGraph.entities.length}টি entity imported Google data থেকে detect হয়েছে। Fake metrics নয়—sync না হলে 0 দেখাবে।</p></article>
+          <article className={`${styles.card} ${knowledgeGraph.needsReview.length ? styles.warning : ''}`}><p className={styles.cardMeta}>Needs Review</p><h3>Unclear items</h3><ul>{knowledgeGraph.needsReview.length ? knowledgeGraph.needsReview.slice(0, 5).map((signal) => <li key={signal.id}>{signal.detail}</li>) : <li>Review queue খালি।</li>}</ul></article>
+        </div>
+      </section>
 
       <section className={styles.section}>
         <div className={styles.sectionHeader}><div><h2>Google Workspace diagnostics</h2><p>Recent failed sync details from Google APIs. Tokens are never displayed.</p></div></div>
