@@ -242,3 +242,22 @@
   color: var(--muted);
   line-height: 1.5;
 }
+
+button.filterLink {
+  cursor: pointer;
+  font-family: inherit;
+}
+
+button.filterLink:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+p.warning {
+  max-width: 1180px;
+  margin: 0 0 1rem;
+  border: 1px solid rgba(255, 209, 102, 0.28);
+  border-radius: 18px;
+  padding: 0.85rem 1rem;
+  color: #ffd166;
+}

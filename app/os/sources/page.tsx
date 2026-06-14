@@ -1,9 +1,21 @@
 import type { Metadata } from 'next';
-import OsPage, { styles } from '../_components/OsPage';
-import { sourceConnections } from '@/lib/shaikh-os-memory';
+import OsPage from '../_components/OsPage';
+import { listGoogleAccounts } from '@/lib/google-integrations';
+import GoogleSourcesClient from './GoogleSourcesClient';
 
 export const metadata: Metadata = { title: 'Sources | Shaikh OS' };
+export const dynamic = 'force-dynamic';
 
-export default function SourcesPage() {
-  return <OsPage eyebrow="Connected Data Sources" title="Future-ready integrations foundation." subtitle="OAuth এখনো implement করা হয়নি; শুধু metadata foundation রাখা হয়েছে যাতে পরে Google, social এবং WhatsApp Business safely connect করা যায়।"><section className={styles.section}><div className={styles.grid}>{sourceConnections.map((source) => <article className={styles.card} key={source.id}><p className={styles.cardMeta}>{source.status}</p><h3>{source.name}</h3><p>{source.accountHint}</p><p>Last sync: {source.lastSync}</p></article>)}</div></section></OsPage>;
+export default async function SourcesPage() {
+  const accounts = await listGoogleAccounts();
+
+  return (
+    <OsPage
+      eyebrow="Connected Sources"
+      title="Google Workspace integration foundation."
+      subtitle="Connect and manage multiple Google accounts from one registry. Phase 1 stores only OAuth identity and encrypted tokens; Gmail, Calendar, Docs, and Sheets data access is intentionally disabled."
+    >
+      <GoogleSourcesClient accounts={accounts} />
+    </OsPage>
+  );
 }
