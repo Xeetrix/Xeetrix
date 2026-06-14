@@ -17,6 +17,11 @@ export type SourceSyncLog = {
   sync_type: string;
   status: string;
   message: string | null;
+  endpoint: string | null;
+  http_status: number | null;
+  error_code: string | null;
+  missing_scope: string | null;
+  raw_response: unknown;
   created_at: string;
 };
 
@@ -28,15 +33,20 @@ export type GoogleServiceConnection = {
   scopes: string[] | null;
   last_sync_at: string | null;
   last_error: string | null;
+  granted_scopes: string[] | null;
+  missing_scopes: string[] | null;
+  diagnostic: GoogleSyncDiagnostic | null;
   created_at: string;
   updated_at: string;
 };
 
 export type GoogleServiceName = 'gmail' | 'calendar' | 'docs' | 'sheets';
+export type GoogleSyncDiagnostic = { endpoint: string; httpStatus: number; errorCode: string | null; errorMessage: string; missingScope: string | null; rawResponse: unknown };
 export type GoogleWorkspaceItem = { id: string; title: string; detail: string; timestamp: string | null; status?: string | null };
 export type ConnectedGoogleAccount = ConnectedSource & {
   last_sync: string | null;
   services: GoogleServiceConnection[];
+  sync_logs: SourceSyncLog[];
   previews: { gmail: GoogleWorkspaceItem[]; calendar: GoogleWorkspaceItem[]; drive: GoogleWorkspaceItem[] };
 };
 
@@ -92,6 +102,73 @@ export function createGoogleAuthorizationUrl() {
     state,
   });
   return { authUrl: `${GOOGLE_AUTH_URL}?${params.toString()}`, state };
+}
+
+
+function normalizeScopes(scopeText?: string | null) {
+  return (scopeText ?? '').split(/\s+/).map((scope) => scope.trim()).filter(Boolean);
+}
+
+function missingScopesFor(serviceName: GoogleServiceName, grantedScopes: string[]) {
+  const granted = new Set(grantedScopes);
+  return SERVICE_SCOPES[serviceName].filter((scope) => !granted.has(scope));
+}
+
+async function getGrantedScopes(accessToken: string) {
+  const endpoint = 'https://oauth2.googleapis.com/tokeninfo';
+  const response = await fetch(`${endpoint}?access_token=${encodeURIComponent(accessToken)}`, { headers: googleJsonHeaders });
+  const body = await readGoogleResponseBody(response);
+  if (!response.ok) throw googleApiError('Google tokeninfo failed', endpoint, response.status, body);
+  return normalizeScopes(typeof body === 'object' && body && 'scope' in body ? String((body as { scope?: unknown }).scope ?? '') : '');
+}
+
+async function readGoogleResponseBody(response: Response) {
+  const text = await response.text();
+  if (!text) return null;
+  try { return JSON.parse(text) as unknown; } catch { return text; }
+}
+
+function googleErrorDetails(body: unknown) {
+  if (body && typeof body === 'object') {
+    const root = body as { error?: unknown; error_description?: unknown };
+    const nested = root.error && typeof root.error === 'object' ? root.error as { code?: unknown; message?: unknown; status?: unknown; errors?: { reason?: unknown; message?: unknown }[] } : null;
+    const first = nested?.errors?.[0];
+    const code = String((nested?.status ?? first?.reason ?? (typeof root.error === 'string' ? root.error : '')) || '');
+    const message = String((nested?.message ?? first?.message ?? root.error_description ?? (typeof root.error === 'string' ? root.error : '')) || 'Google API request failed');
+    return { code: code || null, message };
+  }
+  return { code: null, message: typeof body === 'string' ? body : 'Google API request failed' };
+}
+
+function inferMissingScope(serviceName: GoogleServiceName, status: number, body: unknown, grantedScopes: string[]) {
+  const missing = missingScopesFor(serviceName, grantedScopes);
+  const text = JSON.stringify(body ?? '').toLowerCase();
+  if (missing.length && (status === 401 || status === 403 || text.includes('scope') || text.includes('insufficient'))) return missing[0];
+  return null;
+}
+
+function isApiDisabled(body: unknown) {
+  const text = JSON.stringify(body ?? '').toLowerCase();
+  return text.includes('api has not been used') || text.includes('disabled') || text.includes('accessnotconfigured');
+}
+
+function googleApiError(prefix: string, endpoint: string, status: number, body: unknown, missingScope: string | null = null) {
+  const details = googleErrorDetails(body);
+  const apiDisabled = isApiDisabled(body);
+  const error = new Error(`${prefix}: ${status} ${details.code ?? 'google_error'} - ${details.message}${missingScope ? ` (missing scope: ${missingScope})` : ''}${apiDisabled ? ' (API may not be enabled)' : ''}`) as Error & { diagnostic: GoogleSyncDiagnostic & { apiDisabled?: boolean } };
+  error.diagnostic = { endpoint, httpStatus: status, errorCode: details.code, errorMessage: details.message, missingScope, rawResponse: body, apiDisabled };
+  return error;
+}
+
+async function fetchGoogleJson<T>(endpoint: string, accessToken: string, serviceName: GoogleServiceName, prefix: string, grantedScopes: string[]): Promise<T> {
+  const response = await fetch(endpoint, { headers: { ...googleJsonHeaders, Authorization: `Bearer ${accessToken}` } });
+  const body = await readGoogleResponseBody(response);
+  if (!response.ok) throw googleApiError(prefix, endpoint, response.status, body, inferMissingScope(serviceName, response.status, body, grantedScopes));
+  return body as T;
+}
+
+export function diagnosticFromError(error: unknown) {
+  return error instanceof Error && 'diagnostic' in error ? (error as Error & { diagnostic?: GoogleSyncDiagnostic }).diagnostic ?? null : null;
 }
 
 function getEncryptionKey() { return crypto.createHash('sha256').update(requiredEnv('TOKEN_ENCRYPTION_KEY')).digest(); }
@@ -150,8 +227,16 @@ async function getAccessToken(source: StoredConnectedSource) {
     method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ client_id: requiredEnv('GOOGLE_CLIENT_ID'), client_secret: requiredEnv('GOOGLE_CLIENT_SECRET'), refresh_token: decryptToken(source.refresh_token_encrypted), grant_type: 'refresh_token' }),
   });
-  if (!response.ok) throw new Error(`Google refresh failed: ${response.status}`);
-  const tokens = await response.json() as GoogleTokenResponse;
+  const body = await readGoogleResponseBody(response);
+  if (!response.ok) {
+    const err = googleApiError('Google refresh failed', GOOGLE_TOKEN_URL, response.status, body);
+    if (err.diagnostic.errorCode === 'invalid_grant') {
+      err.diagnostic.errorMessage = `${err.diagnostic.errorMessage} (refresh token expired or revoked)`;
+      err.message = `${err.message} (refresh token expired or revoked)`;
+    }
+    throw err;
+  }
+  const tokens = body as GoogleTokenResponse;
   return tokens.access_token;
 }
 
@@ -160,8 +245,8 @@ export async function listGoogleAccounts(): Promise<ConnectedGoogleAccount[]> {
   const accounts = await supabaseRequest<ConnectedSource[]>('connected_sources?provider=eq.google&select=id,provider,account_email,display_name,status,expires_at,created_at,updated_at&order=created_at.desc');
   if (!accounts.length) return [];
   const ids = accounts.map((account) => account.id);
-  const logs = await supabaseRequest<SourceSyncLog[]>(`source_sync_logs?source_id=in.(${ids.join(',')})&select=id,source_id,sync_type,status,message,created_at&order=created_at.desc`);
-  const services = await supabaseRequest<GoogleServiceConnection[]>(`google_service_connections?source_id=in.(${ids.join(',')})&select=id,source_id,service_name,status,scopes,last_sync_at,last_error,created_at,updated_at`);
+  const logs = await supabaseRequest<SourceSyncLog[]>(`source_sync_logs?source_id=in.(${ids.join(',')})&select=id,source_id,sync_type,status,message,endpoint,http_status,error_code,missing_scope,raw_response,created_at&order=created_at.desc`);
+  const services = await supabaseRequest<GoogleServiceConnection[]>(`google_service_connections?source_id=in.(${ids.join(',')})&select=id,source_id,service_name,status,scopes,last_sync_at,last_error,granted_scopes,missing_scopes,diagnostic,created_at,updated_at`);
   const gmail = await supabaseRequest<GoogleWorkspaceItem[]>(`gmail_messages?source_id=in.(${ids.join(',')})&select=id:source_id,title:subject,detail:snippet,timestamp:received_at,status&order=received_at.desc&limit=12`);
   const calendar = await supabaseRequest<GoogleWorkspaceItem[]>(`calendar_events?source_id=in.(${ids.join(',')})&select=id:source_id,title,detail:description,timestamp:start_at,status&order=start_at.asc&limit=12`);
   const docs = await supabaseRequest<GoogleWorkspaceItem[]>(`google_documents?source_id=in.(${ids.join(',')})&select=id:source_id,title:name,detail:mime_type,timestamp:updated_at,status&order=updated_at.desc&limit=12`);
@@ -170,6 +255,7 @@ export async function listGoogleAccounts(): Promise<ConnectedGoogleAccount[]> {
     ...account,
     last_sync: logs.find((log) => log.source_id === account.id)?.created_at ?? null,
     services: services.filter((service) => service.source_id === account.id),
+    sync_logs: logs.filter((log) => log.source_id === account.id).slice(0, 6),
     previews: {
       gmail: gmail.filter((item) => item.id === account.id).slice(0, 3),
       calendar: calendar.filter((item) => item.id === account.id).slice(0, 3),
@@ -207,22 +293,21 @@ function classifyEmail(subject: string, snippet: string) {
   const text = `${subject} ${snippet}`.toLowerCase();
   return { intent: text.includes('?') || text.includes('please') ? 'follow_up' : 'information', priority: /(urgent|asap|deadline|important)/.test(text) ? 'high' : 'normal', needs_follow_up: /\?|please|reply|confirm|follow up/.test(text) };
 }
-async function logSync(sourceId: string, syncType: string, status: string, message: string) {
-  await supabaseRequest<SourceSyncLog[]>('source_sync_logs', { method: 'POST', body: JSON.stringify({ source_id: sourceId, sync_type: syncType, status, message }) });
+async function logSync(sourceId: string, syncType: string, status: string, message: string, diagnostic: GoogleSyncDiagnostic | null = null) {
+  await supabaseRequest<SourceSyncLog[]>('source_sync_logs', { method: 'POST', body: JSON.stringify({ source_id: sourceId, sync_type: syncType, status, message, endpoint: diagnostic?.endpoint ?? null, http_status: diagnostic?.httpStatus ?? null, error_code: diagnostic?.errorCode ?? null, missing_scope: diagnostic?.missingScope ?? null, raw_response: diagnostic?.rawResponse ?? null }) });
 }
 
 export async function syncGmail(sourceId: string) {
   const source = await findSource(sourceId);
   try {
     const accessToken = await getAccessToken(source);
-    const listRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=20&q=newer_than:30d', { headers: { ...googleJsonHeaders, Authorization: `Bearer ${accessToken}` } });
-    if (!listRes.ok) throw new Error(`Gmail list failed: ${listRes.status}`);
-    const list = await listRes.json() as { messages?: { id: string; threadId: string }[] };
+    const grantedScopes = await getGrantedScopes(accessToken);
+    const missingScopes = missingScopesFor('gmail', grantedScopes);
+    await ensureServiceConnection(sourceId, 'gmail', missingScopes.length ? 'missing_scope' : 'enabled', { granted_scopes: grantedScopes, missing_scopes: missingScopes });
+    const list = await fetchGoogleJson<{ messages?: { id: string; threadId: string }[] }>('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=20&q=newer_than:30d', accessToken, 'gmail', 'Gmail list failed', grantedScopes);
     const rows = [];
     for (const message of list.messages ?? []) {
-      const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${message.id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date`, { headers: { ...googleJsonHeaders, Authorization: `Bearer ${accessToken}` } });
-      if (!res.ok) continue;
-      const item = await res.json() as { id: string; threadId: string; snippet?: string; internalDate?: string; payload?: { headers?: { name: string; value: string }[] } };
+      const item = await fetchGoogleJson<{ id: string; threadId: string; snippet?: string; internalDate?: string; payload?: { headers?: { name: string; value: string }[] } }>(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${message.id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date`, accessToken, 'gmail', 'Gmail message lookup failed', grantedScopes);
       const headers = Object.fromEntries((item.payload?.headers ?? []).map((header) => [header.name.toLowerCase(), header.value]));
       const from = parseGmailAddress(headers.from);
       const classified = classifyEmail(headers.subject ?? '', item.snippet ?? '');
@@ -234,8 +319,9 @@ export async function syncGmail(sourceId: string) {
     return { imported: rows.length };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Gmail sync failed';
-    await ensureServiceConnection(sourceId, 'gmail', 'error', { last_error: message });
-    await logSync(sourceId, 'gmail', 'error', message);
+    const diagnostic = diagnosticFromError(error);
+    await ensureServiceConnection(sourceId, 'gmail', diagnostic?.missingScope ? 'missing_scope' : 'error', { last_error: message, diagnostic, missing_scopes: diagnostic?.missingScope ? [diagnostic.missingScope] : undefined });
+    await logSync(sourceId, 'gmail', 'error', message, diagnostic);
     throw error;
   }
 }
@@ -244,33 +330,34 @@ export async function syncCalendar(sourceId: string) {
   const source = await findSource(sourceId);
   try {
     const accessToken = await getAccessToken(source);
+    const grantedScopes = await getGrantedScopes(accessToken);
+    const missingScopes = missingScopesFor('calendar', grantedScopes);
+    await ensureServiceConnection(sourceId, 'calendar', missingScopes.length ? 'missing_scope' : 'enabled', { granted_scopes: grantedScopes, missing_scopes: missingScopes });
     const params = new URLSearchParams({ timeMin: new Date().toISOString(), timeMax: new Date(Date.now() + 14 * 86400000).toISOString(), singleEvents: 'true', orderBy: 'startTime', maxResults: '50' });
-    const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`, { headers: { ...googleJsonHeaders, Authorization: `Bearer ${accessToken}` } });
-    if (!res.ok) throw new Error(`Calendar sync failed: ${res.status}`);
-    const data = await res.json() as { items?: { id: string; summary?: string; description?: string; start?: { dateTime?: string; date?: string }; end?: { dateTime?: string; date?: string }; attendees?: unknown[]; status?: string }[] };
+    const data = await fetchGoogleJson<{ items?: { id: string; summary?: string; description?: string; start?: { dateTime?: string; date?: string }; end?: { dateTime?: string; date?: string }; attendees?: unknown[]; status?: string }[] }>(`https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`, accessToken, 'calendar', 'Calendar sync failed', grantedScopes);
     const rows = (data.items ?? []).map((event) => ({ source_id: sourceId, google_event_id: event.id, title: event.summary ?? '(Untitled event)', description: event.description ?? null, start_at: event.start?.dateTime ?? event.start?.date ?? null, end_at: event.end?.dateTime ?? event.end?.date ?? null, attendees: event.attendees ?? [], project_id: null, status: event.status ?? 'confirmed', metadata: {}, updated_at: new Date().toISOString() }));
     if (rows.length) await supabaseRequest('calendar_events?on_conflict=source_id,google_event_id', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=representation' }, body: JSON.stringify(rows) });
     await ensureServiceConnection(sourceId, 'calendar', 'enabled', { last_sync_at: new Date().toISOString(), last_error: null });
     await logSync(sourceId, 'calendar', 'success', `${rows.length} calendar events imported.`);
     return { imported: rows.length };
-  } catch (error) { const message = error instanceof Error ? error.message : 'Calendar sync failed'; await ensureServiceConnection(sourceId, 'calendar', 'error', { last_error: message }); await logSync(sourceId, 'calendar', 'error', message); throw error; }
+  } catch (error) { const message = error instanceof Error ? error.message : 'Calendar sync failed'; const diagnostic = diagnosticFromError(error); await ensureServiceConnection(sourceId, 'calendar', diagnostic?.missingScope ? 'missing_scope' : 'error', { last_error: message, diagnostic, missing_scopes: diagnostic?.missingScope ? [diagnostic.missingScope] : undefined }); await logSync(sourceId, 'calendar', 'error', message, diagnostic); throw error; }
 }
 
 export async function syncDrive(sourceId: string) {
   const source = await findSource(sourceId);
   try {
     const accessToken = await getAccessToken(source);
+    const grantedScopes = await getGrantedScopes(accessToken);
+    const missingScopes = [...new Set([...missingScopesFor('docs', grantedScopes), ...missingScopesFor('sheets', grantedScopes)])];
     const q = "mimeType='application/vnd.google-apps.document' or mimeType='application/vnd.google-apps.spreadsheet'";
     const params = new URLSearchParams({ pageSize: '20', orderBy: 'modifiedTime desc', fields: 'files(id,name,mimeType,webViewLink,modifiedTime)', q });
-    const res = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, { headers: { ...googleJsonHeaders, Authorization: `Bearer ${accessToken}` } });
-    if (!res.ok) throw new Error(`Drive sync failed: ${res.status}`);
-    const data = await res.json() as { files?: { id: string; name: string; mimeType: string; webViewLink?: string; modifiedTime?: string }[] };
+    const data = await fetchGoogleJson<{ files?: { id: string; name: string; mimeType: string; webViewLink?: string; modifiedTime?: string }[] }>(`https://www.googleapis.com/drive/v3/files?${params}`, accessToken, 'docs', 'Drive sync failed', grantedScopes);
     const docs = (data.files ?? []).filter((file) => file.mimeType === 'application/vnd.google-apps.document').map((file) => ({ source_id: sourceId, google_file_id: file.id, name: file.name, mime_type: file.mimeType, web_url: file.webViewLink ?? null, project_id: null, summary: null, status: 'imported', metadata: { modified_time: file.modifiedTime }, updated_at: new Date().toISOString() }));
     const sheets = (data.files ?? []).filter((file) => file.mimeType === 'application/vnd.google-apps.spreadsheet').map((file) => ({ source_id: sourceId, google_file_id: file.id, name: file.name, web_url: file.webViewLink ?? null, project_id: null, summary: null, status: 'imported', metadata: { modified_time: file.modifiedTime, mime_type: file.mimeType }, updated_at: new Date().toISOString() }));
     if (docs.length) await supabaseRequest('google_documents?on_conflict=source_id,google_file_id', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=representation' }, body: JSON.stringify(docs) });
     if (sheets.length) await supabaseRequest('google_sheets?on_conflict=source_id,google_file_id', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=representation' }, body: JSON.stringify(sheets) });
-    const now = new Date().toISOString(); await Promise.all([ensureServiceConnection(sourceId, 'docs', 'enabled', { last_sync_at: now, last_error: null }), ensureServiceConnection(sourceId, 'sheets', 'enabled', { last_sync_at: now, last_error: null })]);
+    const now = new Date().toISOString(); await Promise.all([ensureServiceConnection(sourceId, 'docs', missingScopes.length ? 'missing_scope' : 'enabled', { last_sync_at: now, last_error: null, granted_scopes: grantedScopes, missing_scopes: missingScopes }), ensureServiceConnection(sourceId, 'sheets', missingScopes.length ? 'missing_scope' : 'enabled', { last_sync_at: now, last_error: null, granted_scopes: grantedScopes, missing_scopes: missingScopes })]);
     await logSync(sourceId, 'drive', 'success', `${docs.length + sheets.length} Drive files imported.`);
     return { imported: docs.length + sheets.length };
-  } catch (error) { const message = error instanceof Error ? error.message : 'Drive sync failed'; await Promise.all([ensureServiceConnection(sourceId, 'docs', 'error', { last_error: message }), ensureServiceConnection(sourceId, 'sheets', 'error', { last_error: message })]); await logSync(sourceId, 'drive', 'error', message); throw error; }
+  } catch (error) { const message = error instanceof Error ? error.message : 'Drive sync failed'; const diagnostic = diagnosticFromError(error); await Promise.all([ensureServiceConnection(sourceId, 'docs', diagnostic?.missingScope ? 'missing_scope' : 'error', { last_error: message, diagnostic, missing_scopes: diagnostic?.missingScope ? [diagnostic.missingScope] : undefined }), ensureServiceConnection(sourceId, 'sheets', diagnostic?.missingScope ? 'missing_scope' : 'error', { last_error: message, diagnostic, missing_scopes: diagnostic?.missingScope ? [diagnostic.missingScope] : undefined })]); await logSync(sourceId, 'drive', 'error', message, diagnostic); throw error; }
 }

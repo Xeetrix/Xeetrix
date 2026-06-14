@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { syncDrive } from '@/lib/google-integrations';
+import { diagnosticFromError, syncDrive } from '@/lib/google-integrations';
 
 export async function POST(request: Request) {
   try {
@@ -8,6 +8,6 @@ export async function POST(request: Request) {
     const result = await syncDrive(sourceId);
     return NextResponse.json({ status: 'success', ...result });
   } catch (error) {
-    return NextResponse.json({ status: 'error', error: error instanceof Error ? error.message : 'Drive sync failed' }, { status: 500 });
+    return NextResponse.json({ status: 'error', error: error instanceof Error ? error.message : 'Drive sync failed', diagnostic: diagnosticFromError(error) }, { status: 500 });
   }
 }
