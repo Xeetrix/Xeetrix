@@ -67,6 +67,21 @@ const PROJECT_FALLBACKS = ['KNLTC', 'Islamic School', 'Xeetrix', 'Investment', '
 const TASK_INTENTS = new Set<ShaikhOsIntent>(['task', 'meeting', 'reminder', 'follow_up']);
 const NOTE_INTENTS = new Set<ShaikhOsIntent>(['note', 'idea', 'decision', 'health_log', 'finance_log', 'contact']);
 
+const SHAIKH_AGENT_TASK_TYPES = {
+  intentParsing: 'premium',
+  healthUnderstanding: 'premium',
+  financeUnderstanding: 'premium',
+  googleSignalClassification: 'premium',
+  knowledgeGraphExtraction: 'premium',
+  agentRecommendations: 'premium',
+  dailyBriefingGeneration: 'premium',
+  normalChat: 'primary',
+  generalAssistantReply: 'primary',
+  titleCleanup: 'cheap',
+  simpleSummary: 'cheap',
+  basicFormatting: 'cheap',
+} as const;
+
 export async function parseIntentWithLLM(command: string, projects: CommandProject[], config: IntentParserConfig): Promise<ShaikhOsPlan> {
   const response = await fetch(new URL('/chat', config.apiUrl), {
     method: 'POST',
@@ -75,7 +90,7 @@ export async function parseIntentWithLLM(command: string, projects: CommandProje
       'x-agent-key': config.apiSecret,
     },
     body: JSON.stringify({
-      taskType: 'primary',
+      taskType: SHAIKH_AGENT_TASK_TYPES.intentParsing,
       message: buildParserPrompt(command, projects, config.now ?? new Date()),
     }),
     cache: 'no-store',
@@ -282,7 +297,7 @@ async function repairInvalidJson(reply: string, command: string, projects: Comma
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-agent-key': config.apiSecret },
     body: JSON.stringify({
-      taskType: 'primary',
+      taskType: SHAIKH_AGENT_TASK_TYPES.intentParsing,
       message: `You are Shaikh OS Intent Parser JSON repairer. Return strict valid JSON only matching the required Shaikh OS parser shape. Do not add markdown. Original command: ${JSON.stringify(command)}. Available projects: ${projects.map((p) => p.name).join(', ')}. Broken response: ${JSON.stringify(reply)}`,
     }),
     cache: 'no-store',
