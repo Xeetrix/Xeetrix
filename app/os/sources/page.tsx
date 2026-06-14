@@ -12,8 +12,8 @@ export default async function SourcesPage() {
   return (
     <OsPage
       eyebrow="Connected Sources"
-      title="Google Workspace integration foundation."
-      subtitle="Connect and manage multiple Google accounts from one registry. Phase 1 stores only OAuth identity and encrypted tokens; Gmail, Calendar, Docs, and Sheets data access is intentionally disabled."
+      title="Google Workspace read-only intelligence."
+      subtitle="Connect Google accounts, verify service health, and sync read-only Gmail, Calendar, Docs, and Sheets metadata without modifying Google data."
     >
       <GoogleSourcesClient accounts={accounts} />
     </OsPage>

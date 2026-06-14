@@ -3,15 +3,22 @@ import OsPage, { styles } from '../_components/OsPage';
 import { contacts, memoryItems } from '@/lib/shaikh-os-memory';
 import { buildChiefOfStaffBriefing, type BriefingItem } from '@/lib/shaikh-os-intelligence';
 import { getRelatedItems } from '@/lib/shaikh-os-relationships';
+import { listGoogleAccounts } from '@/lib/google-integrations';
 
 export const metadata: Metadata = { title: 'Agent | Shaikh OS' };
 
-export default function AgentPage() {
+export const dynamic = 'force-dynamic';
+
+export default async function AgentPage() {
   const briefing = buildChiefOfStaffBriefing();
   const decisions = memoryItems.filter((item) => item.intent === 'decision');
   const openTasks = memoryItems.filter((item) => item.intent === 'task');
   const admissionReviewRelated = getRelatedItems('meeting', 'meeting-admission');
   const knltcConnections = getRelatedItems('project', 'KNLTC');
+  const googleAccounts = await listGoogleAccounts();
+  const followUps = googleAccounts.flatMap((account) => account.previews.gmail).filter((item) => item.status !== 'archived');
+  const meetings = googleAccounts.flatMap((account) => account.previews.calendar);
+  const projectSignals = googleAccounts.flatMap((account) => account.previews.drive);
 
   return (
     <OsPage
@@ -29,6 +36,28 @@ export default function AgentPage() {
       <AgentSection id="recommendations" title="Recommendations" description="আজকের suggested action order।" items={briefing.recommendations} />
       <AgentSection id="opportunities" title="Opportunities" description="Memory-তে থাকা upside signals।" items={briefing.opportunities} good empty="নতুন opportunity নেই। Memory-তে idea যোগ করলে এখানে agent review হবে।" />
       <AgentSection id="questions" title="Open Questions" description="যেসব clarification পেলে assistant আরও ভালো সিদ্ধান্ত সাজাতে পারবে।" items={briefing.openQuestions} />
+
+
+      <section className={styles.section} id="workspace-signals">
+        <div className={styles.sectionHeader}><div><h2>Google Workspace Signals</h2><p>Read-only synced Gmail, Calendar, and Drive metadata informs follow-up, meeting awareness, and project signals.</p></div></div>
+        <div className={styles.grid}>
+          <article className={styles.card}>
+            <p className={styles.cardMeta}>Follow-up recommendations</p>
+            <h3>Gmail signals</h3>
+            <ul>{followUps.length ? followUps.slice(0, 3).map((item, index) => <li key={`follow-${index}`}>{item.title}</li>) : <li>কোনো Gmail follow-up signal sync হয়নি।</li>}</ul>
+          </article>
+          <article className={styles.card}>
+            <p className={styles.cardMeta}>Meeting awareness</p>
+            <h3>Upcoming Calendar</h3>
+            <ul>{meetings.length ? meetings.slice(0, 3).map((item, index) => <li key={`meeting-${index}`}>{item.title}</li>) : <li>কোনো upcoming meeting sync হয়নি।</li>}</ul>
+          </article>
+          <article className={styles.card}>
+            <p className={styles.cardMeta}>Project signals</p>
+            <h3>Docs/Sheets metadata</h3>
+            <ul>{projectSignals.length ? projectSignals.slice(0, 3).map((item, index) => <li key={`drive-${index}`}>{item.title}</li>) : <li>কোনো Docs/Sheets signal sync হয়নি।</li>}</ul>
+          </article>
+        </div>
+      </section>
 
       <section className={styles.section} id="relationship-map">
         <div className={styles.sectionHeader}><div><h2>Relationship Map</h2><p>Agent এখন generic relationships থেকে meeting, contact, report এবং project context একসাথে পড়ে।</p></div></div>
