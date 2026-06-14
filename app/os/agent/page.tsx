@@ -20,6 +20,8 @@ export default async function AgentPage() {
   const followUps = google.gmailSignals.filter((message) => message.needs_follow_up);
   const meetingRequests = google.gmailSignals.filter((message) => message.intent === 'meeting_request');
   const projectSignals = google.driveSignals;
+  const googleSignals = google.knowledgeGraph.signals;
+  const reviewSignals = google.knowledgeGraph.needsReview;
 
   return (
     <OsPage
@@ -30,6 +32,7 @@ export default async function AgentPage() {
         { label: 'Recommendations', value: String(briefing.recommendations.length), detail: 'Suggested next moves' },
         { label: 'Risks', value: String(briefing.risks.length), detail: 'Needs owner attention' },
         { label: 'Open Questions', value: String(briefing.openQuestions.length), detail: 'Clarifications needed' },
+        { label: 'Google Signals', value: String(googleSignals.length), detail: 'Real synced Workspace signals' },
       ]}
     >
       <AgentSection id="observations" title="Observations" description="Agent memory থেকে আজকের context scan।" items={briefing.observations} />
@@ -38,6 +41,28 @@ export default async function AgentPage() {
       <AgentSection id="opportunities" title="Opportunities" description="Memory-তে থাকা upside signals।" items={briefing.opportunities} good empty="নতুন opportunity নেই। Memory-তে idea যোগ করলে এখানে agent review হবে।" />
       <AgentSection id="questions" title="Open Questions" description="যেসব clarification পেলে assistant আরও ভালো সিদ্ধান্ত সাজাতে পারবে।" items={briefing.openQuestions} />
 
+
+      <section className={styles.section} id="google-knowledge-signals">
+        <div className={styles.sectionHeader}><div><h2>Google থেকে পাওয়া গুরুত্বপূর্ণ সংকেত</h2><p>Real imported Gmail, Drive, and Calendar metadata থেকে entity, project link, follow-up, security, এবং review signals.</p></div></div>
+        <div className={styles.grid}>
+          <article className={styles.card}>
+            <p className={styles.cardMeta}>Agent suggestions only · no auto-action</p>
+            <h3>Important signals</h3>
+            <ul>{googleSignals.length ? googleSignals.slice(0, 6).map((signal) => <li key={signal.id}>{signal.title} — {signal.project} ({signal.source})</li>) : <li>কোনো Google knowledge signal sync হয়নি।</li>}</ul>
+          </article>
+          <article className={styles.card}>
+            <p className={styles.cardMeta}>Project linking</p>
+            <h3>Project-related items</h3>
+            <ul>{Object.entries(google.knowledgeGraph.projectLinks).filter(([project]) => project !== 'Needs Review').slice(0, 4).map(([project, items]) => <li key={project}>{project}: {items.length} real Google item</li>)}</ul>
+            {!Object.keys(google.knowledgeGraph.projectLinks).some((project) => project !== 'Needs Review') ? <p>Project-linked Google item নেই।</p> : null}
+          </article>
+          <article className={`${styles.card} ${reviewSignals.length ? styles.warning : ''}`}>
+            <p className={styles.cardMeta}>Needs Review</p>
+            <h3>Unclear project / intent</h3>
+            <ul>{reviewSignals.length ? reviewSignals.slice(0, 5).map((signal) => <li key={signal.id}>{signal.detail} ({signal.source})</li>) : <li>Review queue খালি।</li>}</ul>
+          </article>
+        </div>
+      </section>
 
       <section className={styles.section} id="workspace-signals">
         <div className={styles.sectionHeader}><div><h2>Google Workspace Signals</h2><p>Read-only synced Gmail, Calendar, and Drive metadata informs follow-up, meeting awareness, and project signals.</p></div></div>
