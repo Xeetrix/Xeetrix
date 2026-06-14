@@ -117,7 +117,7 @@ const weekdayNameToIndex: Record<string, number> = {
   শনিবার: 6,
 };
 
-const healthKeywords = ['মাথা', 'ব্যথা', 'ঘুম', 'শরীর', 'জ্বর', 'অসুস্থ', 'health', 'sleep', 'ghum', 'durbol', 'weak', 'weakness', 'shorir', 'mon ta valo nei', 'sick', 'pain', 'মানসিক', 'stress', 'চাপ'];
+const healthKeywords = ['মাথা', 'ব্যথা', 'ঘুম', 'শরীর', 'জ্বর', 'অসুস্থ', 'চুলক', 'health', 'sleep', 'ghum', 'durbol', 'weak', 'weakness', 'shorir', 'sorir', 'chulk', 'itch', 'itching', 'mon ta valo nei', 'sick', 'pain', 'মানসিক', 'stress', 'চাপ'];
 const financeKeywords = ['টাকা', '৳', 'taka', 'bdt', 'amount', 'payment', 'commission', 'কমিশন', 'dilam', 'pelam', 'khoroc', 'khoroch', 'দিলাম', 'পেলাম', 'খরচ', 'আয়', 'income', 'expense', 'paid', 'received', 'লাভ', 'ক্ষতি'];
 const ideaKeywords = ['idea', 'আইডিয়া', 'ধারণা', 'ভাবনা'];
 const decisionKeywords = ['সিদ্ধান্ত', 'decision', 'decided', 'নিলাম', 'final'];
@@ -327,8 +327,13 @@ export function detectItemType(command: string): OsItemType {
   return 'unknown';
 }
 
-export function detectPriority(command: string): OsPriority {
+export function detectPriority(command: string, itemType: OsItemType = detectItemType(command)): OsPriority {
   const normalized = normalizeText(command);
+
+  if (itemType === 'health_log') return detectHealthUrgency(normalized);
+  if (itemType === 'finance_log') return detectFinanceUrgency(normalized);
+  if (itemType === 'idea') return 'low';
+  if (itemType === 'meeting' && (includesAny(normalized, ['আজকে', 'আজ', 'today']) || detectDueDate(command).due_date)) return 'high';
 
   if (includesAny(normalized, highPriorityKeywords)) return 'high';
   if (includesAny(normalized, lowPriorityKeywords)) return 'low';
@@ -337,11 +342,32 @@ export function detectPriority(command: string): OsPriority {
   return 'medium';
 }
 
+
+function detectHealthUrgency(normalized: string): OsPriority {
+  const seriousWarningSigns = [
+    'chest pain', 'বুকে ব্যথা', 'শ্বাসকষ্ট', 'breathing', 'bleeding', 'রক্ত', 'unconscious', 'অজ্ঞান',
+    'stroke', 'paralysis', 'প্যারালাইসিস', 'severe', 'খুব বেশি ব্যথা', 'high fever', '১০৩', '103',
+  ];
+  const repeatedSignals = ['বারবার', 'প্রতিদিন', 'কয়েকদিন', 'কয়েকদিন', 'again', 'repeated', 'অনেকদিন', 'দিন ধরে'];
+
+  if (includesAny(normalized, seriousWarningSigns)) return 'high';
+  if (includesAny(normalized, repeatedSignals)) return 'medium';
+  return 'low';
+}
+
+function detectFinanceUrgency(normalized: string): OsPriority {
+  const deadlineSignals = ['deadline', 'due', 'আজকে দিতে হবে', 'আজ দিতে হবে', 'last date', 'শেষ তারিখ', 'payment deadline'];
+  if (includesAny(normalized, deadlineSignals)) return 'high';
+  const amount = extractAmount(normalized);
+  if (amount && amount.amount <= 5000 && amount.direction === 'expense') return 'low';
+  return 'medium';
+}
+
 export function classifyCommand(command: string, projects: CommandProject[] = [], now = new Date()): CommandClassification {
   const trimmedCommand = command.trim();
   const itemType = detectItemType(trimmedCommand);
   const project = detectProject(trimmedCommand, projects);
-  const priority = detectPriority(trimmedCommand);
+  const priority = detectPriority(trimmedCommand, itemType);
   const dueDate = detectDueDate(trimmedCommand, now);
   const amount = extractAmount(trimmedCommand);
 
