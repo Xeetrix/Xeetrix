@@ -33,8 +33,26 @@ function requiredEnv(name: string) {
   return value;
 }
 
+const PRODUCTION_SITE_URL = 'https://xeetrix.com';
+
+function normalizeBaseUrl(url: string) {
+  return url.replace(/\/$/, '');
+}
+
 function getBaseUrl() {
-  return process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || process.env.VERCEL_URL && `https://${process.env.VERCEL_URL}` || 'http://localhost:3000';
+  if (process.env.VERCEL_ENV === 'production' || process.env.NODE_ENV === 'production') {
+    return PRODUCTION_SITE_URL;
+  }
+
+  const configuredUrl =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.SITE_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.APP_URL;
+
+  if (configuredUrl) return normalizeBaseUrl(configuredUrl);
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  return 'http://localhost:3000';
 }
 
 export function getGoogleRedirectUri() {
