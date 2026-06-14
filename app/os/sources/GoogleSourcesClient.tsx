@@ -5,7 +5,7 @@ import { styles } from '../_components/OsPage';
 import type { ConnectedGoogleAccount, GoogleServiceName } from '@/lib/google-integrations';
 
 type Props = { accounts: ConnectedGoogleAccount[] };
-type SyncResult = { status: string; message: string };
+type SyncResult = { status: string; message: string; endpoint?: string; httpStatus?: number; errorCode?: string; missingScope?: string };
 const serviceLabels: Record<GoogleServiceName, string> = { gmail: 'Gmail', calendar: 'Calendar', docs: 'Docs', sheets: 'Sheets' };
 
 function formatDate(value: string | null) {
@@ -41,7 +41,7 @@ export default function GoogleSourcesClient({ accounts }: Props) {
     setError(null);
     const response = await fetch(`/api/integrations/google/${service}/sync`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sourceId }) });
     const data = await response.json();
-    if (!response.ok) setResults((current) => ({ ...current, [key]: { status: 'error', message: data.error ?? 'Sync failed' } }));
+    if (!response.ok) setResults((current) => ({ ...current, [key]: { status: 'error', message: data.error ?? 'Sync failed', endpoint: data.diagnostic?.endpoint, httpStatus: data.diagnostic?.httpStatus, errorCode: data.diagnostic?.errorCode, missingScope: data.diagnostic?.missingScope } }));
     else setResults((current) => ({ ...current, [key]: { status: 'success', message: `${data.imported ?? 0} items imported` } }));
     setBusyId(null);
   }
@@ -52,6 +52,27 @@ export default function GoogleSourcesClient({ accounts }: Props) {
     if (service.status === 'error') return `Error${service.last_error ? `: ${service.last_error}` : ''}`;
     if (service.last_sync_at) return `Last sync: ${formatDate(service.last_sync_at)}`;
     return service.status === 'enabled' ? 'Enabled' : 'Not enabled';
+  }
+
+
+
+  function renderDiagnostic(label: string, diagnostic: SyncResult) {
+    return (
+      <div className={styles.warning} key={label}>
+        <strong>{label} failed</strong>
+        <ul>
+          {diagnostic.endpoint ? <li>Endpoint: <code>{diagnostic.endpoint}</code></li> : null}
+          {diagnostic.httpStatus ? <li>HTTP status: {diagnostic.httpStatus}</li> : null}
+          {diagnostic.errorCode ? <li>Error code: {diagnostic.errorCode}</li> : null}
+          <li>Error message: {diagnostic.message}</li>
+          {diagnostic.missingScope ? <li>Missing scope: <code>{diagnostic.missingScope}</code></li> : null}
+        </ul>
+      </div>
+    );
+  }
+
+  function missingScopes(account: ConnectedGoogleAccount) {
+    return [...new Set(account.services.flatMap((service) => service.missing_scopes ?? []))];
   }
 
   return (
@@ -75,6 +96,7 @@ export default function GoogleSourcesClient({ accounts }: Props) {
               <p>Email: {account.account_email}</p>
               <p>Connected since: {formatDate(account.created_at)}</p>
               <p>Last sync: {formatDate(account.last_sync)}</p>
+              {missingScopes(account).length ? <p className={styles.warning}>Missing scopes: {missingScopes(account).join(', ')}</p> : null}
               <div className={styles.badgeRow}>
                 {(Object.keys(serviceLabels) as GoogleServiceName[]).map((service) => <span key={service}>{serviceLabels[service]}: {serviceStatus(account, service)}</span>)}
               </div>
@@ -85,7 +107,7 @@ export default function GoogleSourcesClient({ accounts }: Props) {
                 <button className={styles.filterLink} type="button" onClick={connect}>Reconnect with read-only access</button>
                 <button className={styles.filterLink} type="button" onClick={() => disconnect(account.id)} disabled={busyId === account.id}>{busyId === account.id ? 'Disconnecting…' : 'Disconnect'}</button>
               </div>
-              {['gmail', 'calendar', 'drive'].map((service) => results[`${account.id}-${service}`] ? <p className={results[`${account.id}-${service}`].status === 'success' ? styles.cardMeta : styles.warning} key={service}>{service}: {results[`${account.id}-${service}`].message}</p> : null)}
+              {['gmail', 'calendar', 'drive'].map((service) => { const result = results[`${account.id}-${service}`]; if (!result) return null; return result.status === 'success' ? <p className={styles.cardMeta} key={service}>{service}: {result.message}</p> : renderDiagnostic(service, result); })}
             </article>
           )) : (
             <article className={styles.card}>
@@ -95,6 +117,13 @@ export default function GoogleSourcesClient({ accounts }: Props) {
             </article>
           )}
         </div>
+      </section>
+
+
+      <section className={styles.section}>
+        <div className={styles.sectionHeader}><div><h2>Google Workspace diagnostics</h2><p>Recent failed sync details from Google APIs. Tokens are never displayed.</p></div></div>
+        <div className={styles.grid}>{accounts.flatMap((account) => account.sync_logs.filter((log) => log.status === 'error').map((log) => <article className={styles.card} key={log.id}><p className={styles.cardMeta}>{account.account_email} · {log.sync_type} · {formatDate(log.created_at)}</p><h3>{log.error_code || 'Google API error'}</h3><ul><li>Endpoint: <code>{log.endpoint || 'not captured'}</code></li><li>HTTP status: {log.http_status || 'not captured'}</li><li>Error code: {log.error_code || 'not captured'}</li><li>Error message: {log.message || 'Sync failed'}</li>{log.missing_scope ? <li>Missing scope: <code>{log.missing_scope}</code></li> : null}</ul></article>))}</div>
+        {accounts.every((account) => !account.sync_logs.some((log) => log.status === 'error')) ? <p className={styles.cardMeta}>No failed Google sync diagnostics yet.</p> : null}
       </section>
 
       <section className={styles.section}>
