@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import OsPage, { styles } from '../_components/OsPage';
-import RelatedItems from '../_components/RelatedItems';
 import { financeEntries, healthEntries } from '@/lib/shaikh-os-memory';
 
 export const metadata: Metadata = { title: 'Personal | Shaikh OS' };
@@ -29,12 +28,12 @@ export default function PersonalPage() {
     >
       <section className={styles.section} id="health">
         <div className={styles.sectionHeader}><div><h2>Health</h2><p>Sleep, mood, energy এবং symptoms trend Personal wellbeing-এর core signal।</p></div></div>
-        <div className={styles.grid}>{healthEntries.map((entry) => <article className={styles.card} key={entry.id}><p className={styles.cardMeta}>{entry.date}</p><h3>{entry.symptoms}</h3><p>Sleep: {entry.sleep}<br />Mood: {entry.mood}<br />Energy: {entry.energy}</p><RelatedItems type="health_log" id={entry.id} /></article>)}</div>
+        <div className={styles.grid}>{healthEntries.map((entry) => <article className={styles.card} key={entry.id}><p className={styles.cardMeta}>{entry.date}</p><h3>{entry.symptoms}</h3><p>Sleep: {entry.sleep}<br />Mood: {entry.mood}<br />Energy: {entry.energy}</p></article>)}</div>
       </section>
 
       <section className={styles.section} id="finance">
         <div className={styles.sectionHeader}><div><h2>Finance</h2><p>Income, expenses এবং investments Personal financial health-এর মধ্যে grouped।</p></div></div>
-        <div className={styles.grid}>{financeEntries.map((entry) => <article className={styles.card} key={entry.id}><p className={styles.cardMeta}>{entry.category} · {entry.date}</p><h3 className={entry.direction === 'income' ? styles.amountIncome : styles.amountExpense}>{money.format(entry.amount)} {entry.direction}</h3><p>{entry.description}</p><RelatedItems type="finance_log" id={entry.id} /></article>)}</div>
+        <div className={styles.grid}>{financeEntries.map((entry) => <article className={styles.card} key={entry.id}><p className={styles.cardMeta}>{entry.category} · {entry.date}</p><h3 className={entry.direction === 'income' ? styles.amountIncome : styles.amountExpense}>{money.format(entry.amount)} {entry.direction}</h3><p>{entry.description}</p></article>)}</div>
       </section>
 
       <section className={styles.section} id="reviews">
