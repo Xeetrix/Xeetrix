@@ -3,7 +3,7 @@ import OsPage, { styles } from '../_components/OsPage';
 import { contacts, memoryItems } from '@/lib/shaikh-os-memory';
 import { buildChiefOfStaffBriefing, type BriefingItem } from '@/lib/shaikh-os-intelligence';
 import { getRelatedItems } from '@/lib/shaikh-os-relationships';
-import { listGoogleAccounts } from '@/lib/google-integrations';
+import { listGoogleIntelligence } from '@/lib/google-integrations';
 
 export const metadata: Metadata = { title: 'Agent | Shaikh OS' };
 
@@ -15,10 +15,11 @@ export default async function AgentPage() {
   const openTasks = memoryItems.filter((item) => item.intent === 'task');
   const admissionReviewRelated = getRelatedItems('meeting', 'meeting-admission');
   const knltcConnections = getRelatedItems('project', 'KNLTC');
-  const googleAccounts = await listGoogleAccounts();
-  const followUps = googleAccounts.flatMap((account) => account.previews.gmail).filter((item) => item.status !== 'archived');
-  const meetings = googleAccounts.flatMap((account) => account.previews.calendar);
-  const projectSignals = googleAccounts.flatMap((account) => account.previews.drive);
+  const google = await listGoogleIntelligence();
+  const importantUnread = google.gmailSignals.filter((message) => message.is_unread && (message.priority === 'high' || message.priority === 'medium'));
+  const followUps = google.gmailSignals.filter((message) => message.needs_follow_up);
+  const meetingRequests = google.gmailSignals.filter((message) => message.intent === 'meeting_request');
+  const projectSignals = google.driveSignals;
 
   return (
     <OsPage
@@ -42,19 +43,19 @@ export default async function AgentPage() {
         <div className={styles.sectionHeader}><div><h2>Google Workspace Signals</h2><p>Read-only synced Gmail, Calendar, and Drive metadata informs follow-up, meeting awareness, and project signals.</p></div></div>
         <div className={styles.grid}>
           <article className={styles.card}>
-            <p className={styles.cardMeta}>Follow-up recommendations</p>
+            <p className={styles.cardMeta}>Unread important + follow-ups</p>
             <h3>Gmail signals</h3>
-            <ul>{followUps.length ? followUps.slice(0, 3).map((item, index) => <li key={`follow-${index}`}>{item.title}</li>) : <li>কোনো Gmail follow-up signal sync হয়নি।</li>}</ul>
+            <ul>{[...importantUnread, ...followUps].length ? [...importantUnread, ...followUps].slice(0, 4).map((item) => <li key={item.id}>{item.subject} — {item.project_id ?? 'General'} ({item.intent})</li>) : <li>কোনো Gmail follow-up signal sync হয়নি।</li>}</ul>
           </article>
           <article className={styles.card}>
             <p className={styles.cardMeta}>Meeting awareness</p>
-            <h3>Upcoming Calendar</h3>
-            <ul>{meetings.length ? meetings.slice(0, 3).map((item, index) => <li key={`meeting-${index}`}>{item.title}</li>) : <li>কোনো upcoming meeting sync হয়নি।</li>}</ul>
+            <h3>Meeting requests</h3>
+            <ul>{meetingRequests.length ? meetingRequests.slice(0, 3).map((item) => <li key={item.id}>{item.subject} — {item.contact_name || item.from_email || 'Unknown'}</li>) : <li>কোনো meeting request signal sync হয়নি।</li>}</ul>
           </article>
           <article className={styles.card}>
             <p className={styles.cardMeta}>Project signals</p>
             <h3>Docs/Sheets metadata</h3>
-            <ul>{projectSignals.length ? projectSignals.slice(0, 3).map((item, index) => <li key={`drive-${index}`}>{item.title}</li>) : <li>কোনো Docs/Sheets signal sync হয়নি।</li>}</ul>
+            <ul>{projectSignals.length ? projectSignals.slice(0, 3).map((item) => <li key={`${item.workspace_type}-${item.id}`}>{item.name} — {item.project_id ?? 'General'} ({item.document_type ?? 'document'})</li>) : <li>কোনো Docs/Sheets signal sync হয়নি।</li>}</ul>
           </article>
         </div>
       </section>

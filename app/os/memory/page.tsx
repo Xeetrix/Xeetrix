@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import OsPage, { styles } from '../_components/OsPage';
+import { listGoogleIntelligence } from '@/lib/google-integrations';
 import { contacts, financeEntries, formatBanglaDateTime, getIntentLabel, groupMemoryByDay, healthEntries, meetings, memoryItems, type MemoryIntent } from '@/lib/shaikh-os-memory';
 import UniversalSearch from './UniversalSearch';
 
@@ -12,7 +13,10 @@ const memorySections: Array<{ label: string; description: string; intents: Memor
   { label: 'Decisions', description: 'Owner-approved choices যেগুলো future reasoning-এ context হবে।', intents: ['decision'] },
 ];
 
-export default function MemoryPage() {
+export const dynamic = 'force-dynamic';
+
+export default async function MemoryPage() {
+  const google = await listGoogleIntelligence();
   const timelineGroups = groupMemoryByDay(memoryItems);
   const days = Object.keys(timelineGroups).sort((a, b) => (a < b ? 1 : -1));
 
@@ -33,6 +37,8 @@ export default function MemoryPage() {
       <section className={styles.section}>
         <div className={styles.filters} aria-label="Memory groups">
           {memorySections.map((section) => <a className={styles.filterLink} href={`#${section.label.toLowerCase()}`} key={section.label}>{section.label}</a>)}
+          <a className={styles.filterLink} href="#gmail-signals">Gmail Signals</a>
+          <a className={styles.filterLink} href="#workspace-documents">Workspace Documents</a>
           <a className={styles.filterLink} href="#timeline">Timeline</a>
         </div>
       </section>
@@ -59,6 +65,34 @@ export default function MemoryPage() {
           </section>
         );
       })}
+
+
+      <section className={styles.section} id="gmail-signals">
+        <div className={styles.sectionHeader}><div><h2>Gmail Signals</h2><p>Imported Gmail classified into project, contact, organization, intent, priority, and follow-up signals.</p></div></div>
+        <div className={styles.grid}>
+          {google.gmailSignals.length ? google.gmailSignals.slice(0, 9).map((message) => (
+            <article className={`${styles.card} ${message.priority === 'high' ? styles.warning : ''}`} key={message.id}>
+              <p className={styles.cardMeta}>{message.project_id ?? 'General'} · {message.organization ?? 'No organization'} · {message.priority ?? 'normal'}</p>
+              <h3>{message.subject}</h3>
+              <p>{message.snippet}</p>
+              <p><strong>Contact:</strong> {message.contact_name || message.from_email || 'Unknown'}<br /><strong>Intent:</strong> {message.intent ?? 'information'}<br /><strong>Follow-up:</strong> {message.needs_follow_up ? 'Needed' : 'Not needed'}</p>
+            </article>
+          )) : <article className={styles.card}><h3>No imported Gmail signals yet</h3><p>Google sync data will appear here after Gmail messages are imported.</p></article>}
+        </div>
+      </section>
+
+      <section className={styles.section} id="workspace-documents">
+        <div className={styles.sectionHeader}><div><h2>Recent Workspace Documents</h2><p>Imported Docs and Sheets metadata classified into project, organization, and document type.</p></div></div>
+        <div className={styles.grid}>
+          {google.driveSignals.length ? google.driveSignals.slice(0, 9).map((doc) => (
+            <article className={styles.card} key={`${doc.workspace_type}-${doc.id}`}>
+              <p className={styles.cardMeta}>{doc.workspace_type === 'sheet' ? 'Sheet' : 'Doc'} · {doc.project_id ?? 'General'} · {doc.document_type ?? 'document'}</p>
+              <h3>{doc.web_url ? <a href={doc.web_url}>{doc.name}</a> : doc.name}</h3>
+              <p>{doc.organization ?? 'No organization detected'}{doc.owner_name || doc.owner_email ? ` · Owner: ${doc.owner_name || doc.owner_email}` : ''}</p>
+            </article>
+          )) : <article className={styles.card}><h3>No imported Workspace documents yet</h3><p>Drive metadata will appear here after Docs or Sheets are imported.</p></article>}
+        </div>
+      </section>
 
       <section className={styles.section} id="timeline">
         <div className={styles.sectionHeader}>

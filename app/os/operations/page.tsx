@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { listGoogleIntelligence } from '@/lib/google-integrations';
 import { getAgentProjects, getAgentTasks } from '@/lib/xeetrix-agent';
 import { contacts, formatBanglaDateTime, marketingMetrics, meetings } from '@/lib/shaikh-os-memory';
 import OsPage, { styles } from '../_components/OsPage';
@@ -20,6 +21,7 @@ const fallbackProjects = operatingProjects.map((project) => ({
 export default async function OperationsPage() {
   const projects = await loadProjects();
   const tasks = await loadTasks();
+  const google = await listGoogleIntelligence();
 
   return (
     <OsPage
@@ -66,6 +68,28 @@ export default async function OperationsPage() {
               <Link className={styles.filterLink} href={`/os/tasks/${task.id}`}>Open detail</Link>
             </article>
           )) : <article className={styles.card}><h3>সক্রিয় কাজ পাওয়া যায়নি</h3><p>Xeetrix Agent ব্যাকএন্ডে কাজ পাওয়া গেলে সেগুলো এখানে দেখা যাবে।</p></article>}
+        </div>
+      </section>
+
+
+      <section className={styles.section} id="google-operations-signals">
+        <div className={styles.sectionHeader}><div><h2>Google Operations Signals</h2><p>Follow-up Gmail and new Workspace documents are grouped by imported Google classifications.</p></div></div>
+        <div className={styles.grid}>
+          {google.gmailSignals.filter((message) => message.needs_follow_up || message.priority === 'high').slice(0, 6).map((message) => (
+            <article className={`${styles.card} ${message.priority === 'high' ? styles.warning : ''}`} key={message.id}>
+              <p className={styles.cardMeta}>{message.project_id ?? 'General'} · {message.intent ?? 'information'} · {message.priority ?? 'normal'}</p>
+              <h3>{message.subject}</h3>
+              <p>{message.contact_name || message.from_email || 'Unknown sender'}{message.needs_follow_up ? ' · Follow-up needed' : ''}</p>
+            </article>
+          ))}
+          {google.driveSignals.slice(0, 6).map((doc) => (
+            <article className={styles.card} key={`${doc.workspace_type}-${doc.id}`}>
+              <p className={styles.cardMeta}>{doc.project_id ?? 'General'} · {doc.document_type ?? 'document'}</p>
+              <h3>{doc.name}</h3>
+              <p>{doc.organization ?? 'No organization detected'}</p>
+            </article>
+          ))}
+          {!google.gmailSignals.length && !google.driveSignals.length ? <article className={styles.card}><h3>No Google operations signals yet</h3><p>Imported Gmail and Drive data will appear here.</p></article> : null}
         </div>
       </section>
 
