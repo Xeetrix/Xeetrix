@@ -15,12 +15,13 @@ export default async function ImprovePage() {
     getGitHubRepository().catch((error) => ({ configured: Boolean(process.env.GITHUB_TOKEN), repository: null, error: error instanceof Error ? error.message : 'GitHub repository unavailable' })),
     listLatestGitHubIssues().catch(() => []),
   ]);
+  const diagnostics = 'diagnostics' in githubStatus ? githubStatus.diagnostics : null;
 
   return (
     <OsPage
       eyebrow="Self Improvement Center v1"
       title="Shaikh OS নিজেকে কীভাবে উন্নত করবে"
-      subtitle="Analysis and proposal only. এই পেজ real system state পড়ে weakness detect করে, কিন্তু automatic code change, deploy, বা GitHub modification করে না।"
+      subtitle="Analysis and proposal only. এই পেজ real system state পড়ে weakness detect করে, and creates GitHub issues only when a proposal button is clicked."
       stats={snapshot.metrics.slice(0, 6).map((metric) => ({ label: metric.label, value: String(metric.value), detail: metric.detail }))}
     >
       <section className={styles.section} id="audit">
@@ -63,8 +64,22 @@ export default async function ImprovePage() {
           </article>
         </div>
         <div className={styles.grid}>
+          <article className={styles.card}>
+            <p className={styles.cardMeta}>Diagnostics</p>
+            <h3>GitHub capability checks</h3>
+            <ul>
+              <li>GitHub token valid: {diagnostics?.checks.tokenValid ? 'Yes' : 'No'}</li>
+              <li>Repository accessible: {diagnostics?.checks.repositoryAccessible ? 'Yes' : 'No'}</li>
+              <li>Organization access: {diagnostics?.checks.organizationAccessible ? 'Yes' : 'No'}</li>
+              <li>Issue creation permissions available: {diagnostics?.checks.issueCreationPermissionsAvailable ? 'Yes' : 'No'}</li>
+            </ul>
+            {diagnostics?.error ? <p>{diagnostics.error}</p> : null}
+          </article>
+        </div>
+        <div className={styles.sectionHeader}><div><h2>Latest GitHub Issues</h2><p>Only issues created from real GitHub API responses are shown.</p></div></div>
+        <div className={styles.grid}>
           {latestIssues.length ? latestIssues.map((issue) => <article className={styles.card} key={issue.id || `${issue.github_issue_number}-${issue.source_id}`}>
-            <p className={styles.cardMeta}>Issue #{issue.github_issue_number} · {issue.status}</p>
+            <p className={styles.cardMeta}>Issue #{issue.github_issue_number} · {issue.status} · {new Date(issue.created_at).toLocaleDateString('en-US')}</p>
             <h3>{issue.title}</h3>
             {issue.github_issue_url ? <p><a href={issue.github_issue_url} rel="noreferrer" target="_blank">Open issue</a></p> : null}
           </article>) : <article className={styles.card}><h3>No GitHub issues created yet</h3><p>Approved improvement proposals can create real GitHub issues in the configured repository.</p></article>}
@@ -80,7 +95,7 @@ export default async function ImprovePage() {
             <p><strong>প্রস্তাবিত উন্নয়ন:</strong> {proposal.recommendation}</p>
             <p><strong>প্রভাব:</strong> {proposal.expectedImpact}</p>
             <p><strong>ঝুঁকি:</strong> {proposal.riskLevel} · <strong>Complexity:</strong> {proposal.complexity}</p>
-            <ProposalActions proposalKey={proposal.id} title={proposal.observation} body={proposal.codexPrompt} codexPrompt={proposal.codexPrompt} initialStatus={proposal.status} />
+            <ProposalActions proposalKey={proposal.id} title={proposal.observation} weaknessSummary={proposal.problem} recommendation={proposal.recommendation} impact={proposal.expectedImpact} proposalSource={proposal.codexPrompt} generatedTimestamp={snapshot.capturedAt} codexPrompt={proposal.codexPrompt} initialStatus={proposal.status} />
           </article>)}
         </div>
       </section>

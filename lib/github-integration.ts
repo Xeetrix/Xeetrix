@@ -23,7 +23,7 @@ export type GitHubRepository = {
 
 export type GitHubIssue = {
   id: string;
-  repository_id: string;
+  repository_id: string | null;
   github_issue_number: number;
   github_issue_url?: string;
   title: string;
@@ -31,13 +31,41 @@ export type GitHubIssue = {
   status: string;
   source_type: string;
   source_id: string;
+  weakness_summary?: string | null;
+  recommendation?: string | null;
+  impact?: string | null;
+  proposal_source?: string | null;
+  generated_timestamp?: string | null;
+  github_api_response?: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 };
 
-type GitHubUser = { login: string };
-type GitHubRepo = { full_name: string; html_url: string; default_branch: string };
-type GitHubCreatedIssue = { number: number; html_url: string; state: string; title: string; body: string | null };
+type GitHubUser = { login: string; html_url?: string };
+type GitHubRepo = { full_name: string; html_url: string; default_branch: string; has_issues?: boolean; permissions?: { admin?: boolean; maintain?: boolean; push?: boolean; triage?: boolean; pull?: boolean } };
+type GitHubCreatedIssue = { number: number; html_url: string; state: string; title: string; body: string | null; id: number; node_id: string; created_at: string; updated_at: string; user?: { login: string } };
+type GitHubOrg = { login: string; id: number; url: string; repos_url: string };
+
+type GitHubIssueInput = {
+  title: string;
+  weakness_summary: string;
+  recommendation: string;
+  impact: string;
+  proposal_source: string;
+  generated_timestamp?: string;
+  source_type: 'improvement_proposal';
+  source_id: string;
+};
+
+export class GitHubRequestError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'GitHubRequestError';
+    this.status = status;
+  }
+}
 
 function supabaseConfig() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -66,6 +94,10 @@ export function configuredRepoFullName() {
   return process.env.GITHUB_REPO_FULL_NAME ?? 'Xeetrix/Xeetrix';
 }
 
+function configuredOrgLogin() {
+  return configuredRepoFullName().split('/')[0] ?? 'Xeetrix';
+}
+
 function encryptToken(token: string) {
   const secret = process.env.GITHUB_TOKEN_ENCRYPTION_SECRET || process.env.GOOGLE_TOKEN_ENCRYPTION_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || 'shaikh-os-github-development-key';
   return crypto.createHash('sha256').update(secret).update(token).digest('hex');
@@ -87,48 +119,122 @@ async function githubRequest<T>(path: string, init: RequestInit = {}) {
   });
   const text = await response.text();
   const data = text ? JSON.parse(text) : null;
-  if (!response.ok) throw new Error(`GitHub request failed: ${response.status} ${data?.message ?? text}`);
+  if (!response.ok) throw new GitHubRequestError(response.status, data?.message ?? text ?? 'GitHub request failed');
   return data as T;
 }
 
-export async function getGitHubStatus() {
+function canCreateIssues(repo: GitHubRepo | null) {
+  if (!repo?.has_issues) return false;
+  const permissions = repo.permissions;
+  return Boolean(permissions?.admin || permissions?.maintain || permissions?.push || permissions?.triage);
+}
+
+function formatIssueTitle(title: string) {
+  const trimmed = title.trim();
+  return trimmed.startsWith('[SHAIKH-OS]') ? trimmed : `[SHAIKH-OS] ${trimmed}`;
+}
+
+function buildIssueBody(input: GitHubIssueInput) {
+  return [
+    '## Weakness summary',
+    input.weakness_summary.trim(),
+    '',
+    '## Recommendation',
+    input.recommendation.trim(),
+    '',
+    '## Impact',
+    input.impact.trim(),
+    '',
+    '## Proposal source',
+    input.proposal_source.trim(),
+    '',
+    '## Generated timestamp',
+    (input.generated_timestamp || new Date().toISOString()).trim(),
+  ].join('\n');
+}
+
+export async function getGitHubDiagnostics() {
   const configured = Boolean(githubToken());
-  let connection = (await supabaseRequest<GitHubConnection[]>('github_connections?provider=eq.github&select=id,provider,github_username,installation_id,status,created_at,updated_at&order=updated_at.desc&limit=1'))?.[0] ?? null;
+  const repoFullName = configuredRepoFullName();
+  const orgLogin = configuredOrgLogin();
+  let authenticatedUser: GitHubUser | null = null;
+  let repository: GitHubRepo | null = null;
+  let organization: GitHubOrg | null = null;
+  let error: string | null = null;
 
   if (configured) {
-    const user = await githubRequest<GitHubUser>('/user').catch(() => null);
-    if (user) {
-      const payload = { provider: 'github', github_username: user.login, installation_id: null, access_token_encrypted: encryptToken(githubToken() ?? ''), status: 'connected', updated_at: new Date().toISOString() };
-      connection = (await supabaseRequest<GitHubConnection[]>('github_connections?on_conflict=provider,github_username', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=representation' }, body: JSON.stringify(payload) }))?.[0] ?? connection;
+    try {
+      [authenticatedUser, repository, organization] = await Promise.all([
+        githubRequest<GitHubUser>('/user'),
+        githubRequest<GitHubRepo>(`/repos/${repoFullName}`),
+        githubRequest<GitHubOrg>(`/orgs/${orgLogin}`),
+      ]);
+    } catch (issue) {
+      error = issue instanceof Error ? issue.message : 'GitHub diagnostics failed';
     }
   }
 
-  return { configured, connected: configured && connection?.status === 'connected', connection };
+  return {
+    configured,
+    repositoryFullName: repoFullName,
+    organizationLogin: orgLogin,
+    authenticatedUser,
+    repository,
+    organization,
+    checks: {
+      tokenValid: Boolean(authenticatedUser),
+      repositoryAccessible: Boolean(repository),
+      organizationAccessible: Boolean(organization),
+      issueCreationPermissionsAvailable: canCreateIssues(repository),
+    },
+    error,
+  };
+}
+
+export async function getGitHubStatus() {
+  const diagnostics = await getGitHubDiagnostics();
+  let connection = (await supabaseRequest<GitHubConnection[]>('github_connections?provider=eq.github&select=id,provider,github_username,installation_id,status,created_at,updated_at&order=updated_at.desc&limit=1'))?.[0] ?? null;
+
+  if (diagnostics.authenticatedUser) {
+    const payload = { provider: 'github', github_username: diagnostics.authenticatedUser.login, installation_id: null, access_token_encrypted: encryptToken(githubToken() ?? ''), status: 'connected', updated_at: new Date().toISOString() };
+    connection = (await supabaseRequest<GitHubConnection[]>('github_connections?on_conflict=provider,github_username', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=representation' }, body: JSON.stringify(payload) }))?.[0] ?? connection;
+  }
+
+  return { configured: diagnostics.configured, connected: diagnostics.checks.tokenValid, connection, diagnostics };
 }
 
 export async function getGitHubRepository() {
-  const repoFullName = configuredRepoFullName();
   const status = await getGitHubStatus();
-  if (!status.configured) return { configured: false, repository: null };
-  const repo = await githubRequest<GitHubRepo>(`/repos/${repoFullName}`);
+  if (!status.configured) return { configured: false, repository: null, diagnostics: status.diagnostics };
+  if (!status.diagnostics.repository) throw new Error(status.diagnostics.error ?? 'GitHub repository unavailable');
+  const repo = status.diagnostics.repository;
   let stored: GitHubRepository | null = null;
   if (status.connection?.id) {
     const payload = { connection_id: status.connection.id, repo_full_name: repo.full_name, repo_url: repo.html_url, default_branch: repo.default_branch, status: 'connected', updated_at: new Date().toISOString() };
     stored = (await supabaseRequest<GitHubRepository[]>('github_repositories?on_conflict=connection_id,repo_full_name', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=representation' }, body: JSON.stringify(payload) }))?.[0] ?? null;
   }
-  return { configured: true, repository: stored ?? { id: '', connection_id: status.connection?.id ?? '', repo_full_name: repo.full_name, repo_url: repo.html_url, default_branch: repo.default_branch, status: 'connected', created_at: '', updated_at: '' } };
+  return { configured: true, repository: stored ?? { id: '', connection_id: status.connection?.id ?? '', repo_full_name: repo.full_name, repo_url: repo.html_url, default_branch: repo.default_branch, status: 'connected', created_at: '', updated_at: '' }, diagnostics: status.diagnostics };
 }
 
 export async function listLatestGitHubIssues(limit = 5) {
-  return (await supabaseRequest<GitHubIssue[]>(`github_issues?select=id,repository_id,github_issue_number,github_issue_url,title,body,status,source_type,source_id,created_at,updated_at&order=created_at.desc&limit=${limit}`)) ?? [];
+  return (await supabaseRequest<GitHubIssue[]>(`github_issues?select=id,repository_id,github_issue_number,github_issue_url,title,body,status,source_type,source_id,weakness_summary,recommendation,impact,proposal_source,generated_timestamp,github_api_response,created_at,updated_at&order=created_at.desc&limit=${limit}`)) ?? [];
 }
 
-export async function createGitHubIssue(input: { title: string; body: string; source_type: string; source_id: string }) {
-  if (!input.title?.trim() || !input.body?.trim() || input.source_type !== 'improvement_proposal' || !input.source_id?.trim()) throw new Error('Invalid GitHub issue payload');
+export async function createGitHubIssue(input: GitHubIssueInput) {
+  if (!input.title?.trim() || !input.weakness_summary?.trim() || !input.recommendation?.trim() || !input.impact?.trim() || !input.proposal_source?.trim() || input.source_type !== 'improvement_proposal' || !input.source_id?.trim()) throw new Error('Invalid GitHub issue payload');
   const repoState = await getGitHubRepository();
   if (!repoState.repository) throw new Error('GitHub repository is not configured');
-  const issue = await githubRequest<GitHubCreatedIssue>(`/repos/${repoState.repository.repo_full_name}/issues`, { method: 'POST', body: JSON.stringify({ title: input.title, body: input.body }) });
-  const payload = { repository_id: repoState.repository.id || null, github_issue_number: issue.number, github_issue_url: issue.html_url, title: issue.title, body: issue.body ?? input.body, status: issue.state, source_type: input.source_type, source_id: input.source_id, updated_at: new Date().toISOString() };
-  const stored = (await supabaseRequest<GitHubIssue[]>('github_issues', { method: 'POST', body: JSON.stringify(payload) }))?.[0] ?? { ...payload, id: '', created_at: new Date().toISOString() } as GitHubIssue;
-  return { issue: stored, url: issue.html_url };
+  if (!repoState.diagnostics.checks.issueCreationPermissionsAvailable) throw new GitHubRequestError(403, 'GitHub token does not have issue write access to the Xeetrix organization repository.');
+  const generatedTimestamp = input.generated_timestamp || new Date().toISOString();
+  const title = formatIssueTitle(input.title);
+  const body = buildIssueBody({ ...input, generated_timestamp: generatedTimestamp });
+  try {
+    const issue = await githubRequest<GitHubCreatedIssue>(`/repos/${repoState.repository.repo_full_name}/issues`, { method: 'POST', body: JSON.stringify({ title, body }) });
+    const payload = { repository_id: repoState.repository.id || null, github_issue_number: issue.number, github_issue_url: issue.html_url, title: issue.title, body: issue.body ?? body, status: issue.state, source_type: input.source_type, source_id: input.source_id, weakness_summary: input.weakness_summary, recommendation: input.recommendation, impact: input.impact, proposal_source: input.proposal_source, generated_timestamp: generatedTimestamp, github_api_response: issue as unknown as Record<string, unknown>, updated_at: new Date().toISOString() };
+    const stored = (await supabaseRequest<GitHubIssue[]>('github_issues', { method: 'POST', body: JSON.stringify(payload) }))?.[0] ?? { ...payload, id: '', created_at: issue.created_at } as GitHubIssue;
+    return { issue: stored, url: issue.html_url };
+  } catch (error) {
+    if (error instanceof GitHubRequestError && error.status === 403) throw new GitHubRequestError(403, 'GitHub token does not have issue write access to the Xeetrix organization repository.');
+    throw error;
+  }
 }
