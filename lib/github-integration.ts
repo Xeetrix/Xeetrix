@@ -44,6 +44,8 @@ export type GitHubIssue = {
 type GitHubUser = { login: string; html_url?: string };
 type GitHubRepo = { full_name: string; html_url: string; default_branch: string; has_issues?: boolean; permissions?: { admin?: boolean; maintain?: boolean; push?: boolean; triage?: boolean; pull?: boolean } };
 type GitHubCreatedIssue = { number: number; html_url: string; state: string; title: string; body: string | null; id: number; node_id: string; created_at: string; updated_at: string; user?: { login: string } };
+export type GitHubRepositoryIssue = { id: number; number: number; html_url: string; title: string; state: string; created_at: string; updated_at: string; closed_at?: string | null; body?: string | null; user?: { login: string } };
+export type GitHubCommitSummary = { sha: string; html_url: string; message: string; author: string | null; date: string | null };
 type GitHubOrg = { login: string; id: number; url: string; repos_url: string };
 
 type GitHubIssueInput = {
@@ -52,6 +54,11 @@ type GitHubIssueInput = {
   recommendation: string;
   impact: string;
   proposal_source: string;
+  evidence?: string[];
+  metrics?: unknown[];
+  reasoning?: string[];
+  acceptance_criteria?: string[];
+  suggested_implementation?: string;
   generated_timestamp?: string;
   source_type: 'improvement_proposal';
   source_id: string;
@@ -136,6 +143,18 @@ function formatIssueTitle(title: string) {
 
 function buildIssueBody(input: GitHubIssueInput) {
   return [
+    '## Evidence',
+    (input.evidence?.length ? input.evidence.map((item) => `- ${item}`).join('\n') : `- ${input.weakness_summary.trim()}`),
+    '',
+    '## Reasoning',
+    (input.reasoning?.length ? input.reasoning.map((item) => `- ${item}`).join('\n') : '- Human approval is required before implementation.'),
+    '',
+    '## Metrics',
+    (input.metrics?.length ? input.metrics.map((item) => `- ${JSON.stringify(item)}`).join('\n') : '- Metrics unavailable beyond proposal summary.'),
+    '',
+    '## Acceptance criteria',
+    (input.acceptance_criteria?.length ? input.acceptance_criteria.map((item) => `- ${item}`).join('\n') : '- Evidence, reasoning, metrics, and human approval controls are visible.\n- No automatic merge or deployment.'),
+    '',
     '## Weakness summary',
     input.weakness_summary.trim(),
     '',
@@ -144,6 +163,9 @@ function buildIssueBody(input: GitHubIssueInput) {
     '',
     '## Impact',
     input.impact.trim(),
+    '',
+    '## Suggested implementation',
+    (input.suggested_implementation || input.recommendation).trim(),
     '',
     '## Proposal source',
     input.proposal_source.trim(),
@@ -230,11 +252,28 @@ export async function createGitHubIssue(input: GitHubIssueInput) {
   const body = buildIssueBody({ ...input, generated_timestamp: generatedTimestamp });
   try {
     const issue = await githubRequest<GitHubCreatedIssue>(`/repos/${repoState.repository.repo_full_name}/issues`, { method: 'POST', body: JSON.stringify({ title, body }) });
-    const payload = { repository_id: repoState.repository.id || null, github_issue_number: issue.number, github_issue_url: issue.html_url, title: issue.title, body: issue.body ?? body, status: issue.state, source_type: input.source_type, source_id: input.source_id, weakness_summary: input.weakness_summary, recommendation: input.recommendation, impact: input.impact, proposal_source: input.proposal_source, generated_timestamp: generatedTimestamp, github_api_response: issue as unknown as Record<string, unknown>, updated_at: new Date().toISOString() };
+    const payload = { repository_id: repoState.repository.id || null, github_issue_number: issue.number, github_issue_url: issue.html_url, title: issue.title, body: issue.body ?? body, status: issue.state, source_type: input.source_type, source_id: input.source_id, weakness_summary: input.weakness_summary, recommendation: input.recommendation, impact: input.impact, proposal_source: input.proposal_source, evidence: input.evidence ?? [], metrics: input.metrics ?? [], reasoning: input.reasoning ?? [], acceptance_criteria: input.acceptance_criteria ?? [], suggested_implementation: input.suggested_implementation ?? input.recommendation, generated_timestamp: generatedTimestamp, github_api_response: issue as unknown as Record<string, unknown>, updated_at: new Date().toISOString() };
     const stored = (await supabaseRequest<GitHubIssue[]>('github_issues', { method: 'POST', body: JSON.stringify(payload) }))?.[0] ?? { ...payload, id: '', created_at: issue.created_at } as GitHubIssue;
+    await supabaseRequest(`agent_improvement_proposals?proposal_key=eq.${encodeURIComponent(input.source_id)}`, { method: 'PATCH', body: JSON.stringify({ execution_status: 'Issue Created', github_issue_number: issue.number, github_issue_url: issue.html_url, updated_at: new Date().toISOString() }) }).catch(() => null);
+    await supabaseRequest('agent_execution_events', { method: 'POST', body: JSON.stringify({ proposal_key: input.source_id, status: 'Issue Created', github_issue_number: issue.number, github_issue_url: issue.html_url, notes: 'GitHub issue created after human approval.' }) }).catch(() => null);
+    await supabaseRequest('agent_codex_prompt_history', { method: 'POST', body: JSON.stringify({ proposal_key: input.source_id, github_issue_number: issue.number, prompt: input.proposal_source, metadata: { evidence: input.evidence ?? [], metrics: input.metrics ?? [], reasoning: input.reasoning ?? [] } }) }).catch(() => null);
     return { issue: stored, url: issue.html_url };
   } catch (error) {
     if (error instanceof GitHubRequestError && error.status === 403) throw new GitHubRequestError(403, 'GitHub token does not have issue write access to the Xeetrix organization repository.');
     throw error;
   }
+}
+
+
+export async function listRepositoryIssues(state: 'open' | 'closed' = 'open', limit = 20) {
+  if (!githubToken()) return [];
+  const repoFullName = configuredRepoFullName();
+  return githubRequest<GitHubRepositoryIssue[]>(`/repos/${repoFullName}/issues?state=${state}&per_page=${limit}`);
+}
+
+export async function listRepositoryCommits(limit = 20) {
+  if (!githubToken()) return [];
+  const repoFullName = configuredRepoFullName();
+  const commits = await githubRequest<Array<{ sha: string; html_url: string; commit: { message: string; author?: { name?: string; date?: string } } }>>(`/repos/${repoFullName}/commits?per_page=${limit}`);
+  return commits.map((item) => ({ sha: item.sha, html_url: item.html_url, message: item.commit.message, author: item.commit.author?.name ?? null, date: item.commit.author?.date ?? null }));
 }
