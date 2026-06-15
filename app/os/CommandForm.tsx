@@ -4,6 +4,12 @@ import { FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import styles from './page.module.css';
 
+type Brain = {
+  reasoning?: { why_it_matters?: string; suggested_action?: string; related_past_context?: string[] };
+  related_context?: Record<string, unknown>;
+  confirmation_sections?: { understood: string; why_important: string; suggested_action: string; save_location: string; related_information: string[]; confidence: number };
+};
+
 type Answer = {
   answer_type: string;
   title: string;
@@ -69,6 +75,7 @@ export default function CommandForm() {
   const [clarificationMessage, setClarificationMessage] = useState('');
   const [plan, setPlan] = useState<Plan | null>(null);
   const [answer, setAnswer] = useState<Answer | null>(null);
+  const [brain, setBrain] = useState<Brain | null>(null);
 
   useEffect(() => {
     if (!toastMessage) {
@@ -96,6 +103,7 @@ export default function CommandForm() {
     setClarificationMessage('');
     setPlan(null);
     setAnswer(null);
+    setBrain(null);
 
     try {
       const response = await fetch('/api/os/command', {
@@ -121,6 +129,7 @@ export default function CommandForm() {
       if (data?.needs_clarification) {
         setClarificationMessage(data.clarification_question ?? data.message ?? 'আরও তথ্য দরকার।');
         setPlan(data.plan ?? null);
+        setBrain(data.brain ?? null);
         return;
       }
 
@@ -129,6 +138,7 @@ export default function CommandForm() {
       }
 
       setPlan(data.plan);
+      setBrain(data.brain ?? null);
       setToastMessage(data.message ?? 'নিশ্চিত করলে সংরক্ষণ করা হবে।');
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Shaikh OS নির্দেশনাটি বুঝতে পারেনি।');
@@ -152,7 +162,7 @@ export default function CommandForm() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ confirm: true, plan }),
+        body: JSON.stringify({ confirm: true, plan, brain }),
       });
 
       const data = await response.json().catch(() => null);
@@ -163,6 +173,7 @@ export default function CommandForm() {
       setCommand('');
       setPlan(null);
       setAnswer(null);
+      setBrain(null);
       setClarificationMessage('');
       setToastMessage(data.message ?? 'সংরক্ষণ করা হয়েছে।');
       router.refresh();
@@ -173,11 +184,16 @@ export default function CommandForm() {
     }
   }
 
-  function handleCancel() {
+  async function handleCancel() {
+    const previousPlan = plan;
     setPlan(null);
     setAnswer(null);
+    setBrain(null);
     setClarificationMessage('');
     setToastMessage('বাতিল করা হয়েছে।');
+    if (previousPlan) {
+      await fetch('/api/os/command', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cancel: true, plan: previousPlan }) }).catch(() => null);
+    }
   }
 
   return (
@@ -234,7 +250,7 @@ export default function CommandForm() {
           <div>
             <span>{intentLabels[plan.intent]}</span>
             <h3>আমি যা বুঝেছি</h3>
-            <p>নিশ্চিত করলে তবেই সংরক্ষণ হবে: “{plan.title}”।</p>
+            <p>{brain?.confirmation_sections?.understood ?? `নিশ্চিত করলে তবেই সংরক্ষণ হবে: “${plan.title}”।`}</p>
           </div>
           <dl>
             <div>
@@ -267,7 +283,25 @@ export default function CommandForm() {
             </div>
             <div>
               <dt>সংরক্ষণের জায়গা</dt>
-              <dd>{plan.save_location_label || targetLabels[plan.target]}</dd>
+              <dd>{brain?.confirmation_sections?.save_location || plan.save_location_label || targetLabels[plan.target]}</dd>
+            </div>
+            <div>
+              <dt>কেন গুরুত্বপূর্ণ</dt>
+              <dd>{brain?.confirmation_sections?.why_important ?? brain?.reasoning?.why_it_matters ?? 'এই তথ্য ভবিষ্যৎ context ও decision support উন্নত করবে।'}</dd>
+            </div>
+            <div>
+              <dt>প্রস্তাবিত কাজ</dt>
+              <dd>{brain?.confirmation_sections?.suggested_action ?? brain?.reasoning?.suggested_action ?? 'সংরক্ষণ করা'}</dd>
+            </div>
+            {brain?.confirmation_sections?.related_information?.length ? (
+              <div>
+                <dt>সম্পর্কিত তথ্য</dt>
+                <dd>{brain.confirmation_sections.related_information.join(' · ')}</dd>
+              </div>
+            ) : null}
+            <div>
+              <dt>আস্থা</dt>
+              <dd>{Math.round((brain?.confirmation_sections?.confidence ?? plan.confidence) * 100)}%</dd>
             </div>
           </dl>
           <div className={styles.confirmationActions}>
