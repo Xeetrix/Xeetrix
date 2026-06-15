@@ -4,6 +4,13 @@ import { FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import styles from './page.module.css';
 
+type Answer = {
+  answer_type: string;
+  title: string;
+  summary: string;
+  sections: { title: string; items: string[] }[];
+};
+
 type Plan = {
   intent: 'task' | 'reminder' | 'note' | 'idea' | 'decision' | 'meeting' | 'health_log' | 'finance_log' | 'contact' | 'follow_up' | 'unknown';
   project_name: string;
@@ -61,6 +68,7 @@ export default function CommandForm() {
   const [errorMessage, setErrorMessage] = useState('');
   const [clarificationMessage, setClarificationMessage] = useState('');
   const [plan, setPlan] = useState<Plan | null>(null);
+  const [answer, setAnswer] = useState<Answer | null>(null);
 
   useEffect(() => {
     if (!toastMessage) {
@@ -87,6 +95,7 @@ export default function CommandForm() {
     setToastMessage('');
     setClarificationMessage('');
     setPlan(null);
+    setAnswer(null);
 
     try {
       const response = await fetch('/api/os/command', {
@@ -101,6 +110,12 @@ export default function CommandForm() {
 
       if (!response.ok && data?.mode !== 'clarification') {
         throw new Error(data?.error ?? 'Shaikh OS নির্দেশনাটি বুঝতে পারেনি।');
+      }
+
+      if (data?.mode === 'answer') {
+        setAnswer({ answer_type: data.answer_type, title: data.title, summary: data.summary, sections: data.sections ?? [] });
+        setToastMessage('উত্তর প্রস্তুত।');
+        return;
       }
 
       if (data?.needs_clarification) {
@@ -147,6 +162,7 @@ export default function CommandForm() {
 
       setCommand('');
       setPlan(null);
+      setAnswer(null);
       setClarificationMessage('');
       setToastMessage(data.message ?? 'সংরক্ষণ করা হয়েছে।');
       router.refresh();
@@ -159,6 +175,7 @@ export default function CommandForm() {
 
   function handleCancel() {
     setPlan(null);
+    setAnswer(null);
     setClarificationMessage('');
     setToastMessage('বাতিল করা হয়েছে।');
   }
@@ -190,6 +207,27 @@ export default function CommandForm() {
         <p className={styles.commandClarification} role="status" aria-live="polite">
           <strong>পরিষ্কার নয়:</strong> {clarificationMessage}
         </p>
+      ) : null}
+      {answer ? (
+        <div className={styles.answerCard} role="region" aria-label="Shaikh OS উত্তর">
+          <div>
+            <span>{answer.answer_type}</span>
+            <h3>{answer.title}</h3>
+            <p>{answer.summary}</p>
+          </div>
+          <div className={styles.answerSections}>
+            {answer.sections.map((section) => (
+              <section key={section.title}>
+                <h4>{section.title}</h4>
+                <ul>
+                  {section.items.map((item, index) => (
+                    <li key={`${section.title}-${index}`}>{item}</li>
+                  ))}
+                </ul>
+              </section>
+            ))}
+          </div>
+        </div>
       ) : null}
       {plan && !plan.needs_clarification ? (
         <div className={styles.confirmationCard} role="region" aria-label="নিশ্চিত করুন">
