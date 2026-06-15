@@ -21,6 +21,7 @@ const navItems = [
   { href: '/os/operations', label: 'Operations' },
   { href: '/os/personal', label: 'Personal' },
   { href: '/os/agent', label: 'Agent' },
+  { href: '/os/improve', label: 'Improve' },
 ];
 
 export default function OsPage({ eyebrow, title, subtitle, stats = [], children }: OsPageProps) {
