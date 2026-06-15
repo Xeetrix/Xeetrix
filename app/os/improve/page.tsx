@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import OsPage, { styles } from '../_components/OsPage';
 import { buildSystemAuditSnapshot, persistAudit } from '@/lib/shaikh-os-improvement';
+import { getGitHubRepository, getGitHubStatus, listLatestGitHubIssues } from '@/lib/github-integration';
 import ProposalActions from './ProposalActions';
 
 export const metadata: Metadata = { title: 'Self Improvement | Shaikh OS' };
@@ -9,6 +10,11 @@ export const dynamic = 'force-dynamic';
 export default async function ImprovePage() {
   const snapshot = await buildSystemAuditSnapshot();
   await persistAudit(snapshot).catch(() => null);
+  const [githubStatus, githubRepo, latestIssues] = await Promise.all([
+    getGitHubStatus().catch((error) => ({ configured: Boolean(process.env.GITHUB_TOKEN), connected: false, connection: null, error: error instanceof Error ? error.message : 'GitHub status unavailable' })),
+    getGitHubRepository().catch((error) => ({ configured: Boolean(process.env.GITHUB_TOKEN), repository: null, error: error instanceof Error ? error.message : 'GitHub repository unavailable' })),
+    listLatestGitHubIssues().catch(() => []),
+  ]);
 
   return (
     <OsPage
@@ -40,6 +46,31 @@ export default async function ImprovePage() {
         </div>
       </section>
 
+
+      <section className={styles.section} id="development-agency">
+        <div className={styles.sectionHeader}><div><h2>Development Agency</h2><p>Safe GitHub foundation for approved self-improvement proposals. Issue creation only; no code changes, PR creation, or deployment is triggered here.</p></div></div>
+        <div className={styles.twoColumn}>
+          <article className={styles.card}>
+            <p className={styles.cardMeta}>GitHub connection status</p>
+            <h3>{githubStatus.connected ? 'Connected' : githubStatus.configured ? 'Token configured, connection pending' : 'Not configured'}</h3>
+            <p>{githubStatus.connection?.github_username ? `Connected as ${githubStatus.connection.github_username}` : 'Set GITHUB_TOKEN server-side to connect GitHub without exposing credentials to the browser.'}</p>
+          </article>
+          <article className={styles.card}>
+            <p className={styles.cardMeta}>Connected repository</p>
+            <h3>{githubRepo.repository?.repo_full_name ?? process.env.GITHUB_REPO_FULL_NAME ?? 'Xeetrix/Xeetrix'}</h3>
+            <p>{githubRepo.repository?.repo_url ? <a href={githubRepo.repository.repo_url} rel="noreferrer" target="_blank">{githubRepo.repository.repo_url}</a> : 'Repository will be verified server-side when GitHub is configured.'}</p>
+            {githubRepo.repository?.default_branch ? <p>Default branch: {githubRepo.repository.default_branch}</p> : null}
+          </article>
+        </div>
+        <div className={styles.grid}>
+          {latestIssues.length ? latestIssues.map((issue) => <article className={styles.card} key={issue.id || `${issue.github_issue_number}-${issue.source_id}`}>
+            <p className={styles.cardMeta}>Issue #{issue.github_issue_number} · {issue.status}</p>
+            <h3>{issue.title}</h3>
+            {issue.github_issue_url ? <p><a href={issue.github_issue_url} rel="noreferrer" target="_blank">Open issue</a></p> : null}
+          </article>) : <article className={styles.card}><h3>No GitHub issues created yet</h3><p>Approved improvement proposals can create real GitHub issues in the configured repository.</p></article>}
+        </div>
+      </section>
+
       <section className={styles.section} id="proposals">
         <div className={styles.sectionHeader}><div><h2>Improvement Proposals</h2><p>Premium-model proposals when available; deterministic proposal fallback otherwise. Prompts are generated only for user approval and are never executed automatically.</p></div></div>
         <div className={styles.grid}>
@@ -49,7 +80,7 @@ export default async function ImprovePage() {
             <p><strong>প্রস্তাবিত উন্নয়ন:</strong> {proposal.recommendation}</p>
             <p><strong>প্রভাব:</strong> {proposal.expectedImpact}</p>
             <p><strong>ঝুঁকি:</strong> {proposal.riskLevel} · <strong>Complexity:</strong> {proposal.complexity}</p>
-            <ProposalActions proposalKey={proposal.id} codexPrompt={proposal.codexPrompt} />
+            <ProposalActions proposalKey={proposal.id} title={proposal.observation} body={proposal.codexPrompt} codexPrompt={proposal.codexPrompt} initialStatus={proposal.status} />
           </article>)}
         </div>
       </section>
