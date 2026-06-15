@@ -10,9 +10,11 @@ const actions = [
   { value: 'approved', label: 'Approve for Codex Prompt' },
 ] as const;
 
-export default function ProposalActions({ proposalKey, codexPrompt }: { proposalKey: string; codexPrompt: string }) {
-  const [status, setStatus] = useState<string>('');
+export default function ProposalActions({ proposalKey, title, body, codexPrompt, initialStatus }: { proposalKey: string; title: string; body: string; codexPrompt: string; initialStatus: string }) {
+  const [status, setStatus] = useState<string>(initialStatus ?? '');
+  const [issueUrl, setIssueUrl] = useState<string>('');
   const [saving, setSaving] = useState(false);
+  const [creatingIssue, setCreatingIssue] = useState(false);
 
   async function mark(feedbackType: string) {
     setSaving(true);
@@ -21,10 +23,25 @@ export default function ProposalActions({ proposalKey, codexPrompt }: { proposal
     setSaving(false);
   }
 
+  async function createIssue() {
+    setCreatingIssue(true);
+    const response = await fetch('/api/integrations/github/issues', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, body, source_type: 'improvement_proposal', source_id: proposalKey }),
+    });
+    const data = await response.json().catch(() => null) as { url?: string; error?: string } | null;
+    setIssueUrl(response.ok && data?.url ? data.url : `error:${data?.error ?? 'GitHub issue creation failed'}`);
+    setCreatingIssue(false);
+  }
+
   return (
     <div className={styles.badgeRow}>
-      {actions.map((action) => <button className={styles.filterLink} disabled={saving} key={action.value} onClick={() => mark(action.value)} type="button">{action.label}</button>)}
+      {actions.map((action) => <button className={styles.filterLink} disabled={saving || creatingIssue} key={action.value} onClick={() => mark(action.value)} type="button">{action.label}</button>)}
+      {status === 'approved' ? <button className={styles.filterLink} disabled={creatingIssue} onClick={createIssue} type="button">{creatingIssue ? 'Creating issue…' : 'Create GitHub Issue'}</button> : null}
       {status === 'approved' ? <pre style={{ whiteSpace: 'pre-wrap', width: '100%', color: '#e9edff' }}>{codexPrompt}</pre> : null}
+      {issueUrl && !issueUrl.startsWith('error:') ? <a className={styles.badge} href={issueUrl} rel="noreferrer" target="_blank">GitHub issue created</a> : null}
+      {issueUrl.startsWith('error:') ? <span className={styles.badge}>{issueUrl.replace('error:', '')}</span> : null}
       {status && status !== 'approved' ? <span className={styles.badge}>Saved: {status}</span> : null}
     </div>
   );
