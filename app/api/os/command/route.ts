@@ -5,11 +5,11 @@ import {
   fallbackParseIntent,
   formatBanglaPlanSummary,
   mapProjectName,
-  parseIntentWithLLM,
   type ShaikhOsPlan,
 } from '@/lib/shaikh-os-intent';
 import type { CommandProject } from '@/lib/shaikh-os-command';
 import { listGoogleIntelligence } from '@/lib/google-integrations';
+import { createObservation, runAgentOrchestrator, type AgentBrainOutput } from '@/lib/shaikh-os-orchestrator';
 
 const AGENT_API_URL = process.env.NEXT_PUBLIC_AGENT_API_URL ?? 'https://api.xeetrix.com';
 const AGENT_API_SECRET = process.env.AGENT_API_SECRET;
@@ -17,7 +17,10 @@ const AGENT_API_SECRET = process.env.AGENT_API_SECRET;
 type CommandRequest = {
   command?: string;
   confirm?: boolean;
+  cancel?: boolean;
+  correction?: string;
   plan?: Partial<ShaikhOsPlan>;
+  brain?: Partial<AgentBrainOutput>;
 };
 
 type UnknownRecord = Record<string, unknown>;
@@ -39,7 +42,11 @@ export async function POST(request: Request) {
     const projects = await loadProjects();
 
     if (body.confirm) {
-      return executeConfirmedPlan(body.plan, projects);
+      return executeConfirmedPlan(body.plan, projects, body.brain);
+    }
+
+    if (body.cancel || body.correction) {
+      return recordFeedback(body.plan, body.correction ?? 'cancelled');
     }
 
     const command = body.command?.trim();
@@ -53,7 +60,15 @@ export async function POST(request: Request) {
       return NextResponse.json(await answerReadQuery(command, route.answerType, projects));
     }
 
-    const { plan, warning } = await parseCommand(command, projects);
+    const observation = createObservation(command, 'manual_command');
+    const { brain, warning } = await runAgentOrchestrator(observation, projects, {
+      loadTasks: () => loadMemory('/memory/tasks'),
+      loadNotes: () => loadMemory('/memory/notes'),
+      loadContacts: () => loadMemory('/memory/contacts'),
+      loadRelationships: () => loadMemory('/memory/relationships'),
+      loadGoogle: () => listGoogleIntelligence(),
+    }, { apiUrl: AGENT_API_URL, apiSecret: AGENT_API_SECRET ?? '' });
+    const plan = brain.plan;
 
     if (plan.needs_clarification) {
       return NextResponse.json({
@@ -62,6 +77,7 @@ export async function POST(request: Request) {
         needs_clarification: true,
         clarification_question: plan.clarification_question,
         plan,
+        brain,
         message: formatBanglaPlanSummary(plan),
         warnings: [warning].filter(Boolean),
       });
@@ -71,6 +87,7 @@ export async function POST(request: Request) {
       ok: true,
       mode: 'parsed',
       plan,
+      brain,
       message: formatBanglaPlanSummary(plan),
       warnings: [warning].filter(Boolean),
     });
@@ -179,22 +196,7 @@ function isBeforeToday(value: string | null, today: string) { return Boolean(val
 function isPending(record: UnknownRecord) { const status = (asText(record.status) ?? asText(record.state) ?? '').toLowerCase(); return !['done', 'completed', 'complete', 'finished', 'archived', 'cancelled', 'canceled'].includes(status); }
 function detectProject(command: string) { const text = command.toLowerCase(); const pairs = [['KNLTC', 'knltc'], ['Islamic School', 'islamic school'], ['Islamic School', 'school'], ['Xeetrix', 'xeetrix'], ['Investment', 'investment'], ['Personal', 'personal']]; return pairs.find(([, key]) => text.includes(key))?.[0]; }
 
-async function parseCommand(command: string, projects: CommandProject[]) {
-  try {
-    const plan = await parseIntentWithLLM(command, projects, {
-      apiUrl: AGENT_API_URL,
-      apiSecret: AGENT_API_SECRET ?? '',
-    });
-    return { plan, warning: null as string | null };
-  } catch (error) {
-    return {
-      plan: fallbackParseIntent(command, projects),
-      warning: `LLM parser fallback ব্যবহার হয়েছে: ${error instanceof Error ? error.message : 'invalid JSON response'}`,
-    };
-  }
-}
-
-async function executeConfirmedPlan(submittedPlan: Partial<ShaikhOsPlan> | undefined, projects: CommandProject[]) {
+async function executeConfirmedPlan(submittedPlan: Partial<ShaikhOsPlan> | undefined, projects: CommandProject[], brain?: Partial<AgentBrainOutput>) {
   if (!submittedPlan || !submittedPlan.raw_command) {
     return NextResponse.json({ error: 'সংরক্ষণের জন্য বৈধ plan দরকার।' }, { status: 400 });
   }
@@ -215,7 +217,7 @@ async function executeConfirmedPlan(submittedPlan: Partial<ShaikhOsPlan> | undef
     );
   }
 
-  const result = await savePlan(plan);
+  const result = await savePlan(plan, brain);
   if (!result.ok) {
     return NextResponse.json(
       {
@@ -292,7 +294,17 @@ function getTargetForIntent(intent: ShaikhOsPlan['intent']): ShaikhOsPlan['targe
   return 'notes';
 }
 
-async function saveCommandLog(plan: ShaikhOsPlan) {
+async function recordFeedback(plan: Partial<ShaikhOsPlan> | undefined, correction: string) {
+  await saveToMemory('/memory/inbox_items', 'notes', {
+    title: 'Agent feedback / correction',
+    raw_command: plan?.raw_command ?? '',
+    content: correction,
+    metadata: { type: 'agent_feedback', correction, previous_plan: plan ?? null, received_at: new Date().toISOString() },
+  }).catch(() => null);
+  return NextResponse.json({ ok: true, mode: 'feedback_saved', message: 'Feedback সংরক্ষণ করা হয়েছে।' });
+}
+
+async function saveCommandLog(plan: ShaikhOsPlan, brain?: Partial<AgentBrainOutput>) {
   return saveToMemory('/memory/inbox_items', 'notes', {
     title: plan.title,
     raw_command: plan.raw_command,
@@ -305,13 +317,17 @@ async function saveCommandLog(plan: ShaikhOsPlan) {
       parser: plan.parser,
       target: plan.save_target,
       original_plan: plan,
+      agent_observation: brain?.observation ?? null,
+      agent_understanding: brain?.understanding ?? null,
+      agent_reasoning: brain?.reasoning ?? null,
+      agent_action_plan: brain?.action_plan ?? null,
       visibility: 'Memory Center / Timeline',
     },
   }).catch(() => null);
 }
 
-async function savePlan(plan: ShaikhOsPlan) {
-  await saveCommandLog(plan);
+async function savePlan(plan: ShaikhOsPlan, brain?: Partial<AgentBrainOutput>) {
+  await saveCommandLog(plan, brain);
 
   if (taskLikeIntents.has(plan.intent)) {
     return saveToMemory('/memory/tasks', 'tasks', buildTaskPayload(plan));
