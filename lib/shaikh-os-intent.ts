@@ -9,6 +9,7 @@ import {
 } from './shaikh-os-command';
 
 export type ShaikhOsTarget = 'tasks' | 'notes';
+export type ShaikhOsCommandAction = 'answer_query' | 'save_memory' | 'create_task' | 'update_existing_item' | 'ask_clarification' | 'suggest_only';
 export type ShaikhOsIntent =
   | 'task'
   | 'reminder'
@@ -50,12 +51,26 @@ export type ShaikhOsPlan = {
   target: ShaikhOsTarget;
   raw_command: string;
   parser: 'llm' | 'fallback';
+  command_action: ShaikhOsCommandAction;
+  answer_type: string | null;
+  answer: string | null;
 };
 
 export type IntentParserConfig = {
   apiUrl: string;
   apiSecret: string;
   now?: Date;
+  context?: ShaikhOsLLMContext;
+};
+
+export type ShaikhOsLLMContext = {
+  projects: unknown[];
+  tasks: unknown[];
+  notes: unknown[];
+  contacts: unknown[];
+  health_logs: unknown[];
+  google_signals: unknown[];
+  previous_corrections: unknown[];
 };
 
 type UnknownRecord = Record<string, unknown>;
@@ -91,7 +106,7 @@ export async function parseIntentWithLLM(command: string, projects: CommandProje
     },
     body: JSON.stringify({
       taskType: SHAIKH_AGENT_TASK_TYPES.intentParsing,
-      message: buildParserPrompt(command, projects, config.now ?? new Date()),
+      message: buildParserPrompt(command, projects, config.now ?? new Date(), config.context),
     }),
     cache: 'no-store',
   });
@@ -146,6 +161,9 @@ export function fallbackParseIntent(command: string, projects: CommandProject[] 
     target: targetForIntent(intent),
     raw_command: command.trim(),
     parser: 'fallback',
+    command_action: intent === 'unknown' ? 'ask_clarification' : (targetForIntent(intent) === 'tasks' ? 'create_task' : 'save_memory'),
+    answer_type: null,
+    answer: null,
   };
 }
 
@@ -268,8 +286,8 @@ export function formatBanglaPlanSummary(plan: ShaikhOsPlan) {
   return `আমি যা বুঝেছি:${dueText} ${plan.project_name} প্রকল্পে “${plan.title}” ${targetText}-এ সংরক্ষণ করব। নিশ্চিত করবেন? (${intentLabel})`;
 }
 
-function buildParserPrompt(command: string, projects: CommandProject[], now: Date) {
-  const projectNames = projects.map((project) => project.name).filter(Boolean).join(', ') || PROJECT_FALLBACKS.join(', ');
+function buildParserPrompt(command: string, projects: CommandProject[], now: Date, context?: ShaikhOsLLMContext) {
+  const projectNames = projects.map((project) => project.name).filter(Boolean).join(', ') || 'General';
   return `You are Shaikh OS Intent Parser v3.
 Understand Bangla, Banglish, English, mixed informal language, emotional language, and incomplete sentences.
 Use contextual LLM reasoning as the primary method. Do not depend on keyword matching only.
@@ -281,14 +299,17 @@ Separate category, topic, symptoms, importance, and urgency. Urgency means time/
 If critical fields are missing, ask clarification.
 Use Asia/Dhaka timezone for relative dates and times. Current server time: ${now.toISOString()}.
 Available live projects: ${projectNames}.
+Live context JSON (use this as real data; do not invent): ${JSON.stringify(compactLLMContext(context))}.
+Allowed command_action values: answer_query, save_memory, create_task, update_existing_item, ask_clarification, suggest_only.
+Use answer_query for questions that ask what is pending, current status, summaries, or facts from the provided context. Use update_existing_item for natural-language changes to an existing task/note/contact. Use suggest_only only when the user asks for advice without asking to save anything.
 Allowed intents: task, reminder, note, idea, decision, meeting, health_log, finance_log, contact, follow_up, unknown.
-Allowed project_name values: KNLTC, Islamic School, Xeetrix, Investment, Personal, General, null, or a matching live project name.
-Project reasoning guidance: health/mental/sleep/symptoms usually Personal; general personal spending usually Personal; KNLTC for lead/follow-up/client/visa/commission/marketing; Islamic School for admission/school/madrasa/teacher/student; Xeetrix for tech/AI/platform/software; Investment for investment/profit/loss. If unclear use null and ask clarification.
-Intent guidance: sleep/symptom/mood/weakness = health_log; money received/spent = finance_log; "korte hobe" work = task; lead follow-up can be task or follow_up, save_target tasks; ideas = idea; chosen focus/decision = decision; unclear references like "oi kajta" require clarification.
+Allowed project_name values: any exact matching live project name from the context, Personal, General, or null. Do not invent projects and do not rely on project-specific hardcoded phrases.
+Project reasoning guidance: choose from live project context and semantic meaning. Personal health, family, private life, and personal spending usually belong to Personal. If no project is clear, use General or null and ask one clarification only when project choice is required for action.
+Intent guidance: reason from the full sentence and context; health/sleep/symptom/mood observations = health_log; money received/spent = finance_log; action obligations = task; follow-up work = follow_up/task; ideas = idea; chosen focus/decision = decision; unclear references require clarification.
 Urgency rules: Health mild symptom = low, repeated symptom = medium, serious warning signs = high; Finance small expense = low, payment deadline = high; Operations meeting today = high, idea only = low.
 Health examples: itching + poor sleep without repeated/severe warning signs => category Health, symptoms [Itching, Poor Sleep], urgency low, suggested_action Monitor.
 Required JSON shape exactly:
-{"intent":"task | reminder | note | idea | decision | meeting | health_log | finance_log | contact | follow_up | unknown","title":"short Bangla title","summary":"short Bangla summary","project_name":"KNLTC | Islamic School | Xeetrix | Investment | Personal | General | null","category":"Health | Finance | Operations | Personal | Project | General | null","topic":"sleep | symptom | mental_health | income | expense | admission | marketing | lead_followup | etc | null","symptoms":["..."],"importance":"low | medium | high","urgency":"low | medium | high","priority":"low | medium | high","due_date":"ISO date or null","reminder_at":"ISO date or null","amount":number or null,"direction":"income | expense | null","people":["..."],"confidence":0.0,"extracted_entities":{"suggested_action":"Monitor | Ask confirmation | Act now | etc"},"needs_clarification":boolean,"clarification_question":"Bangla question or null","needs_confirmation":boolean,"save_target":"tasks | notes","save_location_label":"Bangla label"}
+{"command_action":"answer_query | save_memory | create_task | update_existing_item | ask_clarification | suggest_only","answer_type":"today_pending_tasks | overdue_tasks | today_briefing | project_status | health_summary | gmail_signals | general_context_answer | null","answer":"short direct answer from real context when command_action is answer_query or suggest_only, otherwise null","intent":"task | reminder | note | idea | decision | meeting | health_log | finance_log | contact | follow_up | unknown","title":"short Bangla title","summary":"short Bangla summary","project_name":"matching live project name | Personal | General | null","category":"Health | Finance | Operations | Personal | Project | General | null","topic":"sleep | symptom | mental_health | income | expense | admission | marketing | lead_followup | etc | null","symptoms":["..."],"importance":"low | medium | high","urgency":"low | medium | high","priority":"low | medium | high","due_date":"ISO date or null","reminder_at":"ISO date or null","amount":number or null,"direction":"income | expense | null","people":["..."],"confidence":0.0,"extracted_entities":{"suggested_action":"Monitor | Ask confirmation | Act now | etc"},"needs_clarification":boolean,"clarification_question":"Bangla question or null","needs_confirmation":boolean,"save_target":"tasks | notes","save_location_label":"Bangla label"}
 Command: ${JSON.stringify(command)}`;
 }
 
@@ -312,6 +333,9 @@ function normalizePlan(raw: UnknownRecord, command: string, projects: CommandPro
   const rawIntent = asText(raw.intent) ?? asText(raw.item_type) ?? 'unknown';
   const intent = INTENTS.includes(rawIntent as ShaikhOsIntent) ? rawIntent as ShaikhOsIntent : 'unknown';
   const mappedProject = mapProjectName(raw.project_name, projects, intent, command);
+  const rawAction = asText(raw.command_action) ?? (asText(raw.action_type));
+  const allowedActions: ShaikhOsCommandAction[] = ['answer_query', 'save_memory', 'create_task', 'update_existing_item', 'ask_clarification', 'suggest_only'];
+  const commandAction = rawAction && allowedActions.includes(rawAction as ShaikhOsCommandAction) ? rawAction as ShaikhOsCommandAction : (intent === 'unknown' ? 'ask_clarification' : (targetForIntent(intent) === 'tasks' ? 'create_task' : 'save_memory'));
   const confidence = clampConfidence(asNumber(raw.confidence) ?? 0.5);
   const saveTarget = normalizeTarget(asText(raw.save_target) ?? asText(raw.target), intent);
   const category = normalizeCategory(asText(raw.category), intent);
@@ -354,6 +378,34 @@ function normalizePlan(raw: UnknownRecord, command: string, projects: CommandPro
     target: saveTarget,
     raw_command: command.trim(),
     parser,
+    command_action: needsClarification ? 'ask_clarification' : commandAction,
+    answer_type: asText(raw.answer_type) ?? null,
+    answer: asText(raw.answer) ?? null,
+  };
+}
+
+function compactLLMContext(context?: ShaikhOsLLMContext) {
+  if (!context) return {};
+  const take = (items: unknown[], limit = 12) => items.slice(0, limit).map((item) => {
+    if (!isRecord(item)) return item;
+    return {
+      id: asText(item.id),
+      title: asText(item.title) ?? asText(item.name) ?? asText(item.summary),
+      summary: asText(item.summary) ?? asText(item.content) ?? asText(item.description),
+      project_name: asText(item.project_name) ?? asText(item.project),
+      status: asText(item.status),
+      due_date: asText(item.due_date) ?? asText(item.due),
+      metadata: isRecord(item.metadata) ? item.metadata : undefined,
+    };
+  });
+  return {
+    projects: take(context.projects, 20),
+    tasks: take(context.tasks),
+    notes: take(context.notes),
+    contacts: take(context.contacts),
+    health_logs: take(context.health_logs),
+    google_signals: take(context.google_signals),
+    previous_corrections: take(context.previous_corrections, 8),
   };
 }
 

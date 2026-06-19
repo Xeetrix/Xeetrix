@@ -28,9 +28,12 @@ type CommandRequest = {
 
 type UnknownRecord = Record<string, unknown>;
 type SaveTarget = 'tasks' | 'notes' | 'health_logs' | 'finance_logs' | 'none';
-type CommandCategory = 'create_or_save' | 'read_query' | 'update_status' | 'clarification_needed';
 type AnswerSection = { title: string; items: string[] };
 type CommandAnswer = { ok: true; mode: 'answer'; answer_type: string; title: string; summary: string; sections: AnswerSection[]; confidence?: number };
+
+function llmDirectAnswer(answerType: string, answer: string, confidence?: number): CommandAnswer {
+  return { ok: true, mode: 'answer', answer_type: answerType, title: 'Shaikh OS উত্তর', summary: answer, sections: [{ title: 'উত্তর', items: [answer] }], confidence };
+}
 
 const PENDING_TASKS_EMPTY_STATE = 'এখনো কোনো pending কাজ পাওয়া যায়নি।';
 const completedStatuses = new Set(['done', 'completed', 'complete', 'finished', 'archived', 'cancelled', 'canceled']);
@@ -57,26 +60,7 @@ export async function POST(request: Request) {
     }
 
     const commandId = crypto.randomUUID();
-    const route = routeCommand(command);
-    await writeCommandEvent(commandId, 'observation', { command, route }).catch(() => null);
-
-    if (route.category === 'read_query') {
-      const answer = await answerReadQuery(command, route.answerType, projects);
-      const outcome = answer.summary.includes('টি বাস্তব আইটেম পাওয়া গেছে।') ? 'success' : 'no_data';
-      await writeCommandEvent(commandId, 'retrieved_context', { answer_type: route.answerType, sections: answer.sections }).catch(() => null);
-      await writeCommandEvent(commandId, 'reasoning', { reason: 'Read-only command routed to Supabase-backed memory retrieval.', summary: answer.summary }).catch(() => null);
-      await writeCommandEvent(commandId, 'action_plan', { action_type: 'answer_query', target_table: 'agent_memories', destructive: false, auto_deploy: false, auto_code_change: false }).catch(() => null);
-      await writeCommandEvent(commandId, 'execution_result', { mode: 'answer', ok: true }).catch(() => null);
-      await writeCommandEvent(commandId, 'answer', {
-        command_text: command,
-        mode: 'answer',
-        intent: route.answerType,
-        confidence: answer.confidence ?? 0.9,
-        outcome,
-        answer,
-      }).catch(() => null);
-      return NextResponse.json({ ...answer, command_id: commandId });
-    }
+    await writeCommandEvent(commandId, 'observation', { command, route: 'llm_first' }).catch(() => null);
 
     if (!AGENT_API_SECRET) {
       return NextResponse.json({ error: 'AGENT_API_SECRET কনফিগার করা নেই।' }, { status: 500 });
@@ -92,6 +76,26 @@ export async function POST(request: Request) {
     }, { apiUrl: AGENT_API_URL, apiSecret: AGENT_API_SECRET ?? '' });
     const plan = brain.plan;
     await persistBrainLog(commandId, brain).catch(() => null);
+
+    if (brain.action_plan.action_type === 'answer_query' || plan.command_action === 'answer_query') {
+      const answerType = plan.answer_type ?? 'general_context_answer';
+      const answer = answerType === 'general_context_answer' && plan.answer
+        ? llmDirectAnswer(answerType, plan.answer, plan.confidence)
+        : await answerReadQuery(command, answerType, projects);
+      const outcome = answer.summary.includes('টি বাস্তব আইটেম পাওয়া গেছে।') || Boolean(plan.answer) ? 'success' : 'no_data';
+      await writeCommandEvent(commandId, 'retrieved_context', { answer_type: answerType, sections: answer.sections, brain_context: brain.related_context }).catch(() => null);
+      await writeCommandEvent(commandId, 'reasoning', brain.reasoning).catch(() => null);
+      await writeCommandEvent(commandId, 'action_plan', brain.action_plan).catch(() => null);
+      await writeCommandEvent(commandId, 'execution_result', { mode: 'answer', ok: true }).catch(() => null);
+      await writeCommandEvent(commandId, 'answer', { command_text: command, mode: 'answer', intent: answerType, confidence: answer.confidence ?? plan.confidence, outcome, answer }).catch(() => null);
+      return NextResponse.json({ ...answer, command_id: commandId, brain });
+    }
+
+    if (brain.action_plan.action_type === 'suggest_only' || plan.command_action === 'suggest_only') {
+      const answer = llmDirectAnswer('suggestion', plan.answer ?? plan.summary, plan.confidence);
+      return NextResponse.json({ ...answer, command_id: commandId, brain });
+    }
+
     const storedPlan = await saveServerPlan(plan, brain, commandId).catch(() => null);
     const plan_id = typeof storedPlan?.id === 'string' ? storedPlan.id : null;
 
@@ -125,24 +129,6 @@ export async function POST(request: Request) {
 }
 
 
-function routeCommand(command: string): { category: CommandCategory; answerType?: string } {
-  const text = command.toLowerCase();
-  const has = (words: string[]) => words.some((word) => text.includes(word));
-
-  if (has(['pending task', 'বাকি', 'করা দরকার', 'করতে হবে কি', 'দেখাও', 'briefing', 'summary', 'signals', 'meeting আছে', 'overdue', 'স্ট্যাটাস', 'status'])) {
-    if (has(['overdue'])) return { category: 'read_query', answerType: 'overdue_tasks' };
-    if (has(['briefing', 'ব্রিফিং', 'meeting আছে', 'মিটিং আছে'])) return { category: 'read_query', answerType: 'today_briefing' };
-    if (has(['health', 'স্বাস্থ্য', 'ঘুম', 'summary'])) return { category: 'read_query', answerType: 'health_summary' };
-    if (has(['gmail', 'email', 'ইমেইল', 'signals'])) return { category: 'read_query', answerType: 'gmail_signals' };
-    if (detectProject(command)) return { category: 'read_query', answerType: 'project_status' };
-    return { category: 'read_query', answerType: 'today_pending_tasks' };
-  }
-
-  if (has(['complete', 'done', 'সম্পন্ন', 'শেষ', 'status update'])) return { category: 'update_status' };
-  if (command.length < 4) return { category: 'clarification_needed' };
-  return { category: 'create_or_save' };
-}
-
 async function answerReadQuery(command: string, answerType = 'today_pending_tasks', projects: CommandProject[]): Promise<CommandAnswer> {
   const [tasks, notes, google] = await Promise.all([
     loadMemory('/memory/tasks'),
@@ -174,7 +160,7 @@ async function answerReadQuery(command: string, answerType = 'today_pending_task
   }
 
   if (answerType === 'project_status') {
-    const project = detectProject(command) ?? 'General';
+    const project = detectProject(command, projects) ?? 'General';
     const sections = [
       { title: `${project} pending কাজ`, items: formatTasks(pending.filter((task) => recordProject(task, projects).toLowerCase().includes(project.toLowerCase()))) },
       { title: `${project} notes`, items: formatRecords(notes.filter((note) => recordProject(note, projects).toLowerCase().includes(project.toLowerCase()) || textOf(note).toLowerCase().includes(project.toLowerCase())).slice(0, 8)) },
@@ -280,7 +266,7 @@ function isTodayOrNoDue(value: string | null, today: string) { return !value || 
 function sameDay(value: string | null | undefined, today: string) { return Boolean(value && value.slice(0, 10) === today); }
 function isBeforeToday(value: string | null, today: string) { return Boolean(value && value.slice(0, 10) < today); }
 function isPending(record: UnknownRecord) { const status = (asText(record.status) ?? asText(record.state) ?? '').toLowerCase(); return !['done', 'completed', 'complete', 'finished', 'archived', 'cancelled', 'canceled'].includes(status); }
-function detectProject(command: string) { const text = command.toLowerCase(); const pairs = [['KNLTC', 'knltc'], ['Islamic School', 'islamic school'], ['Islamic School', 'school'], ['Xeetrix', 'xeetrix'], ['Investment', 'investment'], ['Personal', 'personal']]; return pairs.find(([, key]) => text.includes(key))?.[0]; }
+function detectProject(command: string, projects: CommandProject[]) { const text = command.toLowerCase(); return projects.find((project) => text.includes(project.name.toLowerCase()))?.name; }
 
 async function executeConfirmedPlan(planId: string | undefined, projects: CommandProject[]) {
   if (!planId) {
@@ -380,6 +366,9 @@ function normalizeSubmittedPlan(submittedPlan: Partial<ShaikhOsPlan>, projects: 
     target: getTargetForIntent(intent),
     raw_command: rawCommand,
     parser: submittedPlan.parser ?? fallback.parser,
+    command_action: submittedPlan.command_action ?? fallback.command_action,
+    answer_type: submittedPlan.answer_type ?? fallback.answer_type,
+    answer: submittedPlan.answer ?? fallback.answer,
   };
 }
 
