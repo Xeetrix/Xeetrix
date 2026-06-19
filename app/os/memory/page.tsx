@@ -8,9 +8,9 @@ import UniversalSearch from './UniversalSearch';
 export const metadata: Metadata = { title: 'Memory | Shaikh OS' };
 
 const memorySections: Array<{ label: string; description: string; intents: MemoryIntent[] }> = [
-  { label: 'Notes', description: 'Observation এবং context যেগুলো এখনও task নয়।', intents: ['note'] },
-  { label: 'Ideas', description: 'Future product, growth বা operating improvement signal।', intents: ['idea'] },
-  { label: 'Decisions', description: 'Owner-approved choices যেগুলো future reasoning-এ context হবে।', intents: ['decision'] },
+  { label: 'নোট', description: 'Observation এবং context যেগুলো এখনও task নয়।', intents: ['note'] },
+  { label: 'আইডিয়া', description: 'Future product, growth বা operating improvement signal।', intents: ['idea'] },
+  { label: 'সিদ্ধান্ত', description: 'Owner-approved choices যেগুলো future reasoning-এ context হবে।', intents: ['decision'] },
 ];
 
 export const dynamic = 'force-dynamic';
@@ -22,13 +22,13 @@ export default async function MemoryPage() {
 
   return (
     <OsPage
-      eyebrow="Memory"
-      title="আমি কী জানি?"
-      subtitle="Notes, ideas, decisions এবং timeline এখন Memory-এর অধীনে। কাজ, স্বাস্থ্য বা অর্থের raw records route হিসেবে থাকলেও primary navigation-এ clutter তৈরি করছে না।"
+      eyebrow="স্মৃতি"
+      title="স্মৃতি"
+      subtitle="নোট, সিদ্ধান্ত, আইডিয়া আর টাইমলাইন—যে তথ্যগুলো ভবিষ্যতে আপনাকে সাহায্য করবে।"
       stats={[
-        { label: 'Notes', value: String(memoryItems.filter((item) => item.intent === 'note').length), detail: 'Context records' },
-        { label: 'Ideas', value: String(memoryItems.filter((item) => item.intent === 'idea').length), detail: 'Possible improvements' },
-        { label: 'Timeline Items', value: String(memoryItems.length), detail: 'Chronological memory history' },
+        { label: 'নোট', value: String(memoryItems.filter((item) => item.intent === 'note').length), detail: 'Context records' },
+        { label: 'আইডিয়া', value: String(memoryItems.filter((item) => item.intent === 'idea').length), detail: 'Possible improvements' },
+        { label: 'টাইমলাইন Items', value: String(memoryItems.length), detail: 'Chronological memory history' },
       ]}
     >
 
@@ -37,9 +37,9 @@ export default async function MemoryPage() {
       <section className={styles.section}>
         <div className={styles.filters} aria-label="Memory groups">
           {memorySections.map((section) => <a className={styles.filterLink} href={`#${section.label.toLowerCase()}`} key={section.label}>{section.label}</a>)}
-          <a className={styles.filterLink} href="#gmail-signals">Gmail Signals</a>
+          <a className={styles.filterLink} href="#gmail-signals">Google ইমেইল সংকেত</a>
           <a className={styles.filterLink} href="#workspace-documents">Workspace Documents</a>
-          <a className={styles.filterLink} href="#timeline">Timeline</a>
+          <a className={styles.filterLink} href="#timeline">টাইমলাইন</a>
         </div>
       </section>
 
@@ -68,7 +68,7 @@ export default async function MemoryPage() {
 
 
       <section className={styles.section} id="gmail-signals">
-        <div className={styles.sectionHeader}><div><h2>Gmail Signals</h2><p>Imported Gmail classified into project, contact, organization, intent, priority, and follow-up signals.</p></div></div>
+        <div className={styles.sectionHeader}><div><h2>Google ইমেইল সংকেত</h2><p>Imported Gmail classified into project, contact, organization, intent, priority, and follow-up signals.</p></div></div>
         <div className={styles.grid}>
           {google.gmailSignals.length ? google.gmailSignals.slice(0, 9).map((message) => (
             <article className={`${styles.card} ${message.priority === 'high' ? styles.warning : ''}`} key={message.id}>
@@ -77,12 +77,12 @@ export default async function MemoryPage() {
               <p>{message.snippet}</p>
               <p><strong>Contact:</strong> {message.contact_name || message.from_email || 'Unknown'}<br /><strong>Intent:</strong> {message.intent ?? 'information'}<br /><strong>Follow-up:</strong> {message.needs_follow_up ? 'Needed' : 'Not needed'}</p>
             </article>
-          )) : <article className={styles.card}><h3>No imported Gmail signals yet</h3><p>Google sync data will appear here after Gmail messages are imported.</p></article>}
+          )) : <article className={styles.card}><h3>এখনো Google ইমেইল তথ্য পাওয়া যায়নি</h3><p>Google sync data will appear here after Gmail messages are imported.</p></article>}
         </div>
       </section>
 
       <section className={styles.section} id="workspace-documents">
-        <div className={styles.sectionHeader}><div><h2>Recent Workspace Documents</h2><p>Imported Docs and Sheets metadata classified into project, organization, and document type.</p></div></div>
+        <div className={styles.sectionHeader}><div><h2>সাম্প্রতিক Google ডকুমেন্ট</h2><p>Imported Docs and Sheets metadata classified into project, organization, and document type.</p></div></div>
         <div className={styles.grid}>
           {google.driveSignals.length ? google.driveSignals.slice(0, 9).map((doc) => (
             <article className={styles.card} key={`${doc.workspace_type}-${doc.id}`}>
@@ -90,14 +90,14 @@ export default async function MemoryPage() {
               <h3>{doc.web_url ? <a href={doc.web_url}>{doc.name}</a> : doc.name}</h3>
               <p>{doc.organization ?? 'No organization detected'}{doc.owner_name || doc.owner_email ? ` · Owner: ${doc.owner_name || doc.owner_email}` : ''}</p>
             </article>
-          )) : <article className={styles.card}><h3>No imported Workspace documents yet</h3><p>Drive metadata will appear here after Docs or Sheets are imported.</p></article>}
+          )) : <article className={styles.card}><h3>এখনো Google ডকুমেন্ট পাওয়া যায়নি</h3><p>Drive metadata will appear here after Docs or Sheets are imported.</p></article>}
         </div>
       </section>
 
       <section className={styles.section} id="timeline">
         <div className={styles.sectionHeader}>
           <div>
-            <h2>Timeline</h2>
+            <h2>টাইমলাইন</h2>
             <p>Chronological history এখন Memory-এর অংশ; dedicated route /os/timeline এখনও কাজ করে।</p>
           </div>
         </div>
