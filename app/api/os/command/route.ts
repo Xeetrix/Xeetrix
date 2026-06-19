@@ -10,7 +10,7 @@ import {
 import type { CommandProject } from '@/lib/shaikh-os-command';
 import { listGoogleIntelligence } from '@/lib/google-integrations';
 import { createObservation, runAgentOrchestrator, type AgentBrainOutput } from '@/lib/shaikh-os-orchestrator';
-import { asRecord, createCanonicalMemory, getServerPlan, markServerPlan, persistBrainLog, saveServerPlan, searchRuntimeMemory, writeCommandEvent } from '@/lib/shaikh-os-runtime';
+import { asRecord, createCanonicalMemory, getServerPlan, listCanonicalMemory, markServerPlan, persistBrainLog, saveServerPlan, searchRuntimeMemory, writeCommandEvent } from '@/lib/shaikh-os-runtime';
 
 const AGENT_API_URL = process.env.NEXT_PUBLIC_AGENT_API_URL ?? 'https://api.xeetrix.com';
 const AGENT_API_SECRET = process.env.AGENT_API_SECRET;
@@ -30,7 +30,10 @@ type UnknownRecord = Record<string, unknown>;
 type SaveTarget = 'tasks' | 'notes' | 'health_logs' | 'finance_logs' | 'none';
 type CommandCategory = 'create_or_save' | 'read_query' | 'update_status' | 'clarification_needed';
 type AnswerSection = { title: string; items: string[] };
-type CommandAnswer = { ok: true; mode: 'answer'; answer_type: string; title: string; summary: string; sections: AnswerSection[] };
+type CommandAnswer = { ok: true; mode: 'answer'; answer_type: string; title: string; summary: string; sections: AnswerSection[]; confidence?: number };
+
+const PENDING_TASKS_EMPTY_STATE = 'এখনো কোনো pending কাজ পাওয়া যায়নি।';
+const completedStatuses = new Set(['done', 'completed', 'complete', 'finished', 'archived', 'cancelled', 'canceled']);
 
 const taskLikeIntents = new Set(['task', 'meeting', 'reminder', 'follow_up']);
 const noteLikeIntents = new Set(['note', 'idea', 'decision', 'health_log', 'finance_log', 'contact']);
@@ -59,11 +62,19 @@ export async function POST(request: Request) {
 
     if (route.category === 'read_query') {
       const answer = await answerReadQuery(command, route.answerType, projects);
+      const outcome = answer.summary.includes('টি বাস্তব আইটেম পাওয়া গেছে।') ? 'success' : 'no_data';
       await writeCommandEvent(commandId, 'retrieved_context', { answer_type: route.answerType, sections: answer.sections }).catch(() => null);
       await writeCommandEvent(commandId, 'reasoning', { reason: 'Read-only command routed to Supabase-backed memory retrieval.', summary: answer.summary }).catch(() => null);
       await writeCommandEvent(commandId, 'action_plan', { action_type: 'answer_query', target_table: 'agent_memories', destructive: false, auto_deploy: false, auto_code_change: false }).catch(() => null);
       await writeCommandEvent(commandId, 'execution_result', { mode: 'answer', ok: true }).catch(() => null);
-      await writeCommandEvent(commandId, 'answer', { answer }).catch(() => null);
+      await writeCommandEvent(commandId, 'answer', {
+        command_text: command,
+        mode: 'answer',
+        intent: route.answerType,
+        confidence: answer.confidence ?? 0.9,
+        outcome,
+        answer,
+      }).catch(() => null);
       return NextResponse.json({ ...answer, command_id: commandId });
     }
 
@@ -143,16 +154,17 @@ async function answerReadQuery(command: string, answerType = 'today_pending_task
   const noData = 'এখনো এই বিষয়ে কোনো বাস্তব ডাটা পাওয়া যায়নি।';
   const make = (type: string, title: string, sections: AnswerSection[], emptySummary = noData): CommandAnswer => {
     const hasItems = sections.some((section) => section.items.length);
-    return { ok: true, mode: 'answer', answer_type: type, title, summary: hasItems ? `${sections.reduce((sum, section) => sum + section.items.length, 0)}টি বাস্তব আইটেম পাওয়া গেছে।` : emptySummary, sections: hasItems ? sections.filter((section) => section.items.length) : [{ title: 'ডাটা নেই', items: [noData] }] };
+    return { ok: true, mode: 'answer', answer_type: type, title, summary: hasItems ? `${sections.reduce((sum, section) => sum + section.items.length, 0)}টি বাস্তব আইটেম পাওয়া গেছে।` : emptySummary, sections: hasItems ? sections.filter((section) => section.items.length) : [{ title: 'ডাটা নেই', items: [emptySummary] }], confidence: hasItems ? 0.9 : 0.75 };
   };
 
   if (answerType === 'overdue_tasks') {
-    return make('overdue_tasks', 'Overdue pending কাজ', groupByProject(pending.filter((task) => isBeforeToday(getDueDate(task), today)), projects));
+    return make('overdue_tasks', 'Overdue pending কাজ', groupByProject(pending.filter((task) => isBeforeToday(getDueDate(task), today)), projects), PENDING_TASKS_EMPTY_STATE);
   }
 
   if (answerType === 'today_briefing') {
     const sections = [
       { title: 'আজ / due date ছাড়া pending কাজ', items: formatTasks(pending.filter((task) => isTodayOrNoDue(getDueDate(task), today))) },
+      { title: 'Overdue pending কাজ', items: formatTasks(pending.filter((task) => isBeforeToday(getDueDate(task), today))) },
       { title: 'আজকের meeting / calendar', items: google.knowledgeGraph.signals.filter((item) => item.kind === 'calendar' || sameDay(asText((item as UnknownRecord).start_at), today)).slice(0, 6).map((item) => item.title) },
       { title: 'Recent health notes', items: formatRecords(notes.filter((note) => matchesAny(note, ['health', 'sleep', 'ঘুম', 'শরীর', 'মাথা'])).slice(0, 5)) },
       { title: 'Finance logs / notes', items: formatRecords(notes.filter((note) => matchesAny(note, ['finance', 'টাকা', 'খরচ', 'income', 'expense'])).slice(0, 5)) },
@@ -179,14 +191,73 @@ async function answerReadQuery(command: string, answerType = 'today_pending_task
     return make('gmail_signals', 'Recent Gmail signals', [{ title: 'Synced Gmail signals', items: google.gmailSignals.slice(0, 10).map((message) => `${message.subject || 'No subject'} — ${message.from_name || message.from_email || 'Unknown sender'}${message.needs_follow_up ? ' (follow-up)' : ''}`) }]);
   }
 
-  return make('today_pending_tasks', 'আজকের pending কাজ', groupByProject(pending.filter((task) => isTodayOrNoDue(getDueDate(task), today)), projects));
+  return make('today_pending_tasks', 'আজকের pending কাজ', [
+    ...groupByProject(pending.filter((task) => isTodayOrNoDue(getDueDate(task), today)), projects),
+    { title: 'Overdue pending কাজ', items: formatTasks(pending.filter((task) => isBeforeToday(getDueDate(task), today))) },
+  ], PENDING_TASKS_EMPTY_STATE);
 }
 
 async function loadMemory(path: string) {
+  if (path.includes('tasks')) return loadCanonicalTasks();
   const memory = await searchRuntimeMemory({ limit: 100 });
-  if (path.includes('tasks')) return memory.plans.map((row) => asRecord(row.plan)).filter(isRecord).filter((plan) => taskLikeIntents.has(asText(plan.intent) ?? ''));
   if (path.includes('notes')) return memory.memories.filter(isRecord);
   return memory.memories.filter(isRecord);
+}
+
+async function loadCanonicalTasks() {
+  const [memoryRows, planRows] = await Promise.all([
+    listCanonicalMemory('memories', 'memory_type=eq.task&select=*&order=created_at.desc&limit=100'),
+    listCanonicalMemory('plans', 'status=in.(proposed,confirmed,executed)&select=*&order=created_at.desc&limit=50'),
+  ]);
+  const tasks = memoryRows
+    .map(normalizeMemoryTask)
+    .filter(isRecord)
+    .filter(isPending);
+
+  const seen = new Set(tasks.map((task) => asText(task.id)).filter(Boolean));
+  const activePlanTasks = planRows
+    .map(normalizePlanTask)
+    .filter(isRecord)
+    .filter(isPending)
+    .filter((task) => {
+      const id = asText(task.id);
+      if (!id || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+
+  return [...tasks, ...activePlanTasks];
+}
+
+function normalizeMemoryTask(row: UnknownRecord) {
+  const metadata = asRecord(row.metadata) ?? {};
+  const payload = asRecord(metadata.payload);
+  if (!payload) return null;
+  const status = asText(payload.status) ?? asText(payload.state) ?? asText(row.status) ?? asText(metadata.status) ?? 'pending';
+  const normalized = normalizeTaskRecord(payload, row, 'agent_memories', status);
+  return isPending(normalized) ? normalized : null;
+}
+
+function normalizePlanTask(row: UnknownRecord) {
+  const plan = asRecord(row.plan);
+  if (!plan || !taskLikeIntents.has(asText(plan.intent) ?? '')) return null;
+  const planStatus = asText(row.status) ?? 'proposed';
+  if (completedStatuses.has(planStatus.toLowerCase()) || planStatus === 'failed' || planStatus === 'cancelled') return null;
+  return normalizeTaskRecord(plan, row, 'agent_runtime_plans', asText(plan.status) ?? 'pending');
+}
+
+function normalizeTaskRecord(task: UnknownRecord, row: UnknownRecord, source: string, status: string): UnknownRecord {
+  return {
+    id: asText(task.id) ?? asText(row.id) ?? null,
+    title: asText(task.title) ?? asText(task.name) ?? asText(task.task) ?? asText(row.title) ?? 'নামহীন কাজ',
+    project_name: asText(task.project_name) ?? asText(task.projectName) ?? asText(row.project_name) ?? asText(task.project) ?? null,
+    status,
+    priority: asText(task.priority) ?? asText(row.priority) ?? null,
+    due_date: getDueDate(task) ?? getDueDate(row),
+    created_at: asText(row.created_at) ?? asText(task.created_at) ?? null,
+    source,
+    raw: { row, payload: task },
+  };
 }
 
 function groupByProject(tasks: UnknownRecord[], projects: CommandProject[]): AnswerSection[] {
