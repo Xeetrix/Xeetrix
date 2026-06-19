@@ -76,6 +76,7 @@ export default function CommandForm() {
   const [plan, setPlan] = useState<Plan | null>(null);
   const [answer, setAnswer] = useState<Answer | null>(null);
   const [brain, setBrain] = useState<Brain | null>(null);
+  const [planId, setPlanId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!toastMessage) {
@@ -104,6 +105,7 @@ export default function CommandForm() {
     setPlan(null);
     setAnswer(null);
     setBrain(null);
+    setPlanId(null);
 
     try {
       const response = await fetch('/api/os/command', {
@@ -128,16 +130,18 @@ export default function CommandForm() {
 
       if (data?.needs_clarification) {
         setClarificationMessage(data.clarification_question ?? data.message ?? 'আরও তথ্য দরকার।');
-        setPlan(data.plan ?? null);
+        setPlanId(data.plan_id ?? null);
+        setPlan(data.brain?.plan ?? null);
         setBrain(data.brain ?? null);
         return;
       }
 
-      if (!data?.ok || !data?.plan) {
+      if (!data?.ok || !data?.plan_id || !data?.brain?.plan) {
         throw new Error(data?.error ?? 'Shaikh OS নির্দেশনাটি বুঝতে পারেনি।');
       }
 
-      setPlan(data.plan);
+      setPlanId(data.plan_id);
+      setPlan(data.brain.plan);
       setBrain(data.brain ?? null);
       setToastMessage(data.message ?? 'নিশ্চিত করলে সংরক্ষণ করা হবে।');
     } catch (error) {
@@ -148,7 +152,7 @@ export default function CommandForm() {
   }
 
   async function handleConfirm() {
-    if (!plan || isSubmitting) {
+    if (!planId || !plan || isSubmitting) {
       return;
     }
 
@@ -162,7 +166,7 @@ export default function CommandForm() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ confirm: true, plan, brain }),
+        body: JSON.stringify({ confirm: true, plan_id: planId }),
       });
 
       const data = await response.json().catch(() => null);
@@ -174,6 +178,7 @@ export default function CommandForm() {
       setPlan(null);
       setAnswer(null);
       setBrain(null);
+      setPlanId(null);
       setClarificationMessage('');
       setToastMessage(data.message ?? 'সংরক্ষণ করা হয়েছে।');
       router.refresh();
@@ -191,9 +196,10 @@ export default function CommandForm() {
     setBrain(null);
     setClarificationMessage('');
     setToastMessage('বাতিল করা হয়েছে।');
-    if (previousPlan) {
-      await fetch('/api/os/command', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cancel: true, plan: previousPlan }) }).catch(() => null);
+    if (previousPlan || planId) {
+      await fetch('/api/os/command', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cancel: true, plan_id: planId }) }).catch(() => null);
     }
+    setPlanId(null);
   }
 
   return (
