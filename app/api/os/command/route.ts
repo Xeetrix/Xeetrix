@@ -10,6 +10,7 @@ import {
 import type { CommandProject } from '@/lib/shaikh-os-command';
 import { listGoogleIntelligence } from '@/lib/google-integrations';
 import { createObservation, runAgentOrchestrator, type AgentBrainOutput } from '@/lib/shaikh-os-orchestrator';
+import { asRecord, createCanonicalMemory, getServerPlan, markServerPlan, persistBrainLog, saveServerPlan, searchRuntimeMemory, writeCommandEvent } from '@/lib/shaikh-os-runtime';
 
 const AGENT_API_URL = process.env.NEXT_PUBLIC_AGENT_API_URL ?? 'https://api.xeetrix.com';
 const AGENT_API_SECRET = process.env.AGENT_API_SECRET;
@@ -19,6 +20,8 @@ type CommandRequest = {
   confirm?: boolean;
   cancel?: boolean;
   correction?: string;
+  plan_id?: string;
+  // Deprecated: client-submitted plans are ignored for confirmation. The server only trusts plan_id.
   plan?: Partial<ShaikhOsPlan>;
   brain?: Partial<AgentBrainOutput>;
 };
@@ -34,19 +37,15 @@ const noteLikeIntents = new Set(['note', 'idea', 'decision', 'health_log', 'fina
 
 export async function POST(request: Request) {
   try {
-    if (!AGENT_API_SECRET) {
-      return NextResponse.json({ error: 'AGENT_API_SECRET কনফিগার করা নেই।' }, { status: 500 });
-    }
-
     const body = (await request.json()) as CommandRequest;
     const projects = await loadProjects();
 
     if (body.confirm) {
-      return executeConfirmedPlan(body.plan, projects, body.brain);
+      return executeConfirmedPlan(body.plan_id, projects);
     }
 
     if (body.cancel || body.correction) {
-      return recordFeedback(body.plan, body.correction ?? 'cancelled');
+      return recordFeedback(body.plan_id, body.correction ?? 'cancelled');
     }
 
     const command = body.command?.trim();
@@ -54,10 +53,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'নির্দেশনা লিখতে হবে।' }, { status: 400 });
     }
 
+    const commandId = crypto.randomUUID();
     const route = routeCommand(command);
+    await writeCommandEvent(commandId, 'observation', { command, route }).catch(() => null);
 
     if (route.category === 'read_query') {
-      return NextResponse.json(await answerReadQuery(command, route.answerType, projects));
+      const answer = await answerReadQuery(command, route.answerType, projects);
+      await writeCommandEvent(commandId, 'retrieved_context', { answer_type: route.answerType, sections: answer.sections }).catch(() => null);
+      await writeCommandEvent(commandId, 'reasoning', { reason: 'Read-only command routed to Supabase-backed memory retrieval.', summary: answer.summary }).catch(() => null);
+      await writeCommandEvent(commandId, 'action_plan', { action_type: 'answer_query', target_table: 'agent_memories', destructive: false, auto_deploy: false, auto_code_change: false }).catch(() => null);
+      await writeCommandEvent(commandId, 'execution_result', { mode: 'answer', ok: true }).catch(() => null);
+      await writeCommandEvent(commandId, 'answer', { answer }).catch(() => null);
+      return NextResponse.json({ ...answer, command_id: commandId });
+    }
+
+    if (!AGENT_API_SECRET) {
+      return NextResponse.json({ error: 'AGENT_API_SECRET কনফিগার করা নেই।' }, { status: 500 });
     }
 
     const observation = createObservation(command, 'manual_command');
@@ -69,6 +80,9 @@ export async function POST(request: Request) {
       loadGoogle: () => listGoogleIntelligence(),
     }, { apiUrl: AGENT_API_URL, apiSecret: AGENT_API_SECRET ?? '' });
     const plan = brain.plan;
+    await persistBrainLog(commandId, brain).catch(() => null);
+    const storedPlan = await saveServerPlan(plan, brain, commandId).catch(() => null);
+    const plan_id = typeof storedPlan?.id === 'string' ? storedPlan.id : null;
 
     if (plan.needs_clarification) {
       return NextResponse.json({
@@ -76,7 +90,7 @@ export async function POST(request: Request) {
         mode: 'clarification',
         needs_clarification: true,
         clarification_question: plan.clarification_question,
-        plan,
+        plan_id,
         brain,
         message: formatBanglaPlanSummary(plan),
         warnings: [warning].filter(Boolean),
@@ -86,7 +100,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: true,
       mode: 'parsed',
-      plan,
+      plan_id,
       brain,
       message: formatBanglaPlanSummary(plan),
       warnings: [warning].filter(Boolean),
@@ -169,9 +183,10 @@ async function answerReadQuery(command: string, answerType = 'today_pending_task
 }
 
 async function loadMemory(path: string) {
-  const response = await agentFetch(path, { method: 'GET' });
-  if (!response.ok) return [];
-  return extractCollection(await readJson(response)).filter(isRecord);
+  const memory = await searchRuntimeMemory({ limit: 100 });
+  if (path.includes('tasks')) return memory.plans.map((row) => asRecord(row.plan)).filter(isRecord).filter((plan) => taskLikeIntents.has(asText(plan.intent) ?? ''));
+  if (path.includes('notes')) return memory.memories.filter(isRecord);
+  return memory.memories.filter(isRecord);
 }
 
 function groupByProject(tasks: UnknownRecord[], projects: CommandProject[]): AnswerSection[] {
@@ -196,12 +211,21 @@ function isBeforeToday(value: string | null, today: string) { return Boolean(val
 function isPending(record: UnknownRecord) { const status = (asText(record.status) ?? asText(record.state) ?? '').toLowerCase(); return !['done', 'completed', 'complete', 'finished', 'archived', 'cancelled', 'canceled'].includes(status); }
 function detectProject(command: string) { const text = command.toLowerCase(); const pairs = [['KNLTC', 'knltc'], ['Islamic School', 'islamic school'], ['Islamic School', 'school'], ['Xeetrix', 'xeetrix'], ['Investment', 'investment'], ['Personal', 'personal']]; return pairs.find(([, key]) => text.includes(key))?.[0]; }
 
-async function executeConfirmedPlan(submittedPlan: Partial<ShaikhOsPlan> | undefined, projects: CommandProject[], brain?: Partial<AgentBrainOutput>) {
-  if (!submittedPlan || !submittedPlan.raw_command) {
-    return NextResponse.json({ error: 'সংরক্ষণের জন্য বৈধ plan দরকার।' }, { status: 400 });
+async function executeConfirmedPlan(planId: string | undefined, projects: CommandProject[]) {
+  if (!planId) {
+    return NextResponse.json({ error: 'সংরক্ষণের জন্য server plan_id দরকার।' }, { status: 400 });
   }
 
-  const plan = normalizeSubmittedPlan(submittedPlan, projects);
+  const stored = await getServerPlan(planId);
+  const planRecord = asRecord(stored?.plan);
+  const brainRecord = asRecord(stored?.brain) as Partial<AgentBrainOutput> | null;
+  if (!stored || !planRecord) {
+    return NextResponse.json({ error: 'plan_id পাওয়া যায়নি বা মেয়াদোত্তীর্ণ।' }, { status: 404 });
+  }
+
+  await markServerPlan(planId, 'confirmed').catch(() => null);
+  await writeCommandEvent(String(stored.command_id ?? planId), 'confirmation', { plan_id: planId }).catch(() => null);
+  const plan = normalizeSubmittedPlan(planRecord as Partial<ShaikhOsPlan>, projects);
 
   if (plan.needs_clarification || plan.confidence < 0.7) {
     return NextResponse.json(
@@ -210,21 +234,23 @@ async function executeConfirmedPlan(submittedPlan: Partial<ShaikhOsPlan> | undef
         mode: 'clarification',
         needs_clarification: true,
         clarification_question: plan.clarification_question ?? 'আরও পরিষ্কার তথ্য দরকার।',
-        plan,
+        plan_id: planId,
         message: plan.clarification_question ?? 'নির্দেশনাটি পরিষ্কার নয়।',
       },
       { status: 422 },
     );
   }
 
-  const result = await savePlan(plan, brain);
+  const result = await savePlan(plan, brainRecord ?? undefined);
+  await writeCommandEvent(String(stored.command_id ?? planId), 'execution_result', { plan_id: planId, result }).catch(() => null);
+  await markServerPlan(planId, result.ok ? 'executed' : 'failed', { execution_result: result }).catch(() => null);
   if (!result.ok) {
     return NextResponse.json(
       {
         ok: false,
         mode: 'executed',
         error: result.warning ?? 'Shaikh OS মেমরিতে সংরক্ষণ করা যায়নি।',
-        plan,
+        plan_id: planId,
         saved: { target: 'none' as SaveTarget },
       },
       { status: result.status ?? 502 },
@@ -234,12 +260,11 @@ async function executeConfirmedPlan(submittedPlan: Partial<ShaikhOsPlan> | undef
   return NextResponse.json({
     ok: true,
     mode: 'executed',
-    plan,
+    plan_id: planId,
     saved: { target: result.target, record: result.record },
     message: buildSavedMessage(plan, result.target),
   });
 }
-
 
 function buildSavedMessage(plan: ShaikhOsPlan, target: SaveTarget) {
   const visibleArea = getVisibleArea(plan, target);
@@ -287,19 +312,20 @@ function normalizeSubmittedPlan(submittedPlan: Partial<ShaikhOsPlan>, projects: 
   };
 }
 
-
 function getTargetForIntent(intent: ShaikhOsPlan['intent']): ShaikhOsPlan['target'] {
   if (taskLikeIntents.has(intent)) return 'tasks';
   if (noteLikeIntents.has(intent)) return 'notes';
   return 'notes';
 }
 
-async function recordFeedback(plan: Partial<ShaikhOsPlan> | undefined, correction: string) {
+async function recordFeedback(planId: string | undefined, correction: string) {
+  if (planId) await markServerPlan(planId, 'cancelled', { execution_result: { correction } }).catch(() => null);
+  await writeCommandEvent(planId ?? crypto.randomUUID(), 'cancel', { plan_id: planId ?? null, correction }).catch(() => null);
   await saveToMemory('/memory/inbox_items', 'notes', {
     title: 'Agent feedback / correction',
-    raw_command: plan?.raw_command ?? '',
+    raw_command: '',
     content: correction,
-    metadata: { type: 'agent_feedback', correction, previous_plan: plan ?? null, received_at: new Date().toISOString() },
+    metadata: { type: 'agent_feedback', correction, plan_id: planId ?? null, received_at: new Date().toISOString() },
   }).catch(() => null);
   return NextResponse.json({ ok: true, mode: 'feedback_saved', message: 'Feedback সংরক্ষণ করা হয়েছে।' });
 }
@@ -346,78 +372,32 @@ async function savePlan(plan: ShaikhOsPlan, brain?: Partial<AgentBrainOutput>) {
 }
 
 async function loadProjects(): Promise<CommandProject[]> {
-  const response = await agentFetch('/memory/projects', { method: 'GET' });
-  if (!response.ok) {
-    return [];
+  const memory = await searchRuntimeMemory({ limit: 100 });
+  const names = new Set<string>();
+  for (const row of [...memory.memories, ...memory.plans]) {
+    const record = asRecord(row.plan) ?? row;
+    const name = asText(record.project_name) ?? asText(record.project);
+    if (name) names.add(name);
   }
-
-  const data = await readJson(response);
-  return extractCollection(data)
-    .filter(isRecord)
-    .map((project, index) => ({
-      id: asText(project.id) ?? asText(project._id) ?? asText(project.uuid) ?? `project-${index}`,
-      name: asText(project.name) ?? asText(project.title) ?? asText(project.project) ?? 'নামহীন প্রকল্প',
-    }))
-    .filter((project) => project.name.trim());
+  return [...names].map((name) => ({ id: name, name }));
 }
 
 async function saveToMemory(path: string, target: Exclude<SaveTarget, 'none'>, payload: unknown) {
-  const response = await agentFetch(path, {
-    method: 'POST',
-    body: JSON.stringify(payload),
+  const recordPayload = isRecord(payload) ? payload : { value: payload };
+  const record = await createCanonicalMemory('memories', {
+    memory_type: target === 'tasks' ? 'task' : asText(recordPayload.intent) ?? 'note',
+    title: asText(recordPayload.title) ?? asText(recordPayload.summary) ?? 'Shaikh OS memory',
+    summary: asText(recordPayload.summary) ?? asText(recordPayload.content) ?? asText(recordPayload.raw_command) ?? null,
+    content: asText(recordPayload.content) ?? asText(recordPayload.raw_command) ?? JSON.stringify(recordPayload),
+    project_name: asText(recordPayload.project_name) ?? asText(recordPayload.project) ?? null,
+    metadata: { source_path: path, target, payload: recordPayload },
   });
-  const record = await readJson(response);
 
-  if (!response.ok) {
-    return {
-      ok: false as const,
-      target,
-      status: response.status,
-      warning: `${target === 'tasks' ? 'কাজ' : 'নোট'} সংরক্ষণ করা যায়নি (${response.status})।`,
-      record,
-    };
+  if (!record) {
+    return { ok: false as const, target, status: 503, warning: `${target === 'tasks' ? 'কাজ' : 'নোট'} Supabase memory-তে সংরক্ষণ করা যায়নি।`, record: null };
   }
 
   return { ok: true as const, target, record };
-}
-
-async function agentFetch(path: string, init: RequestInit) {
-  return fetch(new URL(path, AGENT_API_URL), {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      'x-agent-key': AGENT_API_SECRET ?? '',
-      ...init.headers,
-    },
-    cache: 'no-store',
-  });
-}
-
-async function readJson(response: Response) {
-  return response.json().catch(() => null) as Promise<unknown>;
-}
-
-function extractCollection(data: unknown): unknown[] {
-  if (Array.isArray(data)) {
-    return data;
-  }
-
-  if (!isRecord(data)) {
-    return [];
-  }
-
-  const candidates = [data.data, data.projects, data.items, data.results, data.memory];
-  const collection = candidates.find(Array.isArray);
-  if (collection) {
-    return collection;
-  }
-
-  const nestedRecord = candidates.find(isRecord);
-  if (nestedRecord) {
-    return extractCollection(nestedRecord);
-  }
-
-  return [];
 }
 
 function asText(value: unknown): string | undefined {
