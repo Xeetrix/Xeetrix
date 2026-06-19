@@ -204,22 +204,22 @@ export default function CommandForm() {
 
   return (
     <form className={styles.commandForm} onSubmit={handleSubmit}>
-      <label htmlFor="ai-command">নির্দেশনা</label>
+      <label htmlFor="ai-command">বলুন</label>
       <div className={styles.inputShell} aria-busy={isSubmitting}>
         <input
           id="ai-command"
           type="text"
           value={command}
           onChange={(event) => setCommand(event.target.value)}
-          placeholder="উদাহরণ: আগামীকাল KNLTC এর ৫টা lead follow-up করতে হবে"
+          placeholder="আজকে কী কী কাজ বাকি আছে? · আজ রাতে ঘুম ভালো হয়নি · KNLTC lead follow-up দেখাও"
           aria-label="Shaikh OS নির্দেশনা ইনপুট"
           disabled={isSubmitting}
         />
         <button type="submit" disabled={isSubmitting || !command.trim()}>
-          {isSubmitting ? 'Shaikh OS নির্দেশনাটি বুঝছে...' : 'বুঝে নিন'}
+          {isSubmitting ? 'বুঝছি...' : 'বুঝুন'}
         </button>
       </div>
-      <small>Shaikh OS আগে নির্দেশনাটি বুঝবে, তারপর আপনার নিশ্চিতকরণের পরই সংরক্ষণ করবে।</small>
+      <small>আমি আগে বুঝে নেব, তারপর আপনার অনুমতি নিয়ে সংরক্ষণ করব।</small>
       {errorMessage ? (
         <p className={styles.commandError} role="alert">
           {errorMessage}
@@ -233,14 +233,15 @@ export default function CommandForm() {
       {answer ? (
         <div className={styles.answerCard} role="region" aria-label="Shaikh OS উত্তর">
           <div>
-            <span>{answer.answer_type}</span>
+            <span>প্রশ্ন</span>
             <h3>{answer.title}</h3>
+            <h4>উত্তর</h4>
             <p>{answer.summary}</p>
           </div>
           <div className={styles.answerSections}>
             {answer.sections.map((section) => (
               <section key={section.title}>
-                <h4>{section.title}</h4>
+                <h4>{section.title || 'পাওয়া তথ্য'}</h4>
                 <ul>
                   {section.items.map((item, index) => (
                     <li key={`${section.title}-${index}`}>{item}</li>
@@ -288,7 +289,7 @@ export default function CommandForm() {
               <dd>{priorityLabels[plan.priority]}</dd>
             </div>
             <div>
-              <dt>সংরক্ষণের জায়গা</dt>
+              <dt>কোথায় সংরক্ষণ হবে</dt>
               <dd>{brain?.confirmation_sections?.save_location || plan.save_location_label || targetLabels[plan.target]}</dd>
             </div>
             <div>

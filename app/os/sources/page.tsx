@@ -3,7 +3,7 @@ import OsPage from '../_components/OsPage';
 import { listGoogleAccounts, listGoogleIntelligence } from '@/lib/google-integrations';
 import GoogleSourcesClient from './GoogleSourcesClient';
 
-export const metadata: Metadata = { title: 'Sources | Shaikh OS' };
+export const metadata: Metadata = { title: 'সংযোগ | Shaikh OS' };
 export const dynamic = 'force-dynamic';
 
 export default async function SourcesPage() {
@@ -11,9 +11,9 @@ export default async function SourcesPage() {
 
   return (
     <OsPage
-      eyebrow="Connected Sources"
-      title="Google Workspace read-only intelligence."
-      subtitle="Connect Google accounts, verify service health, and sync read-only Gmail, Calendar, Docs, and Sheets metadata without modifying Google data."
+      eyebrow="সংযোগ"
+      title="Google সংযোগ"
+      subtitle="Google, GitHub, Vercel, Supabase এবং OpenRouter সংযোগের অবস্থা সহজভাবে দেখুন।"
     >
       <GoogleSourcesClient accounts={accounts} knowledgeGraph={google.knowledgeGraph} />
     </OsPage>

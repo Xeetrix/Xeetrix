@@ -1,5 +1,5 @@
-import Link from 'next/link';
 import styles from './os-pages.module.css';
+import OsNav from './OsNav';
 
 export type StatCard = {
   label: string;
@@ -15,25 +15,10 @@ export type OsPageProps = {
   children: React.ReactNode;
 };
 
-const navItems = [
-  { href: '/os', label: 'Today' },
-  { href: '/os/memory', label: 'Memory' },
-  { href: '/os/operations', label: 'Operations' },
-  { href: '/os/personal', label: 'Personal' },
-  { href: '/os/agent', label: 'Agent' },
-  { href: '/os/improve', label: 'Improve' },
-];
-
 export default function OsPage({ eyebrow, title, subtitle, stats = [], children }: OsPageProps) {
   return (
     <main className={styles.shell}>
-      <nav className={styles.nav} aria-label="Shaikh OS primary sections">
-        {navItems.map((item) => (
-          <Link key={item.href} href={item.href}>
-            {item.label}
-          </Link>
-        ))}
-      </nav>
+      <OsNav />
 
       <section className={styles.hero}>
         <p className={styles.eyebrow}>{eyebrow}</p>

@@ -5,11 +5,11 @@ import { buildChiefOfStaffBriefing, type BriefingItem } from '@/lib/shaikh-os-in
 import { getRelatedItems } from '@/lib/shaikh-os-relationships';
 import { listGoogleIntelligence } from '@/lib/google-integrations';
 
-export const metadata: Metadata = { title: 'Agent | Shaikh OS' };
+export const metadata: Metadata = { title: 'সহকারী | Shaikh OS' };
 
 export const dynamic = 'force-dynamic';
 
-export default async function AgentPage() {
+export default async function সহকারীPage() {
   const briefing = buildChiefOfStaffBriefing();
   const decisions = memoryItems.filter((item) => item.intent === 'decision');
   const openTasks = memoryItems.filter((item) => item.intent === 'task');
@@ -25,28 +25,28 @@ export default async function AgentPage() {
 
   return (
     <OsPage
-      eyebrow="Agent"
+      eyebrow="সহকারী"
       title="AI Chief of Staff কী দেখছে?"
       subtitle="Static cards নয়—available memory থেকে observations, risks, recommendations, opportunities এবং open questions তৈরি করা agent briefing।"
       stats={[
         { label: 'Recommendations', value: String(briefing.recommendations.length), detail: 'Suggested next moves' },
-        { label: 'Risks', value: String(briefing.risks.length), detail: 'Needs owner attention' },
-        { label: 'Open Questions', value: String(briefing.openQuestions.length), detail: 'Clarifications needed' },
+        { label: 'ঝুঁকি', value: String(briefing.risks.length), detail: 'Needs owner attention' },
+        { label: 'খোলা প্রশ্ন', value: String(briefing.openQuestions.length), detail: 'Clarifications needed' },
         { label: 'Google Signals', value: String(googleSignals.length), detail: 'Real synced Workspace signals' },
       ]}
     >
-      <AgentSection id="observations" title="Observations" description="Agent memory থেকে আজকের context scan।" items={briefing.observations} />
-      <AgentSection id="risks" title="Risks" description="Health, finance এবং follow-up signals যেগুলো execution quality কমাতে পারে।" items={briefing.risks} warning />
-      <AgentSection id="recommendations" title="Recommendations" description="আজকের suggested action order।" items={briefing.recommendations} />
-      <AgentSection id="opportunities" title="Opportunities" description="Memory-তে থাকা upside signals।" items={briefing.opportunities} good empty="নতুন opportunity নেই। Memory-তে idea যোগ করলে এখানে agent review হবে।" />
-      <AgentSection id="questions" title="Open Questions" description="যেসব clarification পেলে assistant আরও ভালো সিদ্ধান্ত সাজাতে পারবে।" items={briefing.openQuestions} />
+      <সহকারীSection id="observations" title="Observations" description="সহকারী memory থেকে আজকের context scan।" items={briefing.observations} />
+      <সহকারীSection id="risks" title="ঝুঁকি" description="Health, finance এবং follow-up signals যেগুলো execution quality কমাতে পারে।" items={briefing.risks} warning />
+      <সহকারীSection id="recommendations" title="Recommendations" description="আজকের suggested action order।" items={briefing.recommendations} />
+      <সহকারীSection id="opportunities" title="সুযোগ" description="Memory-তে থাকা upside signals।" items={briefing.opportunities} good empty="নতুন opportunity নেই। Memory-তে idea যোগ করলে এখানে agent review হবে।" />
+      <সহকারীSection id="questions" title="খোলা প্রশ্ন" description="যেসব clarification পেলে assistant আরও ভালো সিদ্ধান্ত সাজাতে পারবে।" items={briefing.openQuestions} />
 
 
       <section className={styles.section} id="google-knowledge-signals">
         <div className={styles.sectionHeader}><div><h2>Google থেকে পাওয়া গুরুত্বপূর্ণ সংকেত</h2><p>Real imported Gmail, Drive, and Calendar metadata থেকে entity, project link, follow-up, security, এবং review signals.</p></div></div>
         <div className={styles.grid}>
           <article className={styles.card}>
-            <p className={styles.cardMeta}>Agent suggestions only · no auto-action</p>
+            <p className={styles.cardMeta}>সহকারী suggestions only · no auto-action</p>
             <h3>Important signals</h3>
             <ul>{googleSignals.length ? googleSignals.slice(0, 6).map((signal) => <li key={signal.id}>{signal.title} — {signal.project} ({signal.source})</li>) : <li>কোনো Google knowledge signal sync হয়নি।</li>}</ul>
           </article>
@@ -86,7 +86,7 @@ export default async function AgentPage() {
       </section>
 
       <section className={styles.section} id="relationship-map">
-        <div className={styles.sectionHeader}><div><h2>Relationship Map</h2><p>Agent এখন generic relationships থেকে meeting, contact, report এবং project context একসাথে পড়ে।</p></div></div>
+        <div className={styles.sectionHeader}><div><h2>Relationship Map</h2><p>সহকারী এখন generic relationships থেকে meeting, contact, report এবং project context একসাথে পড়ে।</p></div></div>
         <div className={styles.grid}>
           <article className={styles.card}>
             <p className={styles.cardMeta}>Meeting context</p>
@@ -120,7 +120,7 @@ export default async function AgentPage() {
       </section>
 
       <section className={styles.section} id="knows">
-        <div className={styles.sectionHeader}><div><h2>What Agent Knows</h2><p>Projects, contacts, decisions এবং open tasks-এর current context map।</p></div></div>
+        <div className={styles.sectionHeader}><div><h2>আমি যা জানি</h2><p>Projects, contacts, decisions এবং open tasks-এর current context map।</p></div></div>
         <div className={styles.grid}>
           <article className={styles.card}><h3>Contacts</h3><ul>{contacts.map((contact) => <li key={contact.id}>{contact.name} — {contact.organization}</li>)}</ul></article>
           <article className={styles.card}><h3>Decisions</h3><ul>{decisions.length ? decisions.map((decision) => <li key={decision.id}>{decision.title}</li>) : <li>এখনও decision নেই।</li>}</ul></article>
@@ -131,7 +131,7 @@ export default async function AgentPage() {
   );
 }
 
-function AgentSection({ id, title, description, items, warning, good, empty = 'এই মুহূর্তে কোনো item নেই।' }: { id: string; title: string; description: string; items: BriefingItem[]; warning?: boolean; good?: boolean; empty?: string }) {
+function সহকারীSection({ id, title, description, items, warning, good, empty = 'এই মুহূর্তে কোনো item নেই।' }: { id: string; title: string; description: string; items: BriefingItem[]; warning?: boolean; good?: boolean; empty?: string }) {
   return (
     <section className={styles.section} id={id}>
       <div className={styles.sectionHeader}><div><h2>{title}</h2><p>{description}</p></div></div>

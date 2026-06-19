@@ -5,7 +5,7 @@ import { getAgentProjects, getAgentTasks } from '@/lib/xeetrix-agent';
 import { contacts, formatBanglaDateTime, marketingMetrics, meetings } from '@/lib/shaikh-os-memory';
 import OsPage, { styles } from '../_components/OsPage';
 
-export const metadata: Metadata = { title: 'Operations | Shaikh OS' };
+export const metadata: Metadata = { title: 'Work | Shaikh OS' };
 export const dynamic = 'force-dynamic';
 
 const operatingProjects = ['KNLTC', 'Islamic School', 'Xeetrix', 'Investment'];
@@ -25,20 +25,20 @@ export default async function OperationsPage() {
 
   return (
     <OsPage
-      eyebrow="Operations"
-      title="কোন কাজ কোথায় এগোচ্ছে?"
-      subtitle="Projects, tasks, meetings, marketing এবং contacts এখন একটি Operations workspace-এর অধীনে grouped—top-level navigation আর scattered নয়।"
+      eyebrow="কাজ"
+      title="কাজ"
+      subtitle="প্রকল্প, কাজ, মিটিং, follow-up এবং marketing এক জায়গায় রাখা হয়েছে—যাতে কাজের অবস্থা দ্রুত বোঝা যায়।"
       stats={[
-        { label: 'Projects', value: String(operatingProjects.length), detail: 'KNLTC, Islamic School, Xeetrix, Investment' },
-        { label: 'Tasks', value: String(tasks.length), detail: 'Live backend task board preview' },
-        { label: 'Meetings', value: String(meetings.length), detail: 'Upcoming and recorded discussions' },
+        { label: 'প্রকল্প', value: String(operatingProjects.length), detail: 'KNLTC, Islamic School, Xeetrix, Investment' },
+        { label: 'কাজ', value: String(tasks.length), detail: 'চলমান কাজ' },
+        { label: 'মিটিং', value: String(meetings.length), detail: 'আসন্ন ও সংরক্ষিত আলোচনা' },
       ]}
     >
       <section className={styles.section} id="projects">
         <div className={styles.sectionHeader}>
           <div>
-            <h2>Projects</h2>
-            <p>চারটি primary workstream একই operational map-এ রাখা হয়েছে।</p>
+            <h2>প্রকল্প</h2>
+            <p>প্রধান workstream গুলো একসাথে দেখা যায়।</p>
           </div>
         </div>
         <div className={styles.grid}>
@@ -55,8 +55,8 @@ export default async function OperationsPage() {
       <section className={styles.section} id="tasks">
         <div className={styles.sectionHeader}>
           <div>
-            <h2>Tasks</h2>
-            <p>Daily execution items Operations-এর মধ্যে থাকে; homepage শুধু urgent preview দেখায়।</p>
+            <h2>কাজ</h2>
+            <p>প্রতিদিনের কাজ এখানে থাকে; আজ পেজে শুধু জরুরি preview দেখা যায়।</p>
           </div>
         </div>
         <div className={styles.grid}>
@@ -73,7 +73,7 @@ export default async function OperationsPage() {
 
 
       <section className={styles.section} id="google-operations-signals">
-        <div className={styles.sectionHeader}><div><h2>Google Operations Signals</h2><p>Follow-up Gmail and new Workspace documents are grouped by imported Google classifications.</p></div></div>
+        <div className={styles.sectionHeader}><div><h2>Google কাজের সংকেত</h2><p>Google থেকে পাওয়া follow-up ও ডকুমেন্ট সংকেত এখানে দেখা যায়।</p></div></div>
         <div className={styles.grid}>
           {google.gmailSignals.filter((message) => message.needs_follow_up || message.priority === 'high').slice(0, 6).map((message) => (
             <article className={`${styles.card} ${message.priority === 'high' ? styles.warning : ''}`} key={message.id}>
@@ -96,8 +96,8 @@ export default async function OperationsPage() {
       <section className={styles.section} id="meetings">
         <div className={styles.sectionHeader}>
           <div>
-            <h2>Meetings</h2>
-            <p>মিটিংগুলো decision memory ও follow-up source হিসেবে Operations-এ grouped।</p>
+            <h2>মিটিং</h2>
+            <p>মিটিংগুলো সিদ্ধান্ত, স্মৃতি এবং follow-up বুঝতে সাহায্য করে।</p>
           </div>
         </div>
         <div className={styles.grid}>
@@ -117,7 +117,7 @@ export default async function OperationsPage() {
         <div className={styles.sectionHeader}>
           <div>
             <h2>Marketing</h2>
-            <p>Content, campaigns, leads এবং follow-ups Operations-এর growth lane।</p>
+            <p>Content, campaign, lead এবং follow-up—growth কাজগুলো এখানে থাকে।</p>
           </div>
         </div>
         <div className={styles.grid}>{marketingMetrics.map((metric) => <article className={styles.card} key={metric.label}><p className={styles.cardMeta}>Marketing metric</p><h3>{metric.value}</h3><p>{metric.label} — {metric.detail}</p></article>)}</div>
