@@ -1003,3 +1003,41 @@
   .primaryButton, .secondaryButton { min-height: 2.8rem; }
   .inputShell { border-radius: 18px; }
 }
+
+.persistenceDiagnostics {
+  border: 1px solid rgba(255, 157, 184, 0.28);
+  border-radius: 1rem;
+  padding: 0.9rem;
+  background: rgba(90, 20, 42, 0.32);
+  color: #ffd9e3;
+  font-size: 0.86rem;
+}
+
+.persistenceDiagnostics strong {
+  display: block;
+  margin-bottom: 0.55rem;
+  color: #ffb5c8;
+}
+
+.persistenceDiagnostics dl {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+}
+
+.persistenceDiagnostics dl div {
+  display: grid;
+  grid-template-columns: minmax(8rem, 0.42fr) 1fr;
+  gap: 0.75rem;
+}
+
+.persistenceDiagnostics dt {
+  color: #ffb5c8;
+  font-weight: 900;
+}
+
+.persistenceDiagnostics dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #fff2f5;
+}

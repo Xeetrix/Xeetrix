@@ -3,7 +3,14 @@ import type { ShaikhOsPlan } from './shaikh-os-intent';
 
 type UnknownRecord = Record<string, unknown>;
 export type SupabaseWriteError = { message: string; status?: number; details?: unknown };
-export type SupabasePlanDiagnostics = { has_supabase_url: boolean; has_service_key: boolean; save_error_message: string | null };
+export type SupabasePlanDiagnostics = {
+  target_table: 'agent_action_plans';
+  has_supabase_url: boolean;
+  has_service_role_key: boolean;
+  http_status: number | null;
+  supabase_error_message: string | null;
+  attempted_payload_keys: string[];
+};
 export type ServerPlanSaveResult = { row: UnknownRecord | null; error: SupabaseWriteError | null; diagnostics: SupabasePlanDiagnostics };
 export type CanonicalMemoryKind = 'observations' | 'memories' | 'entities' | 'facts' | 'goals' | 'plans' | 'tool_calls' | 'evaluations' | 'lessons';
 export type CommandEventType = 'observation' | 'retrieved_context' | 'reasoning' | 'action_plan' | 'confirmation' | 'cancel' | 'execution_result' | 'answer';
@@ -26,11 +33,14 @@ function supabaseConfig() {
   return url && key ? { url: url.replace(/\/$/, ''), key } : null;
 }
 
-export function supabasePlanDiagnostics(saveErrorMessage: string | null = null): SupabasePlanDiagnostics {
+export function supabasePlanDiagnostics(saveErrorMessage: string | null = null, httpStatus: number | null = null, payload: UnknownRecord | null = null): SupabasePlanDiagnostics {
   return {
+    target_table: 'agent_action_plans',
     has_supabase_url: Boolean(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL),
-    has_service_key: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
-    save_error_message: saveErrorMessage,
+    has_service_role_key: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+    http_status: httpStatus,
+    supabase_error_message: saveErrorMessage,
+    attempted_payload_keys: payload ? Object.keys(payload).sort() : [],
   };
 }
 
@@ -104,7 +114,7 @@ export async function saveServerPlan(plan: ShaikhOsPlan, brain: AgentBrainOutput
   if (!config) {
     const missing = !process.env.SUPABASE_SERVICE_ROLE_KEY ? 'SUPABASE_SERVICE_ROLE_KEY is missing' : 'SUPABASE_URL is missing';
     console.error('[Shaikh OS] saveServerPlan skipped:', missing, supabasePlanDiagnostics(missing));
-    return { row: null, error: { message: missing }, diagnostics: supabasePlanDiagnostics(missing) } satisfies ServerPlanSaveResult;
+    return { row: null, error: { message: missing }, diagnostics: supabasePlanDiagnostics(missing, null, null) } satisfies ServerPlanSaveResult;
   }
 
   const payload = mapLegacyRuntimePlanToActionPlan(plan, brain, commandId);
@@ -118,18 +128,51 @@ export async function saveServerPlan(plan: ShaikhOsPlan, brain: AgentBrainOutput
   if (!response.ok) {
     const message = extractSupabaseErrorMessage(data) ?? `Supabase write failed with status ${response.status}`;
     console.error('[Shaikh OS] saveServerPlan failed:', { status: response.status, message, command_id: commandId, target_table: 'agent_action_plans' });
-    return { row: null, error: { message, status: response.status, details: data }, diagnostics: supabasePlanDiagnostics(message) } satisfies ServerPlanSaveResult;
+    return { row: null, error: { message, status: response.status, details: data }, diagnostics: supabasePlanDiagnostics(message, response.status, payload) } satisfies ServerPlanSaveResult;
   }
 
   const row = Array.isArray(data) ? normalizeCanonicalActionPlanRow(data[0] as UnknownRecord | undefined ?? null) : null;
   if (!row?.id) {
     const message = 'Supabase write succeeded but no plan id was returned';
     console.error('[Shaikh OS] saveServerPlan missing id:', { command_id: commandId, response_shape: Array.isArray(data) ? 'array' : typeof data });
-    return { row: row ?? null, error: { message, details: data }, diagnostics: supabasePlanDiagnostics(message) } satisfies ServerPlanSaveResult;
+    return { row: row ?? null, error: { message, details: data }, diagnostics: supabasePlanDiagnostics(message, response.status, payload) } satisfies ServerPlanSaveResult;
   }
 
   console.info('[Shaikh OS] saveServerPlan succeeded:', { command_id: commandId, plan_id: row.id, status: payload.status });
-  return { row, error: null, diagnostics: supabasePlanDiagnostics(null) } satisfies ServerPlanSaveResult;
+  return { row, error: null, diagnostics: supabasePlanDiagnostics(null, response.status, payload) } satisfies ServerPlanSaveResult;
+}
+
+export async function runPersistenceDebug() {
+  const config = supabaseConfig();
+  const env = supabasePlanDiagnostics(null);
+  if (!env.has_supabase_url) return { ok: false, failure_reason: 'SUPABASE_URL is missing', checks: { env, table_exists: false, insert_permission: false, diagnostic_row_deleted: false } };
+  if (!env.has_service_role_key) return { ok: false, failure_reason: 'SUPABASE_SERVICE_ROLE_KEY is missing', checks: { env, table_exists: false, insert_permission: false, diagnostic_row_deleted: false } };
+  if (!config) return { ok: false, failure_reason: 'Supabase configuration is incomplete', checks: { env, table_exists: false, insert_permission: false, diagnostic_row_deleted: false } };
+
+  const headers = { apikey: config.key, Authorization: `Bearer ${config.key}`, 'Content-Type': 'application/json', Prefer: 'return=representation' };
+  const tableResponse = await fetch(`${config.url}/rest/v1/agent_action_plans?select=id&limit=1`, { headers, cache: 'no-store' });
+  if (!tableResponse.ok) {
+    const message = extractSupabaseErrorMessage(await tableResponse.json().catch(() => null)) ?? `Table check failed with status ${tableResponse.status}`;
+    return { ok: false, failure_reason: message, checks: { env, table_exists: false, insert_permission: false, diagnostic_row_deleted: false }, http_status: tableResponse.status };
+  }
+
+  const diagnosticCommandId = `debug-persistence-${crypto.randomUUID()}`;
+  const payload = { command_id: diagnosticCommandId, raw_command: 'debug persistence diagnostic', action_type: 'save_memory', target_table: 'agent_action_plans', payload: { diagnostic: true, command_id: diagnosticCommandId }, explanation: 'Persistence diagnostic row; safe to delete.', confidence: 1, requires_confirmation: false, status: 'cancelled' };
+  const insertResponse = await fetch(`${config.url}/rest/v1/agent_action_plans`, { method: 'POST', headers, body: JSON.stringify(payload), cache: 'no-store' });
+  const inserted = await insertResponse.json().catch(() => null) as unknown;
+  const insertedId = Array.isArray(inserted) && typeof inserted[0]?.id === 'string' ? inserted[0].id : null;
+  if (!insertResponse.ok || !insertedId) {
+    const message = extractSupabaseErrorMessage(inserted) ?? (!insertResponse.ok ? `Insert check failed with status ${insertResponse.status}` : 'Insert check failed because no diagnostic row id was returned');
+    return { ok: false, failure_reason: message, checks: { env, table_exists: true, insert_permission: false, diagnostic_row_deleted: false }, http_status: insertResponse.status, attempted_payload_keys: Object.keys(payload).sort() };
+  }
+
+  const deleteResponse = await fetch(`${config.url}/rest/v1/agent_action_plans?id=eq.${encodeURIComponent(insertedId)}`, { method: 'DELETE', headers: { ...headers, Prefer: 'return=minimal' }, cache: 'no-store' });
+  if (!deleteResponse.ok) {
+    const message = extractSupabaseErrorMessage(await deleteResponse.json().catch(() => null)) ?? `Delete cleanup failed with status ${deleteResponse.status}`;
+    return { ok: false, failure_reason: message, checks: { env, table_exists: true, insert_permission: true, diagnostic_row_deleted: false }, http_status: deleteResponse.status, diagnostic_row_id: insertedId };
+  }
+
+  return { ok: true, failure_reason: null, checks: { env, table_exists: true, insert_permission: true, diagnostic_row_deleted: true }, target_table: 'agent_action_plans' };
 }
 
 function extractSupabaseErrorMessage(data: unknown) {

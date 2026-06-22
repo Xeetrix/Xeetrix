@@ -12,6 +12,15 @@ type Brain = {
 
 const PERSISTENCE_ERROR_MESSAGE = 'নির্দেশনাটি বুঝেছি, কিন্তু সংরক্ষণের প্রস্তুতিতে সমস্যা হয়েছে।';
 
+type PersistenceDiagnostics = {
+  target_table?: string;
+  has_supabase_url?: boolean;
+  has_service_role_key?: boolean;
+  http_status?: number | null;
+  supabase_error_message?: string | null;
+  attempted_payload_keys?: string[];
+};
+
 type Answer = {
   answer_type: string;
   title: string;
@@ -79,6 +88,7 @@ export default function CommandForm() {
   const [answer, setAnswer] = useState<Answer | null>(null);
   const [brain, setBrain] = useState<Brain | null>(null);
   const [planId, setPlanId] = useState<string | null>(null);
+  const [persistenceDiagnostics, setPersistenceDiagnostics] = useState<PersistenceDiagnostics | null>(null);
 
   useEffect(() => {
     if (!toastMessage) {
@@ -108,6 +118,7 @@ export default function CommandForm() {
     setAnswer(null);
     setBrain(null);
     setPlanId(null);
+    setPersistenceDiagnostics(null);
 
     try {
       const response = await fetch('/api/os/command', {
@@ -121,6 +132,9 @@ export default function CommandForm() {
       const data = await response.json().catch(() => null);
 
       if (!response.ok && data?.mode !== 'clarification') {
+        if (data?.error_type === 'plan_persistence_failed') {
+          setPersistenceDiagnostics(data.diagnostics ?? null);
+        }
         const message = data?.error_type === 'plan_persistence_failed' ? PERSISTENCE_ERROR_MESSAGE : data?.error;
         throw new Error(message ?? 'Shaikh OS নির্দেশনাটি বুঝতে পারেনি।');
       }
@@ -140,6 +154,7 @@ export default function CommandForm() {
       }
 
       if (data?.error_type === 'plan_persistence_failed') {
+        setPersistenceDiagnostics(data.diagnostics ?? null);
         throw new Error(PERSISTENCE_ERROR_MESSAGE);
       }
 
@@ -203,6 +218,7 @@ export default function CommandForm() {
     setBrain(null);
     setClarificationMessage('');
     setToastMessage('বাতিল করা হয়েছে।');
+    setPersistenceDiagnostics(null);
     if (previousPlan || planId) {
       await fetch('/api/os/command', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cancel: true, plan_id: planId }) }).catch(() => null);
     }
@@ -231,6 +247,19 @@ export default function CommandForm() {
         <p className={styles.commandError} role="alert">
           {errorMessage}
         </p>
+      ) : null}
+      {persistenceDiagnostics ? (
+        <div className={styles.persistenceDiagnostics} role="region" aria-label="Persistence diagnostics">
+          <strong>Persistence diagnostics</strong>
+          <dl>
+            <div><dt>target_table</dt><dd>{persistenceDiagnostics.target_table ?? 'unknown'}</dd></div>
+            <div><dt>has_supabase_url</dt><dd>{String(Boolean(persistenceDiagnostics.has_supabase_url))}</dd></div>
+            <div><dt>has_service_role_key</dt><dd>{String(Boolean(persistenceDiagnostics.has_service_role_key))}</dd></div>
+            <div><dt>http_status</dt><dd>{persistenceDiagnostics.http_status ?? 'none'}</dd></div>
+            <div><dt>supabase_error_message</dt><dd>{persistenceDiagnostics.supabase_error_message ?? 'none'}</dd></div>
+            <div><dt>attempted_payload_keys</dt><dd>{persistenceDiagnostics.attempted_payload_keys?.length ? persistenceDiagnostics.attempted_payload_keys.join(', ') : 'none'}</dd></div>
+          </dl>
+        </div>
       ) : null}
       {clarificationMessage ? (
         <p className={styles.commandClarification} role="status" aria-live="polite">
