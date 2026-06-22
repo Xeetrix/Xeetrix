@@ -56,35 +56,34 @@ export async function osV2Supabase<T>(path: string, init: RequestInit = {}) {
 }
 
 export function getV2OwnerIdentity(): V2OwnerIdentity {
-  const displayName = process.env.SHAIKH_OS_OWNER_NAME?.trim() || 'Shaikh';
   return {
     mode: 'single-owner',
-    owner_id: process.env.SHAIKH_OS_OWNER_ID?.trim() || 'shaikh-os-owner',
-    display_name: displayName,
+    owner_id: 'shaikh',
+    display_name: 'Shaikh',
     depends_on_auth_session: false,
     depends_on_profiles_table: false,
-    source: process.env.SHAIKH_OS_OWNER_NAME || process.env.SHAIKH_OS_OWNER_ID ? 'environment' : 'default',
+    source: 'default',
   };
 }
 
 export async function listV2Context(): Promise<V2Context> {
   const [tasks, memories] = await Promise.all([
-    osV2Supabase<UnknownRecord[]>('os_tasks?select=id,title,project_name,status,priority,due_at,source_command,metadata,created_at,updated_at&order=created_at.desc&limit=80').catch(() => []),
-    osV2Supabase<UnknownRecord[]>('os_memories?select=id,memory_type,title,content,project_name,entities,confidence,source_command,metadata,created_at,updated_at&order=created_at.desc&limit=80').catch(() => []),
+    osV2Supabase<UnknownRecord[]>('os_tasks?owner_id=eq.shaikh&select=id,owner_id,title,project_name,status,priority,due_at,source_command,metadata,created_at,updated_at&order=created_at.desc&limit=80').catch(() => []),
+    osV2Supabase<UnknownRecord[]>('os_memories?owner_id=eq.shaikh&select=id,owner_id,memory_type,title,content,project_name,entities,confidence,source_command,metadata,created_at,updated_at&order=created_at.desc&limit=80').catch(() => []),
   ]);
   return { tasks, memories, owner: getV2OwnerIdentity() };
 }
 
 export async function logV2(commandId: string, step: string, input?: unknown, output?: unknown, error?: unknown, model?: string, metadata?: UnknownRecord) {
-  await osV2Supabase('os_agent_logs', { method: 'POST', body: JSON.stringify({ command_id: commandId, step, input, output, error: error instanceof Error ? error.message : typeof error === 'string' ? error : null, model, metadata: metadata ?? {} }) }).catch(() => null);
+  await osV2Supabase('os_agent_logs', { method: 'POST', body: JSON.stringify({ owner_id: 'shaikh', command_id: commandId, step, input, output, error: error instanceof Error ? error.message : typeof error === 'string' ? error : null, model, metadata: metadata ?? {} }) }).catch(() => null);
 }
 
 export async function saveConversation(sessionId: string, speaker: 'user' | 'assistant' | 'system', message: string, mode: string, metadata: UnknownRecord = {}) {
-  await osV2Supabase('os_conversations', { method: 'POST', body: JSON.stringify({ session_id: sessionId, speaker, message, mode, metadata }) }).catch(() => null);
+  await osV2Supabase('os_conversations', { method: 'POST', body: JSON.stringify({ owner_id: 'shaikh', session_id: sessionId, speaker, message, mode, metadata }) }).catch(() => null);
 }
 
 export async function saveReflection(commandId: string, outcome: string, failureReason: string | null, lesson: string, improvementSuggestion: string, metadata: UnknownRecord = {}) {
-  await osV2Supabase('os_reflections', { method: 'POST', body: JSON.stringify({ command_id: commandId, outcome, failure_reason: failureReason, lesson, improvement_suggestion: improvementSuggestion, metadata }) }).catch(() => null);
+  await osV2Supabase('os_reflections', { method: 'POST', body: JSON.stringify({ owner_id: 'shaikh', command_id: commandId, outcome, failure_reason: failureReason, lesson, improvement_suggestion: improvementSuggestion, metadata }) }).catch(() => null);
 }
 
 export async function callPremiumV2Brain(command: string, context: V2Context, commandId: string): Promise<{ brain: V2BrainJson; model: string }> {
@@ -135,12 +134,12 @@ export async function createV2Health(): Promise<V2Health> {
     has_service_key: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
     has_agent_secret: Boolean(process.env.AGENT_API_SECRET),
     agent_url: process.env.NEXT_PUBLIC_AGENT_API_URL ?? null,
-    can_write_os_action_plans: await canWrite('os_action_plans', { command_id: crypto.randomUUID(), raw_command: '__health__', action_type: 'none', status: 'health_check' }),
-    can_write_os_tasks: await canWrite('os_tasks', { title: '__health__', status: 'health_check' }),
-    can_write_os_memories: await canWrite('os_memories', { memory_type: 'health_check', content: '__health__' }),
-    can_write_os_conversations: await canWrite('os_conversations', { session_id: crypto.randomUUID(), speaker: 'system', message: '__health__', mode: 'health_check' }),
-    can_write_os_agent_logs: await canWrite('os_agent_logs', { command_id: crypto.randomUUID(), step: 'health_check' }),
-    can_write_os_reflections: await canWrite('os_reflections', { command_id: crypto.randomUUID(), outcome: 'health_check', lesson: '__health__', improvement_suggestion: '__health__' }),
+    can_write_os_action_plans: await canWrite('os_action_plans', { owner_id: 'shaikh', command_id: crypto.randomUUID(), raw_command: '__health__', action_type: 'none', status: 'health_check' }),
+    can_write_os_tasks: await canWrite('os_tasks', { owner_id: 'shaikh', title: '__health__', status: 'health_check' }),
+    can_write_os_memories: await canWrite('os_memories', { owner_id: 'shaikh', memory_type: 'health_check', content: '__health__' }),
+    can_write_os_conversations: await canWrite('os_conversations', { owner_id: 'shaikh', session_id: crypto.randomUUID(), speaker: 'system', message: '__health__', mode: 'health_check' }),
+    can_write_os_agent_logs: await canWrite('os_agent_logs', { owner_id: 'shaikh', command_id: crypto.randomUUID(), step: 'health_check' }),
+    can_write_os_reflections: await canWrite('os_reflections', { owner_id: 'shaikh', command_id: crypto.randomUUID(), outcome: 'health_check', lesson: '__health__', improvement_suggestion: '__health__' }),
   };
 }
 
