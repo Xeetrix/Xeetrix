@@ -245,11 +245,12 @@ function normalizeMemoryTask(row: UnknownRecord) {
 }
 
 function normalizePlanTask(row: UnknownRecord) {
-  const plan = asRecord(row.plan);
+  const payload = asRecord(row.payload) ?? {};
+  const plan = asRecord(row.plan) ?? asRecord(payload.plan);
   if (!plan || !taskLikeIntents.has(asText(plan.intent) ?? '')) return null;
   const planStatus = asText(row.status) ?? 'proposed';
   if (completedStatuses.has(planStatus.toLowerCase()) || planStatus === 'failed' || planStatus === 'cancelled') return null;
-  return normalizeTaskRecord(plan, row, 'agent_runtime_plans', asText(plan.status) ?? 'pending');
+  return normalizeTaskRecord(plan, row, 'agent_action_plans', asText(plan.status) ?? 'pending');
 }
 
 function normalizeTaskRecord(task: UnknownRecord, row: UnknownRecord, source: string, status: string): UnknownRecord {
@@ -455,7 +456,8 @@ async function loadProjects(): Promise<CommandProject[]> {
   const memory = await searchRuntimeMemory({ limit: 100 });
   const names = new Set<string>();
   for (const row of [...memory.memories, ...memory.plans]) {
-    const record = asRecord(row.plan) ?? row;
+    const payload = asRecord(row.payload) ?? {};
+    const record = asRecord(row.plan) ?? asRecord(payload.plan) ?? row;
     const name = asText(record.project_name) ?? asText(record.project);
     if (name) names.add(name);
   }

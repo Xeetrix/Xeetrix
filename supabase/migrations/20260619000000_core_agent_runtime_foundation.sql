@@ -46,24 +46,17 @@ create table if not exists public.agent_goals (
   updated_at timestamptz not null default now()
 );
 
-create table if not exists public.agent_runtime_plans (
-  id uuid primary key default gen_random_uuid(),
-  command_id text,
-  raw_command text not null,
-  plan jsonb not null default '{}'::jsonb,
-  brain jsonb not null default '{}'::jsonb,
-  status text not null default 'proposed' check (status in ('proposed','clarification','confirmed','cancelled','executed','failed')),
-  confidence numeric(4,3),
-  requires_confirmation boolean not null default true,
-  execution_result jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
+-- agent_action_plans is the single canonical runtime/action plan table.
+-- The stale runtime-plan table is intentionally not created; active runtime paths use the canonical action-plan table.
+alter table public.agent_action_plans add column if not exists command_id text;
+alter table public.agent_action_plans add column if not exists raw_command text;
+alter table public.agent_action_plans add column if not exists execution_result jsonb not null default '{}'::jsonb;
+alter table public.agent_action_plans add column if not exists updated_at timestamptz not null default now();
 
 create table if not exists public.agent_tool_calls (
   id uuid primary key default gen_random_uuid(),
   command_id text,
-  plan_id uuid references public.agent_runtime_plans(id) on delete set null,
+  plan_id uuid references public.agent_action_plans(id) on delete set null,
   tool_name text not null,
   input jsonb not null default '{}'::jsonb,
   output jsonb not null default '{}'::jsonb,
@@ -75,7 +68,7 @@ create table if not exists public.agent_tool_calls (
 create table if not exists public.agent_evaluations (
   id uuid primary key default gen_random_uuid(),
   command_id text,
-  plan_id uuid references public.agent_runtime_plans(id) on delete set null,
+  plan_id uuid references public.agent_action_plans(id) on delete set null,
   score numeric(4,3),
   label text,
   reasoning jsonb not null default '{}'::jsonb,
@@ -102,6 +95,6 @@ create table if not exists public.agent_command_events (
 
 create index if not exists agent_memories_project_idx on public.agent_memories(project_name, created_at desc);
 create index if not exists agent_memories_type_idx on public.agent_memories(memory_type, created_at desc);
-create index if not exists agent_runtime_plans_status_idx on public.agent_runtime_plans(status, created_at desc);
+create index if not exists agent_action_plans_runtime_status_idx on public.agent_action_plans(status, created_at desc);
 create index if not exists agent_command_events_command_idx on public.agent_command_events(command_id, created_at desc);
 create index if not exists agent_tool_calls_plan_idx on public.agent_tool_calls(plan_id, created_at desc);
