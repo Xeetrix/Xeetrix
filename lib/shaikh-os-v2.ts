@@ -22,6 +22,9 @@ export type V2Health = {
   can_write_os_action_plans: boolean;
   can_write_os_tasks: boolean;
   can_write_os_memories: boolean;
+  can_write_os_conversations: boolean;
+  can_write_os_agent_logs: boolean;
+  can_write_os_reflections: boolean;
 };
 
 const jsonHeaders = (key: string) => ({ apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', Prefer: 'return=representation' });
@@ -62,23 +65,23 @@ export async function saveReflection(commandId: string, outcome: string, failure
 }
 
 export async function callPremiumV2Brain(command: string, context: { tasks: UnknownRecord[]; memories: UnknownRecord[] }, commandId: string): Promise<{ brain: V2BrainJson; model: string }> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  const model = process.env.OPENAI_PREMIUM_MODEL || process.env.OPENAI_MODEL || 'gpt-4.1';
-  if (!apiKey) throw new Error('OPENAI_API_KEY is missing.');
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  const model = process.env.OPENROUTER_PREMIUM_MODEL || process.env.OPENROUTER_PRIMARY_MODEL || 'anthropic/claude-sonnet-4.5';
+  if (!apiKey) throw new Error('OPENROUTER_API_KEY is missing.');
   const system = `You are Shaikh OS v2, a reasoning-first cognitive operating system, not a chatbot and not a keyword parser. Every command must follow Observe → Recall → Reason → Plan → Confirm → Execute → Reflect. Use only the provided canonical os_tasks and os_memories as stored context; never invent stored facts. Reason generally from meaning and user intent, not from keyword rules. Return only strict JSON with exactly this shape: {"mode":"answer|plan|clarify","understanding":"string","intent":"string","action_type":"create_task|save_memory|answer_query|update_task|none","project_name":"string|null","title":"string|null","answer":"string|null","payload":{},"confidence":0.0,"requires_confirmation":true,"clarifying_question":null}. For any write or task update, return mode "plan" with requires_confirmation true. For factual/status queries, return mode "answer" and answer directly from context in simple Bangla. If context is insufficient, say "এখনো কোনো তথ্য পাওয়া যায়নি". If one missing detail prevents a safe plan, return mode "clarify" and ask one clear Bangla question.`;
   const messages = [
     { role: 'system', content: system },
     { role: 'user', content: JSON.stringify({ command, canonical_context: context, current_date: new Date().toISOString().slice(0, 10) }) },
   ];
   await logV2(commandId, 'observe_recall_llm_input', { command, context_counts: { tasks: context.tasks.length, memories: context.memories.length } }, null, null, model);
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'HTTP-Referer': process.env.NEXT_PUBLIC_SITE_URL || 'https://xeetrix.com', 'X-Title': 'Shaikh OS v2' },
     body: JSON.stringify({ model, messages, temperature: 0.1, response_format: { type: 'json_object' } }),
     cache: 'no-store',
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(data?.error?.message || `OpenAI ${response.status}`);
+  if (!response.ok) throw new Error(data?.error?.message || `OpenRouter ${response.status}`);
   const content = data?.choices?.[0]?.message?.content;
   const brain = normalizeBrain(JSON.parse(content));
   await logV2(commandId, 'reason_plan_llm_output', null, brain, null, model);
@@ -112,6 +115,9 @@ export async function createV2Health(): Promise<V2Health> {
     can_write_os_action_plans: await canWrite('os_action_plans', { command_id: crypto.randomUUID(), raw_command: '__health__', action_type: 'none', status: 'health_check' }),
     can_write_os_tasks: await canWrite('os_tasks', { title: '__health__', status: 'health_check' }),
     can_write_os_memories: await canWrite('os_memories', { memory_type: 'health_check', content: '__health__' }),
+    can_write_os_conversations: await canWrite('os_conversations', { session_id: crypto.randomUUID(), speaker: 'system', message: '__health__', mode: 'health_check' }),
+    can_write_os_agent_logs: await canWrite('os_agent_logs', { command_id: crypto.randomUUID(), step: 'health_check' }),
+    can_write_os_reflections: await canWrite('os_reflections', { command_id: crypto.randomUUID(), outcome: 'health_check', lesson: '__health__', improvement_suggestion: '__health__' }),
   };
 }
 
