@@ -10,6 +10,8 @@ type Brain = {
   confirmation_sections?: { understood: string; why_important: string; suggested_action: string; save_location: string; related_information: string[]; confidence: number };
 };
 
+const PERSISTENCE_ERROR_MESSAGE = 'নির্দেশনাটি বুঝেছি, কিন্তু সংরক্ষণের প্রস্তুতিতে সমস্যা হয়েছে।';
+
 type Answer = {
   answer_type: string;
   title: string;
@@ -119,7 +121,8 @@ export default function CommandForm() {
       const data = await response.json().catch(() => null);
 
       if (!response.ok && data?.mode !== 'clarification') {
-        throw new Error(data?.error ?? 'Shaikh OS নির্দেশনাটি বুঝতে পারেনি।');
+        const message = data?.error_type === 'plan_persistence_failed' ? PERSISTENCE_ERROR_MESSAGE : data?.error;
+        throw new Error(message ?? 'Shaikh OS নির্দেশনাটি বুঝতে পারেনি।');
       }
 
       if (data?.mode === 'answer') {
@@ -134,6 +137,10 @@ export default function CommandForm() {
         setPlan(data.brain?.plan ?? null);
         setBrain(data.brain ?? null);
         return;
+      }
+
+      if (data?.error_type === 'plan_persistence_failed') {
+        throw new Error(PERSISTENCE_ERROR_MESSAGE);
       }
 
       if (!data?.ok || !data?.plan_id || !data?.brain?.plan) {
