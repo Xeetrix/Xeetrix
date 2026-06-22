@@ -10,7 +10,7 @@ import {
 import type { CommandProject } from '@/lib/shaikh-os-command';
 import { listGoogleIntelligence } from '@/lib/google-integrations';
 import { createObservation, runAgentOrchestrator, type AgentBrainOutput } from '@/lib/shaikh-os-orchestrator';
-import { asRecord, createCanonicalMemory, getServerPlan, listCanonicalMemory, markServerPlan, persistBrainLog, saveServerPlan, searchRuntimeMemory, writeCommandEvent } from '@/lib/shaikh-os-runtime';
+import { asRecord, createCanonicalMemory, getServerPlan, listCanonicalMemory, markServerPlan, persistBrainLog, saveServerPlan, searchRuntimeMemory, supabasePlanDiagnostics, writeCommandEvent } from '@/lib/shaikh-os-runtime';
 
 const AGENT_API_URL = process.env.NEXT_PUBLIC_AGENT_API_URL ?? 'https://api.xeetrix.com';
 const AGENT_API_SECRET = process.env.AGENT_API_SECRET;
@@ -98,7 +98,7 @@ export async function POST(request: Request) {
 
     const storedPlan = await saveServerPlan(plan, brain, commandId).catch((error) => {
       const message = error instanceof Error ? error.message : 'Unknown Supabase write error';
-      return { row: null, error: { message }, diagnostics: { has_supabase_url: Boolean(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL), has_service_key: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY), save_error_message: message } };
+      return { row: null, error: { message }, diagnostics: supabasePlanDiagnostics(message) };
     });
     const plan_id = typeof storedPlan.row?.id === 'string' ? storedPlan.row.id : null;
 
