@@ -5,6 +5,7 @@ type UnknownRecord = Record<string, unknown>;
 export type SupabaseWriteError = { message: string; status?: number; details?: unknown };
 export type SupabasePlanDiagnostics = {
   target_table: 'agent_action_plans';
+  operation: 'insert_action_plan';
   has_supabase_url: boolean;
   has_service_role_key: boolean;
   http_status: number | null;
@@ -36,6 +37,7 @@ function supabaseConfig() {
 export function supabasePlanDiagnostics(saveErrorMessage: string | null = null, httpStatus: number | null = null, payload: UnknownRecord | null = null): SupabasePlanDiagnostics {
   return {
     target_table: 'agent_action_plans',
+    operation: 'insert_action_plan',
     has_supabase_url: Boolean(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL),
     has_service_role_key: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
     http_status: httpStatus,
@@ -89,8 +91,10 @@ export function mapLegacyRuntimePlanToActionPlan(plan: ShaikhOsPlan, brain: Agen
     payload: { plan, brain, command_id: commandId, raw_command: plan.raw_command },
     explanation: actionPlan.explanation,
     confidence: plan.confidence,
-    requires_confirmation: true,
+    requires_confirmation: actionPlan.requires_confirmation,
     status,
+    plan,
+    brain,
   };
 }
 
@@ -182,8 +186,9 @@ function extractSupabaseErrorMessage(data: unknown) {
   return [typeof message === 'string' ? message : null, typeof details === 'string' ? details : null].filter(Boolean).join(' — ') || null;
 }
 
-export async function getServerPlan(planId: string) {
-  const [row] = await supabaseRequest<UnknownRecord[]>(`agent_action_plans?id=eq.${encodeURIComponent(planId)}&select=*&limit=1`) ?? [];
+export async function getServerPlan(planIdOrCommandId: string) {
+  const encoded = encodeURIComponent(planIdOrCommandId);
+  const [row] = await supabaseRequest<UnknownRecord[]>(`agent_action_plans?or=(id.eq.${encoded},command_id.eq.${encoded})&select=*&limit=1`) ?? [];
   return normalizeCanonicalActionPlanRow(row ?? null);
 }
 
