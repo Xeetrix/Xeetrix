@@ -1,5 +1,14 @@
 type UnknownRecord = Record<string, unknown>;
 
+type V2OwnerIdentity = {
+  mode: 'single-owner';
+  owner_id: string;
+  display_name: string;
+  depends_on_auth_session: false;
+  depends_on_profiles_table: false;
+  source: 'environment' | 'default';
+};
+
 export type V2BrainJson = {
   mode: 'answer' | 'plan' | 'clarify';
   understanding: string;
@@ -13,6 +22,8 @@ export type V2BrainJson = {
   requires_confirmation: boolean;
   clarifying_question: string | null;
 };
+
+export type V2Context = { tasks: UnknownRecord[]; memories: UnknownRecord[]; owner: V2OwnerIdentity };
 
 export type V2Health = {
   has_supabase_url: boolean;
@@ -44,12 +55,24 @@ export async function osV2Supabase<T>(path: string, init: RequestInit = {}) {
   return response.json() as Promise<T>;
 }
 
-export async function listV2Context() {
+export function getV2OwnerIdentity(): V2OwnerIdentity {
+  const displayName = process.env.SHAIKH_OS_OWNER_NAME?.trim() || 'Shaikh';
+  return {
+    mode: 'single-owner',
+    owner_id: process.env.SHAIKH_OS_OWNER_ID?.trim() || 'shaikh-os-owner',
+    display_name: displayName,
+    depends_on_auth_session: false,
+    depends_on_profiles_table: false,
+    source: process.env.SHAIKH_OS_OWNER_NAME || process.env.SHAIKH_OS_OWNER_ID ? 'environment' : 'default',
+  };
+}
+
+export async function listV2Context(): Promise<V2Context> {
   const [tasks, memories] = await Promise.all([
     osV2Supabase<UnknownRecord[]>('os_tasks?select=id,title,project_name,status,priority,due_at,source_command,metadata,created_at,updated_at&order=created_at.desc&limit=80').catch(() => []),
     osV2Supabase<UnknownRecord[]>('os_memories?select=id,memory_type,title,content,project_name,entities,confidence,source_command,metadata,created_at,updated_at&order=created_at.desc&limit=80').catch(() => []),
   ]);
-  return { tasks, memories };
+  return { tasks, memories, owner: getV2OwnerIdentity() };
 }
 
 export async function logV2(commandId: string, step: string, input?: unknown, output?: unknown, error?: unknown, model?: string, metadata?: UnknownRecord) {
@@ -64,11 +87,11 @@ export async function saveReflection(commandId: string, outcome: string, failure
   await osV2Supabase('os_reflections', { method: 'POST', body: JSON.stringify({ command_id: commandId, outcome, failure_reason: failureReason, lesson, improvement_suggestion: improvementSuggestion, metadata }) }).catch(() => null);
 }
 
-export async function callPremiumV2Brain(command: string, context: { tasks: UnknownRecord[]; memories: UnknownRecord[] }, commandId: string): Promise<{ brain: V2BrainJson; model: string }> {
+export async function callPremiumV2Brain(command: string, context: V2Context, commandId: string): Promise<{ brain: V2BrainJson; model: string }> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   const model = process.env.OPENROUTER_PREMIUM_MODEL || process.env.OPENROUTER_PRIMARY_MODEL || 'anthropic/claude-sonnet-4.5';
   if (!apiKey) throw new Error('OPENROUTER_API_KEY is missing.');
-  const system = `You are Shaikh OS v2, a reasoning-first cognitive operating system, not a chatbot and not a keyword parser. Every command must follow Observe → Recall → Reason → Plan → Confirm → Execute → Reflect. Use only the provided canonical os_tasks and os_memories as stored context; never invent stored facts. Reason generally from meaning and user intent, not from keyword rules. Return only strict JSON with exactly this shape: {"mode":"answer|plan|clarify","understanding":"string","intent":"string","action_type":"create_task|save_memory|answer_query|update_task|none","project_name":"string|null","title":"string|null","answer":"string|null","payload":{},"confidence":0.0,"requires_confirmation":true,"clarifying_question":null}. For any write or task update, return mode "plan" with requires_confirmation true. For factual/status queries, return mode "answer" and answer directly from context in simple Bangla. If context is insufficient, say "এখনো কোনো তথ্য পাওয়া যায়নি". If one missing detail prevents a safe plan, return mode "clarify" and ask one clear Bangla question.`;
+  const system = `You are Shaikh OS v2, a reasoning-first cognitive operating system for a single-owner workspace. The current owner identity is provided in canonical_context.owner; do not request or require a login, Supabase auth session, profiles row, users row, cookie, or header to identify the owner. You are not a chatbot and not a keyword parser. Every command must follow Observe → Recall → Reason → Plan → Confirm → Execute → Reflect. Use only the provided canonical os_tasks and os_memories as stored context; never invent stored facts. Reason generally from meaning and user intent, not from keyword rules. Return only strict JSON with exactly this shape: {"mode":"answer|plan|clarify","understanding":"string","intent":"string","action_type":"create_task|save_memory|answer_query|update_task|none","project_name":"string|null","title":"string|null","answer":"string|null","payload":{},"confidence":0.0,"requires_confirmation":true,"clarifying_question":null}. For any write or task update, return mode "plan" with requires_confirmation true. For factual/status queries, return mode "answer" and answer directly from context in simple Bangla. If context is insufficient, say "এখনো কোনো তথ্য পাওয়া যায়নি". If one missing detail prevents a safe plan, return mode "clarify" and ask one clear Bangla question.`;
   const messages = [
     { role: 'system', content: system },
     { role: 'user', content: JSON.stringify({ command, canonical_context: context, current_date: new Date().toISOString().slice(0, 10) }) },
