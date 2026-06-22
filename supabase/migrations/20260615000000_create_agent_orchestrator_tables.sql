@@ -22,7 +22,9 @@ create table if not exists public.agent_action_plans (
   id uuid primary key default gen_random_uuid(),
   observation_id uuid references public.agent_observations(id) on delete set null,
   reasoning_log_id uuid references public.agent_reasoning_logs(id) on delete set null,
-  action_type text not null check (action_type in ('save_memory','create_task','create_reminder','create_meeting','answer_query','suggest_only','ask_clarification')),
+  command_id text,
+  raw_command text,
+  action_type text not null check (action_type in ('save_memory','create_task','create_reminder','create_meeting','answer_query','suggest_only','ask_clarification','update_existing_item')),
   target_table text,
   payload jsonb not null default '{}'::jsonb,
   explanation text,
@@ -30,6 +32,8 @@ create table if not exists public.agent_action_plans (
   requires_confirmation boolean not null default true,
   status text not null default 'proposed',
   created_at timestamptz not null default now(),
+  execution_result jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now(),
   executed_at timestamptz
 );
 
