@@ -96,8 +96,28 @@ export async function POST(request: Request) {
       return NextResponse.json({ ...answer, command_id: commandId, brain });
     }
 
-    const storedPlan = await saveServerPlan(plan, brain, commandId).catch(() => null);
-    const plan_id = typeof storedPlan?.id === 'string' ? storedPlan.id : null;
+    const storedPlan = await saveServerPlan(plan, brain, commandId).catch((error) => {
+      const message = error instanceof Error ? error.message : 'Unknown Supabase write error';
+      return { row: null, error: { message }, diagnostics: { has_supabase_url: Boolean(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL), has_service_key: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY), save_error_message: message } };
+    });
+    const plan_id = typeof storedPlan.row?.id === 'string' ? storedPlan.row.id : null;
+
+    if (!plan_id) {
+      await writeCommandEvent(commandId, 'execution_result', {
+        mode: 'error',
+        error_type: 'plan_persistence_failed',
+        diagnostics: storedPlan.diagnostics,
+      }).catch(() => null);
+
+      return NextResponse.json({
+        ok: false,
+        mode: 'error',
+        error_type: 'plan_persistence_failed',
+        error: 'নির্দেশনাটি বুঝেছি, কিন্তু সংরক্ষণের প্রস্তুতি নিতে সমস্যা হয়েছে।',
+        diagnostics: storedPlan.diagnostics,
+        ...storedPlan.diagnostics,
+      }, { status: 500 });
+    }
 
     if (plan.needs_clarification) {
       return NextResponse.json({
