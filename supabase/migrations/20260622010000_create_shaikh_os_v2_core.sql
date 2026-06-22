@@ -29,21 +29,10 @@ create table if not exists public.os_memories (
 
 create table if not exists public.os_conversations (
   id uuid primary key default gen_random_uuid(),
-  user_message text not null,
-  assistant_message text,
+  session_id text not null,
+  speaker text not null,
+  message text not null,
   mode text,
-  metadata jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now()
-);
-
-create table if not exists public.os_agent_logs (
-  id uuid primary key default gen_random_uuid(),
-  command_id uuid,
-  step text not null,
-  input jsonb,
-  output jsonb,
-  error text,
-  model text,
   metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now()
 );
@@ -64,9 +53,35 @@ create table if not exists public.os_action_plans (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.os_agent_logs (
+  id uuid primary key default gen_random_uuid(),
+  command_id uuid,
+  step text not null,
+  input jsonb,
+  output jsonb,
+  error text,
+  model text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.os_reflections (
+  id uuid primary key default gen_random_uuid(),
+  command_id uuid,
+  outcome text,
+  failure_reason text,
+  lesson text,
+  improvement_suggestion text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
 create index if not exists os_tasks_status_due_idx on public.os_tasks (status, due_at);
 create index if not exists os_tasks_project_idx on public.os_tasks (project_name);
 create index if not exists os_memories_project_idx on public.os_memories (project_name);
 create index if not exists os_memories_type_idx on public.os_memories (memory_type);
+create index if not exists os_conversations_session_idx on public.os_conversations (session_id, created_at);
 create index if not exists os_action_plans_command_idx on public.os_action_plans (command_id);
 create index if not exists os_action_plans_status_idx on public.os_action_plans (status);
+create index if not exists os_agent_logs_command_idx on public.os_agent_logs (command_id, created_at);
+create index if not exists os_reflections_command_idx on public.os_reflections (command_id, created_at);

@@ -2,6 +2,7 @@ type UnknownRecord = Record<string, unknown>;
 
 export type V2BrainJson = {
   mode: 'answer' | 'plan' | 'clarify';
+  understanding: string;
   intent: string;
   action_type: 'create_task' | 'save_memory' | 'answer_query' | 'update_task' | 'none';
   project_name: string | null;
@@ -42,26 +43,34 @@ export async function osV2Supabase<T>(path: string, init: RequestInit = {}) {
 
 export async function listV2Context() {
   const [tasks, memories] = await Promise.all([
-    osV2Supabase<UnknownRecord[]>('os_tasks?select=*&order=created_at.desc&limit=80').catch(() => []),
-    osV2Supabase<UnknownRecord[]>('os_memories?select=*&order=created_at.desc&limit=80').catch(() => []),
+    osV2Supabase<UnknownRecord[]>('os_tasks?select=id,title,project_name,status,priority,due_at,source_command,metadata,created_at,updated_at&order=created_at.desc&limit=80').catch(() => []),
+    osV2Supabase<UnknownRecord[]>('os_memories?select=id,memory_type,title,content,project_name,entities,confidence,source_command,metadata,created_at,updated_at&order=created_at.desc&limit=80').catch(() => []),
   ]);
   return { tasks, memories };
 }
 
-export async function logV2(commandId: string, step: string, input?: unknown, output?: unknown, error?: unknown, model?: string) {
-  await osV2Supabase('os_agent_logs', { method: 'POST', body: JSON.stringify({ command_id: commandId, step, input, output, error: error instanceof Error ? error.message : typeof error === 'string' ? error : null, model }) }).catch(() => null);
+export async function logV2(commandId: string, step: string, input?: unknown, output?: unknown, error?: unknown, model?: string, metadata?: UnknownRecord) {
+  await osV2Supabase('os_agent_logs', { method: 'POST', body: JSON.stringify({ command_id: commandId, step, input, output, error: error instanceof Error ? error.message : typeof error === 'string' ? error : null, model, metadata: metadata ?? {} }) }).catch(() => null);
+}
+
+export async function saveConversation(sessionId: string, speaker: 'user' | 'assistant' | 'system', message: string, mode: string, metadata: UnknownRecord = {}) {
+  await osV2Supabase('os_conversations', { method: 'POST', body: JSON.stringify({ session_id: sessionId, speaker, message, mode, metadata }) }).catch(() => null);
+}
+
+export async function saveReflection(commandId: string, outcome: string, failureReason: string | null, lesson: string, improvementSuggestion: string, metadata: UnknownRecord = {}) {
+  await osV2Supabase('os_reflections', { method: 'POST', body: JSON.stringify({ command_id: commandId, outcome, failure_reason: failureReason, lesson, improvement_suggestion: improvementSuggestion, metadata }) }).catch(() => null);
 }
 
 export async function callPremiumV2Brain(command: string, context: { tasks: UnknownRecord[]; memories: UnknownRecord[] }, commandId: string): Promise<{ brain: V2BrainJson; model: string }> {
   const apiKey = process.env.OPENAI_API_KEY;
   const model = process.env.OPENAI_PREMIUM_MODEL || process.env.OPENAI_MODEL || 'gpt-4.1';
   if (!apiKey) throw new Error('OPENAI_API_KEY is missing.');
-  const system = `You are Shaikh OS v2. Always reason from provided canonical os_tasks and os_memories only. Return only strict JSON matching this schema: {"mode":"answer|plan|clarify","intent":"string","action_type":"create_task|save_memory|answer_query|update_task|none","project_name":"string|null","title":"string|null","answer":"string|null","payload":{},"confidence":0.0,"requires_confirmation":true,"clarifying_question":null}. For writes, produce mode plan and requires_confirmation true. For queries, answer directly from context; if no matching data, say "এখনো কোনো তথ্য পাওয়া যায়নি". Do not use keyword parsing or invent stored facts.`;
+  const system = `You are Shaikh OS v2, a reasoning-first cognitive operating system, not a chatbot and not a keyword parser. Every command must follow Observe → Recall → Reason → Plan → Confirm → Execute → Reflect. Use only the provided canonical os_tasks and os_memories as stored context; never invent stored facts. Reason generally from meaning and user intent, not from keyword rules. Return only strict JSON with exactly this shape: {"mode":"answer|plan|clarify","understanding":"string","intent":"string","action_type":"create_task|save_memory|answer_query|update_task|none","project_name":"string|null","title":"string|null","answer":"string|null","payload":{},"confidence":0.0,"requires_confirmation":true,"clarifying_question":null}. For any write or task update, return mode "plan" with requires_confirmation true. For factual/status queries, return mode "answer" and answer directly from context in simple Bangla. If context is insufficient, say "এখনো কোনো তথ্য পাওয়া যায়নি". If one missing detail prevents a safe plan, return mode "clarify" and ask one clear Bangla question.`;
   const messages = [
     { role: 'system', content: system },
-    { role: 'user', content: JSON.stringify({ command, canonical_context: context }) },
+    { role: 'user', content: JSON.stringify({ command, canonical_context: context, current_date: new Date().toISOString().slice(0, 10) }) },
   ];
-  await logV2(commandId, 'llm_input', { command, context_counts: { tasks: context.tasks.length, memories: context.memories.length } }, null, null, model);
+  await logV2(commandId, 'observe_recall_llm_input', { command, context_counts: { tasks: context.tasks.length, memories: context.memories.length } }, null, null, model);
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
@@ -72,7 +81,7 @@ export async function callPremiumV2Brain(command: string, context: { tasks: Unkn
   if (!response.ok) throw new Error(data?.error?.message || `OpenAI ${response.status}`);
   const content = data?.choices?.[0]?.message?.content;
   const brain = normalizeBrain(JSON.parse(content));
-  await logV2(commandId, 'llm_output', null, brain, null, model);
+  await logV2(commandId, 'reason_plan_llm_output', null, brain, null, model);
   return { brain, model };
 }
 
@@ -81,6 +90,7 @@ function normalizeBrain(value: UnknownRecord): V2BrainJson {
   const allowed = new Set(['create_task', 'save_memory', 'answer_query', 'update_task', 'none']);
   return {
     mode,
+    understanding: typeof value.understanding === 'string' && value.understanding ? value.understanding : 'নির্দেশনাটি বুঝে নেওয়া হয়েছে।',
     intent: String(value.intent ?? 'unknown'),
     action_type: allowed.has(String(value.action_type)) ? value.action_type as V2BrainJson['action_type'] : 'none',
     project_name: typeof value.project_name === 'string' && value.project_name ? value.project_name : null,
