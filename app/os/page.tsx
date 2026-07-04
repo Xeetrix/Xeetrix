@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { meetings, memoryItems, marketingMetrics } from '@/lib/shaikh-os-memory';
 import { buildChiefOfStaffBriefing, type BriefingItem } from '@/lib/shaikh-os-intelligence';
 import CommandForm from './CommandForm';
+import QuickAddModal from './QuickAddModal';
 import OsNav from './_components/OsNav';
 import styles from './page.module.css';
 
@@ -64,6 +65,7 @@ export default function ShaikhOSPage() {
           <CommandForm />
         </div>
       </section>
+      <QuickAddModal />
     </main>
   );
 }

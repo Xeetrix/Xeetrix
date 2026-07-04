@@ -1,0 +1,90 @@
+.floatingButton {
+  position: fixed;
+  right: clamp(1rem, 4vw, 2rem);
+  bottom: clamp(1rem, 4vw, 2rem);
+  z-index: 30;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 3.35rem;
+  padding: 0 1.15rem 0 0.72rem;
+  border: 1px solid rgba(136, 204, 255, 0.24);
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(71, 215, 255, 0.96), rgba(63, 125, 255, 0.94) 52%, rgba(159, 99, 255, 0.95));
+  color: #ffffff;
+  font-weight: 900;
+  box-shadow: 0 24px 70px rgba(63, 125, 255, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.32);
+  cursor: pointer;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.floatingButton:hover { transform: translateY(-2px); box-shadow: 0 30px 86px rgba(63, 125, 255, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.36); }
+.floatingButton span { display: grid; width: 2.05rem; height: 2.05rem; place-items: center; border-radius: 999px; background: rgba(255, 255, 255, 0.18); font-size: 1.35rem; }
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(2, 6, 18, 0.48);
+  backdrop-filter: blur(14px);
+}
+
+.sheet {
+  width: min(560px, 100%);
+  padding: 0.75rem clamp(1rem, 3vw, 1.35rem) 1.35rem;
+  border: 1px solid rgba(136, 204, 255, 0.2);
+  border-radius: 30px 30px 24px 24px;
+  background:
+    radial-gradient(circle at 80% 0%, rgba(71, 215, 255, 0.18), transparent 16rem),
+    radial-gradient(circle at 0% 85%, rgba(159, 99, 255, 0.18), transparent 15rem),
+    linear-gradient(145deg, rgba(14, 25, 50, 0.94), rgba(11, 14, 30, 0.88));
+  box-shadow: 0 34px 120px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  color: #f8fbff;
+  animation: rise 220ms ease-out;
+}
+
+.handle { width: 3.5rem; height: 0.3rem; margin: 0 auto 1rem; border-radius: 999px; background: rgba(219, 234, 254, 0.34); }
+.header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1.1rem; }
+.eyebrow { margin: 0 0 0.35rem; color: #a5f0ff; font-size: 0.72rem; font-weight: 900; letter-spacing: 0.12em; text-transform: uppercase; }
+.header h2 { margin: 0; color: #ffffff; font-size: clamp(1.45rem, 4vw, 2rem); letter-spacing: -0.04em; }
+.iconButton { width: 2.45rem; height: 2.45rem; border: 1px solid rgba(255,255,255,0.12); border-radius: 999px; background: rgba(255,255,255,0.08); color: #dbeafe; font-size: 1.45rem; cursor: pointer; }
+
+.menuGrid { display: grid; gap: 0.85rem; }
+.actionCard { display: grid; grid-template-columns: auto 1fr; gap: 0.1rem 0.85rem; width: 100%; padding: 1rem; border: 1px solid rgba(136, 204, 255, 0.16); border-radius: 22px; background: rgba(255,255,255,0.07); color: #f8fbff; text-align: left; cursor: pointer; transition: transform 180ms ease, border-color 180ms ease, background 180ms ease; }
+.actionCard:hover:not(:disabled) { transform: translateY(-2px); border-color: rgba(71, 215, 255, 0.36); background: rgba(71, 215, 255, 0.1); }
+.actionCard:disabled { cursor: not-allowed; opacity: 0.56; }
+.actionIcon { grid-row: span 2; display: grid; width: 2.75rem; height: 2.75rem; place-items: center; border-radius: 18px; background: linear-gradient(135deg, rgba(71, 215, 255, 0.22), rgba(159, 99, 255, 0.2)); color: #a5f0ff; font-weight: 900; }
+.actionCard strong { font-size: 1rem; }
+.actionCard small { color: #aab8cb; line-height: 1.55; }
+
+.form { display: grid; gap: 1rem; }
+.field { display: grid; gap: 0.45rem; color: #dbeafe; font-weight: 850; }
+.amountInputWrap, .field select { min-height: 3.4rem; border: 1px solid rgba(136, 204, 255, 0.18); border-radius: 18px; background: rgba(255,255,255,0.08); color: #ffffff; box-shadow: inset 0 1px 0 rgba(255,255,255,0.08); }
+.amountInputWrap { display: flex; align-items: center; gap: 0.65rem; padding: 0 1rem; }
+.amountInputWrap span { color: #4dffb5; font-weight: 950; }
+.amountInputWrap input, .field select { width: 100%; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; }
+.amountInputWrap input::placeholder { color: rgba(219, 234, 254, 0.46); }
+.field select { appearance: none; padding: 0 1rem; background-image: linear-gradient(45deg, transparent 50%, #a5f0ff 50%), linear-gradient(135deg, #a5f0ff 50%, transparent 50%); background-position: calc(100% - 20px) 50%, calc(100% - 14px) 50%; background-size: 6px 6px, 6px 6px; background-repeat: no-repeat; }
+.field option { color: #07111f; background: #f8fbff; }
+.formActions { display: grid; grid-template-columns: 0.75fr 1.25fr; gap: 0.75rem; margin-top: 0.25rem; }
+.secondaryButton, .submitButton { min-height: 3.25rem; border-radius: 999px; font-weight: 950; cursor: pointer; transition: transform 180ms ease, opacity 180ms ease; }
+.secondaryButton { border: 1px solid rgba(136, 204, 255, 0.18); background: rgba(255,255,255,0.07); color: #dbeafe; }
+.submitButton { border: 0; background: linear-gradient(135deg, #47d7ff, #3f7dff 52%, #9f63ff); color: #ffffff; box-shadow: 0 18px 52px rgba(63, 125, 255, 0.32); }
+.secondaryButton:hover, .submitButton:hover:not(:disabled) { transform: translateY(-2px); }
+.submitButton:disabled { cursor: progress; opacity: 0.72; }
+.toast { position: fixed; left: 50%; bottom: 6rem; z-index: 60; transform: translateX(-50%); width: min(92vw, 420px); padding: 0.9rem 1rem; border: 1px solid rgba(77, 255, 181, 0.25); border-radius: 18px; background: rgba(8, 24, 33, 0.92); color: #dfffee; box-shadow: 0 22px 70px rgba(0,0,0,0.32); backdrop-filter: blur(14px); text-align: center; font-weight: 850; }
+
+@media (prefers-color-scheme: light) {
+  .overlay { background: rgba(226, 235, 249, 0.62); }
+  .sheet { background: linear-gradient(145deg, rgba(255,255,255,0.94), rgba(239,246,255,0.86)); color: #07111f; }
+  .header h2, .actionCard, .amountInputWrap, .field select { color: #07111f; }
+  .actionCard, .amountInputWrap, .field select, .iconButton, .secondaryButton { background: rgba(255,255,255,0.68); }
+  .actionCard small { color: #52627a; }
+  .field { color: #132238; }
+}
+
+@keyframes rise { from { opacity: 0; transform: translateY(1.5rem) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
