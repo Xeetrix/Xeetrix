@@ -32,6 +32,9 @@ const config: Config = {
         glow: '0 0 60px -10px rgba(0,112,243,0.55)',
         'glow-purple': '0 0 60px -10px rgba(121,40,202,0.55)',
         'inner-line': 'inset 0 1px 0 0 rgba(255,255,255,0.06)',
+        'inner-border': 'inset 0 0 0 1px rgba(255,255,255,0.09)',
+        hardware:
+          'inset 0 0 0 1px rgba(255,255,255,0.09), inset 0 1px 0 0 rgba(255,255,255,0.14), 0 40px 80px -30px rgba(0,0,0,0.6)',
       },
       animation: {
         marquee: 'marquee 32s linear infinite',
@@ -40,6 +43,8 @@ const config: Config = {
         float: 'float 6s ease-in-out infinite',
         'fade-up': 'fade-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards',
         aurora: 'aurora 18s ease-in-out infinite',
+        'border-beam': 'border-beam calc(var(--duration)*1s) infinite linear',
+        grain: 'grain 8s steps(10) infinite',
       },
       keyframes: {
         marquee: {
@@ -62,6 +67,21 @@ const config: Config = {
           '0%, 100%': { transform: 'translate(0, 0) scale(1)' },
           '33%': { transform: 'translate(4%, -6%) scale(1.05)' },
           '66%': { transform: 'translate(-3%, 4%) scale(0.98)' },
+        },
+        'border-beam': {
+          '100%': { 'offset-distance': '100%' },
+        },
+        grain: {
+          '0%, 100%': { transform: 'translate(0, 0)' },
+          '10%': { transform: 'translate(-1%, -3%)' },
+          '20%': { transform: 'translate(-3%, 1%)' },
+          '30%': { transform: 'translate(2%, -6%)' },
+          '40%': { transform: 'translate(-1%, 4%)' },
+          '50%': { transform: 'translate(-3%, 2%)' },
+          '60%': { transform: 'translate(4%, 0%)' },
+          '70%': { transform: 'translate(0%, 5%)' },
+          '80%': { transform: 'translate(-2%, -2%)' },
+          '90%': { transform: 'translate(3%, -1%)' },
         },
       },
     },
