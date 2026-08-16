@@ -1,29 +1,25 @@
-import { AgentPlatformSection } from '@/components/AgentPlatformSection';
-import { CTASection } from '@/components/CTASection';
-import { EcosystemSection } from '@/components/EcosystemSection';
-import { Footer } from '@/components/Footer';
-import { Hero } from '@/components/Hero';
-import { Navbar } from '@/components/Navbar';
-import { ProblemSection } from '@/components/ProblemSection';
-import { ServicesSection } from '@/components/ServicesSection';
-import { SolutionSection } from '@/components/SolutionSection';
-import { UseCaseSection } from '@/components/UseCaseSection';
+import { Footer } from '@/components/layout/Footer';
+import { Navbar } from '@/components/layout/Navbar';
+import { BentoServices } from '@/components/sections/BentoServices';
+import { ContactForm } from '@/components/sections/ContactForm';
+import { Hero } from '@/components/sections/Hero';
+import { ProcessTimeline } from '@/components/sections/ProcessTimeline';
+import { StatsSection } from '@/components/sections/StatsSection';
+import { TechMarquee } from '@/components/sections/TechMarquee';
 
 export default function Home() {
   return (
-    <div className="site-shell">
+    <>
       <Navbar />
-      <main>
+      <main className="relative overflow-hidden">
         <Hero />
-        <ProblemSection />
-        <SolutionSection />
-        <AgentPlatformSection />
-        <UseCaseSection />
-        <ServicesSection />
-        <EcosystemSection />
-        <CTASection />
+        <TechMarquee />
+        <BentoServices />
+        <StatsSection />
+        <ProcessTimeline />
+        <ContactForm />
       </main>
       <Footer />
-    </div>
+    </>
   );
 }
