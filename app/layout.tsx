@@ -3,6 +3,7 @@ import { Plus_Jakarta_Sans } from 'next/font/google';
 import type { ReactNode } from 'react';
 
 import { SmoothScrollProvider } from '@/components/providers/SmoothScrollProvider';
+import { CustomCursor } from '@/components/ui/CustomCursor';
 import './globals.css';
 
 const plusJakartaSans = Plus_Jakarta_Sans({
@@ -58,6 +59,11 @@ export default function RootLayout({
   return (
     <html lang="en" className={plusJakartaSans.variable}>
       <body className="bg-background font-sans text-white antialiased">
+        <div
+          aria-hidden="true"
+          className="grain-overlay pointer-events-none fixed inset-0 z-[60] animate-grain opacity-[0.035] mix-blend-overlay"
+        />
+        <CustomCursor />
         <SmoothScrollProvider>{children}</SmoothScrollProvider>
       </body>
     </html>

@@ -1,75 +1,117 @@
 'use client';
 
-import { motion } from 'framer-motion';
 import { ArrowRight, Sparkles } from 'lucide-react';
+import { useRef } from 'react';
 
 import { MagneticButton } from '@/components/ui/MagneticButton';
+import { ParticleNetwork } from '@/components/ui/ParticleNetwork';
+import { gsap, ScrollTrigger, useGSAP } from '@/lib/gsap';
 
-const container = {
-  hidden: { opacity: 0 },
-  show: {
-    opacity: 1,
-    transition: { staggerChildren: 0.12, delayChildren: 0.15 },
-  },
-};
-
-const item = {
-  hidden: { opacity: 0, y: 28 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.7, ease: [0.16, 1, 0.3, 1] } },
-};
+const headlineLines = [
+  ['Automate', 'The', 'Impossible.'],
+  ['Scale', 'Infinitely.'],
+];
 
 export function Hero() {
+  const sectionRef = useRef<HTMLElement>(null);
+
+  useGSAP(
+    () => {
+      const tl = gsap.timeline({ defaults: { ease: 'power4.out' } });
+
+      tl.set('.hero-word-inner', { yPercent: 130, rotateZ: 6 })
+        .set(['.hero-eyebrow', '.hero-subtext', '.hero-cta'], { opacity: 0, y: 24 })
+        .to('.hero-eyebrow', { opacity: 1, y: 0, duration: 0.6 }, 0.1)
+        .to('.hero-word-inner', { yPercent: 0, rotateZ: 0, duration: 1.1, stagger: 0.06 }, 0.25)
+        .to('.hero-subtext', { opacity: 1, y: 0, duration: 0.8 }, '-=0.55')
+        .to('.hero-cta', { opacity: 1, y: 0, duration: 0.7, stagger: 0.12 }, '-=0.5');
+
+      gsap.to('.hero-parallax', {
+        yPercent: 20,
+        scale: 0.94,
+        opacity: 0.3,
+        ease: 'none',
+        scrollTrigger: {
+          trigger: sectionRef.current,
+          start: 'top top',
+          end: 'bottom top',
+          scrub: 0.5,
+        },
+      });
+
+      gsap.to('.hero-canvas', {
+        yPercent: 14,
+        ease: 'none',
+        scrollTrigger: {
+          trigger: sectionRef.current,
+          start: 'top top',
+          end: 'bottom top',
+          scrub: 0.5,
+        },
+      });
+
+      ScrollTrigger.refresh();
+    },
+    { scope: sectionRef },
+  );
+
   return (
-    <section id="home" className="relative flex min-h-screen items-center overflow-hidden pt-32 pb-24">
-      <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-grid-pattern bg-grid opacity-40" />
+    <section
+      ref={sectionRef}
+      id="home"
+      className="mesh-gradient relative flex min-h-screen items-center overflow-hidden pb-24 pt-32"
+    >
+      <div className="hero-canvas pointer-events-none absolute inset-0 z-[1] opacity-70">
+        <ParticleNetwork className="h-full w-full" />
+      </div>
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute left-1/2 top-[-10%] h-[36rem] w-[64rem] -translate-x-1/2 animate-aurora rounded-full bg-radial-fade blur-3xl"
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-background"
+        className="pointer-events-none absolute inset-0 z-[3] bg-gradient-to-b from-transparent via-transparent to-background"
       />
 
-      <div className="relative z-10 mx-auto w-full max-w-6xl px-6 md:px-8">
-        <motion.div variants={container} initial="hidden" animate="show" className="mx-auto max-w-4xl text-center">
-          <motion.div
-            variants={item}
-            className="mx-auto mb-8 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 text-xs font-medium text-white/70"
-          >
+      <div className="hero-parallax relative z-10 mx-auto w-full max-w-6xl px-6 md:px-8">
+        <div className="mx-auto max-w-4xl text-center">
+          <div className="hero-eyebrow mx-auto mb-8 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 text-xs font-medium text-white/70 backdrop-blur-md">
             <Sparkles className="h-3.5 w-3.5 text-cyber-blue" />
             Trusted automation partner for global enterprises
-          </motion.div>
+          </div>
 
-          <motion.h1
-            variants={item}
-            className="text-balance text-5xl font-bold leading-[1.05] tracking-tight sm:text-6xl md:text-7xl"
-          >
-            <span className="text-gradient">Automate The Impossible.</span>
-            <br />
-            <span className="text-gradient">Scale Infinitely.</span>
-          </motion.h1>
+          <h1 className="text-balance text-6xl font-bold leading-[0.96] tracking-tighter sm:text-7xl md:text-8xl">
+            {headlineLines.map((line) => (
+              <span key={line.join('-')} className="block">
+                {line.map((word) => (
+                  <span
+                    key={word}
+                    className="hero-word inline-block overflow-hidden pb-2 pr-[0.22em] align-top"
+                  >
+                    <span className="hero-word-inner text-gradient inline-block">{word}</span>
+                  </span>
+                ))}
+              </span>
+            ))}
+          </h1>
 
-          <motion.p
-            variants={item}
-            className="mx-auto mt-7 max-w-2xl text-balance text-lg leading-relaxed text-muted md:text-xl"
-          >
+          <p className="hero-subtext mx-auto mt-8 max-w-2xl text-balance text-lg leading-relaxed text-muted md:text-xl">
             Xeetrix engineers elite AI agents, custom APIs, and intelligent workflow automations for
             global enterprises looking to 10x their efficiency.
-          </motion.p>
+          </p>
 
-          <motion.div variants={item} className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
-            <MagneticButton href="#contact">
-              <span className="flex items-center gap-2">
-                Book Audit
-                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-              </span>
-            </MagneticButton>
-            <MagneticButton href="#services" variant="secondary">
-              Explore Services
-            </MagneticButton>
-          </motion.div>
-        </motion.div>
+          <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
+            <div className="hero-cta">
+              <MagneticButton href="#contact">
+                <span className="flex items-center gap-2">
+                  Book Audit
+                  <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                </span>
+              </MagneticButton>
+            </div>
+            <div className="hero-cta">
+              <MagneticButton href="#services" variant="secondary">
+                Explore Services
+              </MagneticButton>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
   );
