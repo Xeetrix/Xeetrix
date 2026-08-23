@@ -1,11 +1,13 @@
 import { Footer } from '@/components/layout/Footer';
 import { Navbar } from '@/components/layout/Navbar';
-import { ContactForm } from '@/components/sections/ContactForm';
+import { CapabilityMarquee } from '@/components/sections/CapabilityMarquee';
+import { CTASection } from '@/components/sections/CTASection';
+import { Differentiator } from '@/components/sections/Differentiator';
 import { Hero } from '@/components/sections/Hero';
 import { ProcessTimeline } from '@/components/sections/ProcessTimeline';
-import { TechMarquee } from '@/components/sections/TechMarquee';
-import { ImpactStats } from '@/components/ImpactStats';
-import { PremiumBento } from '@/components/PremiumBento';
+import { ServiceEcosystem } from '@/components/sections/ServiceEcosystem';
+import { TrustStrip } from '@/components/sections/TrustStrip';
+import { WhoWeHelpPreview } from '@/components/sections/WhoWeHelpPreview';
 
 export default function Home() {
   return (
@@ -13,11 +15,13 @@ export default function Home() {
       <Navbar />
       <main className="relative overflow-hidden">
         <Hero />
-        <TechMarquee />
-        <PremiumBento />
-        <ImpactStats />
+        <CapabilityMarquee />
+        <TrustStrip />
+        <ServiceEcosystem />
+        <Differentiator />
         <ProcessTimeline />
-        <ContactForm />
+        <WhoWeHelpPreview />
+        <CTASection />
       </main>
       <Footer />
     </>

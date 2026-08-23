@@ -3,13 +3,15 @@
 import { ArrowRight, Sparkles } from 'lucide-react';
 import { useRef } from 'react';
 
+import { InfrastructureGraph } from '@/components/ui/InfrastructureGraph';
 import { MagneticButton } from '@/components/ui/MagneticButton';
 import { ParticleNetwork } from '@/components/ui/ParticleNetwork';
 import { gsap, ScrollTrigger, useGSAP } from '@/lib/gsap';
+import { siteConfig } from '@/lib/content/site';
 
 const headlineLines = [
-  ['Automate', 'The', 'Impossible.'],
-  ['Scale', 'Infinitely.'],
+  ['Build', 'Your', 'US', 'Business.'],
+  ['Launch', 'With', 'Confidence.'],
 ];
 
 export function Hero() {
@@ -61,7 +63,7 @@ export function Hero() {
       id="home"
       className="mesh-gradient relative flex min-h-screen items-center overflow-hidden pb-24 pt-32"
     >
-      <div className="hero-canvas pointer-events-none absolute inset-0 z-[1] opacity-70">
+      <div className="hero-canvas pointer-events-none absolute inset-0 z-[1] opacity-40">
         <ParticleNetwork className="h-full w-full" />
       </div>
       <div
@@ -69,14 +71,14 @@ export function Hero() {
         className="pointer-events-none absolute inset-0 z-[3] bg-gradient-to-b from-transparent via-transparent to-background"
       />
 
-      <div className="hero-parallax relative z-10 mx-auto w-full max-w-6xl px-6 md:px-8">
-        <div className="mx-auto max-w-4xl text-center">
-          <div className="hero-eyebrow mx-auto mb-8 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 text-xs font-medium text-white/70 backdrop-blur-md">
+      <div className="hero-parallax relative z-10 mx-auto grid w-full max-w-6xl items-center gap-16 px-6 md:px-8 lg:grid-cols-[1.1fr_0.9fr]">
+        <div>
+          <div className="hero-eyebrow mb-8 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 text-xs font-medium text-white/70 backdrop-blur-md">
             <Sparkles className="h-3.5 w-3.5 text-cyber-blue" />
-            Trusted automation partner for global enterprises
+            US business infrastructure for global entrepreneurs
           </div>
 
-          <h1 className="text-balance text-6xl font-bold leading-[0.96] tracking-tighter sm:text-7xl md:text-8xl">
+          <h1 className="text-balance text-5xl font-bold leading-[0.98] tracking-tighter sm:text-6xl md:text-7xl">
             {headlineLines.map((line) => (
               <span key={line.join('-')} className="block">
                 {line.map((word) => (
@@ -91,26 +93,29 @@ export function Hero() {
             ))}
           </h1>
 
-          <p className="hero-subtext mx-auto mt-8 max-w-2xl text-balance text-lg leading-relaxed text-muted md:text-xl">
-            Xeetrix engineers elite AI agents, custom APIs, and intelligent workflow automations for
-            global enterprises looking to 10x their efficiency.
+          <p className="hero-subtext mt-8 max-w-xl text-balance text-lg leading-relaxed text-muted md:text-xl">
+            {siteConfig.description}
           </p>
 
-          <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
+          <div className="mt-10 flex flex-col items-start gap-4 sm:flex-row">
             <div className="hero-cta">
-              <MagneticButton href="#contact">
+              <MagneticButton href="/get-started">
                 <span className="flex items-center gap-2">
-                  Book Audit
+                  Get Started
                   <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
                 </span>
               </MagneticButton>
             </div>
             <div className="hero-cta">
-              <MagneticButton href="#services" variant="secondary">
+              <MagneticButton href="/services" variant="secondary">
                 Explore Services
               </MagneticButton>
             </div>
           </div>
+        </div>
+
+        <div className="hero-cta hidden justify-center lg:flex" aria-hidden="false">
+          <InfrastructureGraph className="w-full max-w-md" />
         </div>
       </div>
     </section>
