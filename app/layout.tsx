@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 
 import { SmoothScrollProvider } from '@/components/providers/SmoothScrollProvider';
 import { CustomCursor } from '@/components/ui/CustomCursor';
+import { siteConfig } from '@/lib/content/site';
 import './globals.css';
 
 const plusJakartaSans = Plus_Jakarta_Sans({
@@ -12,43 +13,60 @@ const plusJakartaSans = Plus_Jakarta_Sans({
   display: 'swap',
 });
 
-const siteUrl = 'https://xeetrix.com';
-
 export const metadata: Metadata = {
-  metadataBase: new URL(siteUrl),
+  metadataBase: new URL(siteConfig.domain),
   title: {
-    default: 'Xeetrix — Elite AI Agents & Workflow Automation',
-    template: '%s | Xeetrix',
+    default: `${siteConfig.name} — ${siteConfig.tagline}`,
+    template: `%s | ${siteConfig.name}`,
   },
-  description:
-    'Xeetrix engineers elite AI agents, custom APIs, and intelligent workflow automations for global enterprises looking to 10x their efficiency.',
+  description: siteConfig.description,
   keywords: [
-    'AI automation agency',
-    'AI agents',
-    'workflow automation',
-    'custom API development',
-    'CRM optimization',
-    'business process automation',
+    'US LLC formation for non-residents',
+    'US business formation',
+    'EIN assistance',
+    'US business banking assistance',
+    'payment processor setup',
+    'US business infrastructure',
+    'international entrepreneur US LLC',
+    'US business setup for non-US founders',
   ],
-  authors: [{ name: 'Xeetrix' }],
+  authors: [{ name: siteConfig.name }],
+  alternates: { canonical: '/' },
+  icons: {
+    icon: '/favicon.svg',
+  },
   openGraph: {
     type: 'website',
-    url: siteUrl,
-    siteName: 'Xeetrix',
-    title: 'Xeetrix — Elite AI Agents & Workflow Automation',
-    description:
-      'Elite AI agents, custom APIs, and intelligent workflow automations for global enterprises looking to 10x their efficiency.',
+    url: siteConfig.domain,
+    siteName: siteConfig.name,
+    title: `${siteConfig.name} — ${siteConfig.tagline}`,
+    description: siteConfig.description,
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Xeetrix — Elite AI Agents & Workflow Automation',
-    description:
-      'Elite AI agents, custom APIs, and intelligent workflow automations for global enterprises looking to 10x their efficiency.',
+    title: `${siteConfig.name} — ${siteConfig.tagline}`,
+    description: siteConfig.description,
   },
   robots: {
     index: true,
     follow: true,
   },
+};
+
+const organizationJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'Organization',
+  name: siteConfig.name,
+  url: siteConfig.domain,
+  description: siteConfig.description,
+  email: siteConfig.contactEmail,
+};
+
+const websiteJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'WebSite',
+  name: siteConfig.name,
+  url: siteConfig.domain,
 };
 
 export default function RootLayout({
@@ -59,12 +77,19 @@ export default function RootLayout({
   return (
     <html lang="en" className={plusJakartaSans.variable}>
       <body className="bg-background font-sans text-white antialiased">
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
+        />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }} />
         <div
           aria-hidden="true"
           className="grain-overlay pointer-events-none fixed inset-0 z-[60] animate-grain opacity-[0.035] mix-blend-overlay"
         />
         <CustomCursor />
-        <SmoothScrollProvider>{children}</SmoothScrollProvider>
+        <SmoothScrollProvider>
+          <div id="main-content">{children}</div>
+        </SmoothScrollProvider>
       </body>
     </html>
   );

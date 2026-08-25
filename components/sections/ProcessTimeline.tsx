@@ -2,23 +2,31 @@
 
 import { motion } from 'framer-motion';
 
-import { processSteps } from '@/components/data';
 import { SectionHeader } from '@/components/ui/SectionHeader';
+import { howItWorksDisclaimer, howItWorksSteps } from '@/lib/content/process';
 
-export function ProcessTimeline() {
+type ProcessTimelineProps = {
+  eyebrow?: string;
+  title?: string;
+  description?: string;
+  showDisclaimer?: boolean;
+};
+
+export function ProcessTimeline({
+  eyebrow = 'How It Works',
+  title = 'From idea to launch, in six guided steps',
+  description = 'A disciplined, transparent process that takes you from first conversation to a fully operational US business.',
+  showDisclaimer = true,
+}: ProcessTimelineProps) {
   return (
     <section id="process" className="relative mx-auto w-full max-w-6xl px-6 py-28 md:px-8">
-      <SectionHeader
-        eyebrow="Process"
-        title="The Xeetrix Process"
-        description="A disciplined, three-phase engagement that takes you from audit to autonomous operation."
-      />
+      <SectionHeader eyebrow={eyebrow} title={title} description={description} />
 
       <div className="relative mt-16">
         <div className="absolute left-6 top-0 h-full w-px bg-gradient-to-b from-cyber-blue via-electric-purple to-transparent md:left-1/2" />
 
         <div className="space-y-16">
-          {processSteps.map((step, index) => (
+          {howItWorksSteps.map((step, index) => (
             <motion.div
               key={step.step}
               initial={{ opacity: 0, y: 32 }}
@@ -43,6 +51,12 @@ export function ProcessTimeline() {
           ))}
         </div>
       </div>
+
+      {showDisclaimer && (
+        <p className="mx-auto mt-14 max-w-2xl text-center text-xs leading-relaxed text-white/40">
+          {howItWorksDisclaimer}
+        </p>
+      )}
     </section>
   );
 }

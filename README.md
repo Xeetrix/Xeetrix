@@ -1,6 +1,6 @@
 # Xeetrix
 
-Xeetrix is a Next.js 15 platform for building AI-powered business websites, internal operating systems, and agent-driven automation workflows. The repository combines a public Xeetrix marketing site, a Bengali-first personal/business command center called **Shaikh OS**, Supabase-backed memory and integration tables, Google Workspace and GitHub integrations, and a standalone Express AI-agent service.
+Xeetrix is a Next.js 15 platform that combines two independent surfaces in one repository: the **public Xeetrix marketing site** (xeetrix.com — US business formation and payment infrastructure assistance for global entrepreneurs) and **Shaikh OS**, an internal, Bengali-first personal/business command center used to run Xeetrix day-to-day. They live under separate route namespaces (`/`, `/services`, `/pricing`, etc. for the public site vs. `/os`, `/admin`, `/api/os`, `/api/v2` for the internal tool) and share only the Next.js app shell — the public site has no dependency on Supabase, Google, GitHub, or the standalone agent service described later in this document.
 
 ## Table of contents
 
@@ -25,22 +25,26 @@ Xeetrix is a Next.js 15 platform for building AI-powered business websites, inte
 
 ## What this repository contains
 
-This project is organized as a multi-surface AI automation platform:
+This project is organized as two products sharing one codebase:
 
-1. **Xeetrix public website** - a polished landing page that explains Xeetrix services, AI-agent capabilities, use cases, and conversion calls to action.
-2. **Shaikh OS web app** - an internal command center for daily briefings, memory, tasks, meetings, projects, contacts, operations, marketing, finance, health, and improvement loops.
-3. **Integration API routes** - Next.js route handlers for Google Workspace OAuth/sync, GitHub diagnostics/issues/repository status, and Shaikh OS commands.
-4. **Supabase data foundation** - SQL migrations for relationships, connected sources, Google intelligence, GitHub integration records, self-improvement proposals, agent orchestration, and autonomous engineering-loop tables.
-5. **Standalone AI-agent backend** - an Express service under `services/shaikh-agent` that uses OpenRouter models and can be deployed separately behind Nginx/PM2.
+1. **Xeetrix public website** - a premium marketing and lead-generation site for US business formation and infrastructure assistance: service pages, industry pages, pricing, an interactive qualification wizard, resources, FAQ, and legal pages.
+2. **Shaikh OS web app** - an internal command center for daily briefings, memory, tasks, meetings, projects, contacts, operations, marketing, finance, health, and improvement loops. Unrelated to the public site's business content; see [Shaikh OS](#shaikh-os) below.
+3. **Integration API routes** - Next.js route handlers for Google Workspace OAuth/sync, GitHub diagnostics/issues/repository status, and Shaikh OS commands (internal use only).
+4. **Supabase data foundation** - SQL migrations for relationships, connected sources, Google intelligence, GitHub integration records, self-improvement proposals, agent orchestration, and autonomous engineering-loop tables (Shaikh OS only — the public site has no database dependency).
+5. **Standalone AI-agent backend** - an Express service under `services/shaikh-agent` that uses OpenRouter models and can be deployed separately behind Nginx/PM2 (Shaikh OS only).
 
 ## Core features
 
 ### Public Xeetrix website
 
-- Modern Next.js App Router landing page.
-- Section-based component architecture for hero, problem, solution, agent platform, services, ecosystem, and CTA areas.
-- Centralized marketing copy and navigation data in `components/data.ts`.
-- Global CSS styling through `app/globals.css`.
+US business formation and infrastructure assistance for international entrepreneurs — LLC formation, EIN assistance, registered agent coordination, business address guidance, business banking application assistance, payment infrastructure readiness, website/e-commerce launch, and ongoing compliance support.
+
+- **Pages**: homepage, `/services` (overview + 8 detail pages), `/pricing` (3 packages + setup estimator), `/how-it-works`, `/who-we-help` + `/industries/*` (4 industry pages), `/about`, `/faq` (searchable, 25+ entries), `/resources` (article index + detail pages), `/contact`, `/get-started` (12-question qualification wizard + lead capture), and legal pages (`/privacy`, `/terms`, `/refund-policy`, `/disclaimer`, `/accessibility`).
+- **Content architecture**: all marketing copy, services, pricing, FAQ, industries, and navigation live in typed data modules under `lib/content/`, rendered through shared template components (`components/ServiceDetail.tsx`, `components/LegalPage.tsx`, etc.) — editing content does not require touching component code.
+- **Forms**: contact form and qualification wizard are validated client- and server-side with Zod, submit to `app/api/contact` and `app/api/qualification`, include a honeypot field, and are rate-limited per IP.
+- **Design system**: dark, fintech-adjacent visual system (GSAP + Framer Motion animation, Lenis smooth scroll, custom cursor, an abstract SVG "business infrastructure" graph in the hero — no fabricated dashboards or statistics), respecting `prefers-reduced-motion`.
+- **SEO**: per-page metadata, `app/sitemap.ts`, `app/robots.ts`, `app/manifest.ts`, and JSON-LD (Organization, WebSite, Service, FAQPage, BreadcrumbList).
+- **Compliance-conscious copy**: no guaranteed bank/payment-processor approvals, no fabricated testimonials/partnerships/statistics, clear separation between Xeetrix service fees and third-party/government fees throughout.
 
 ### Shaikh OS command center
 
@@ -137,30 +141,49 @@ services/shaikh-agent
 ```text
 .
 ├── app/                         # Next.js App Router pages and API routes
-│   ├── api/                     # Integration and OS command endpoints
+│   ├── api/
+│   │   ├── contact/             # Public site: contact form submission
+│   │   ├── qualification/       # Public site: Get Started / wizard submission
+│   │   ├── os/                  # Shaikh OS command + feedback endpoints
+│   │   ├── v2/                  # Shaikh OS v2 command/health/debug endpoints
+│   │   └── integrations/        # Google Workspace + GitHub integration endpoints
+│   ├── (public site route folders) # /, /services, /pricing, /how-it-works, /who-we-help,
+│   │                                # /industries, /about, /faq, /resources, /contact,
+│   │                                # /get-started, /privacy, /terms, /refund-policy,
+│   │                                # /disclaimer, /accessibility
 │   ├── os/                      # Shaikh OS dashboards and detail pages
 │   ├── admin/                   # Admin/login pages
 │   ├── globals.css              # Global styling
-│   ├── layout.tsx               # Root layout
+│   ├── layout.tsx               # Root layout (public site metadata + JSON-LD)
+│   ├── sitemap.ts / robots.ts / manifest.ts
 │   └── page.tsx                 # Public Xeetrix homepage
-├── components/                  # Public website sections and shared marketing data
-├── lib/                         # Runtime, memory, integration, intelligence, and agent helpers
+├── components/                  # Public website UI: layout, sections, templates, ui primitives
+├── lib/
+│   ├── content/                 # Typed content data for the public site (services, pricing,
+│   │                             # faq, industries, nav, legal, resources, wizard, site config)
+│   ├── validation/               # Zod schemas for the contact form and qualification wizard
+│   ├── email.ts, rate-limit.ts   # Public site form-handling helpers
+│   └── shaikh-os-*, google-*, github-*, vercel-* # Shaikh OS runtime, memory, and integration helpers
 ├── services/
-│   └── shaikh-agent/            # Standalone Express/OpenRouter agent backend
+│   └── shaikh-agent/            # Standalone Express/OpenRouter agent backend (Shaikh OS only)
 ├── supabase/
-│   └── migrations/              # Database schema migrations
+│   └── migrations/              # Database schema migrations (Shaikh OS only)
 ├── next.config.ts               # Next.js config
 ├── package.json                 # Main application scripts and dependencies
 ├── package-lock.json            # Main application lockfile
+├── .env.example                 # Public site environment variables
 └── tsconfig.json                # TypeScript config
 ```
 
 ## Prerequisites
 
-Install the following before developing locally:
+To run the **public marketing site** locally, you only need:
 
 - Node.js 20 or newer.
 - npm 10 or newer.
+
+Everything else below is required only if you're also working on **Shaikh OS**:
+
 - A Supabase project if you want persistence, admin login, integrations, or runtime memory.
 - Google Cloud OAuth credentials if you want Google Workspace sync.
 - A GitHub fine-grained or classic token if you want GitHub diagnostics and issue creation.
@@ -169,9 +192,21 @@ Install the following before developing locally:
 
 ## Environment variables
 
-Create a `.env.local` file in the repository root for the Next.js app. Not every variable is required for every page; unconfigured integrations generally show a degraded or setup-needed state.
+Create a `.env.local` file in the repository root for the Next.js app. Not every variable is required for every page; unconfigured integrations generally show a degraded or setup-needed state, and the public site builds and runs with **none** of these set.
 
-### Main app variables
+### Public site variables
+
+See `.env.example` at the repository root for the authoritative list. Summary:
+
+| Variable | Required for | Description |
+| --- | --- | --- |
+| `NEXT_PUBLIC_CONTACT_EMAIL` | Footer, contact page, form notification "to" address | Falls back to a placeholder if unset. |
+| `NEXT_PUBLIC_SUPPORT_EMAIL` | Support-facing copy | Falls back to a placeholder if unset. |
+| `RESEND_API_KEY` | Email notifications for contact/qualification form submissions | Without it, submissions are still validated and accepted by the API routes — they're just logged server-side instead of emailed. |
+| `EMAIL_FROM` | Outgoing notification email sender address | Optional; defaults to a `no-reply@` address on the site domain. |
+| `NEXT_PUBLIC_ANALYTICS_PROVIDER` | Reserved for a future analytics integration | Not wired to any vendor by default. |
+
+### Shaikh OS / internal tooling variables
 
 | Variable | Required for | Description |
 | --- | --- | --- |
@@ -250,7 +285,7 @@ Create your local environment file:
 cp .env.example .env.local
 ```
 
-If there is no root `.env.example` in your checkout, create `.env.local` manually using the variables listed above.
+The public site runs with every value left blank. Fill in the Shaikh OS variables only if you're working on that part of the app.
 
 ## Running the application
 
@@ -445,17 +480,29 @@ For more service-specific deployment details, see `services/shaikh-agent/README.
 
 ## Available routes
 
-### Public and UI routes
+### Public marketing site
 
-- `/` - public Xeetrix landing page.
+- `/` - homepage.
+- `/services`, `/services/[llc-formation|ein-assistance|registered-agent|business-address|business-banking|payment-infrastructure|website-launch|compliance]`
+- `/pricing`, `/how-it-works`, `/who-we-help`
+- `/industries/[saas|ecommerce|agencies|digital-business]`
+- `/about`, `/faq`, `/resources`, `/resources/[slug]`, `/contact`, `/get-started`
+- `/privacy`, `/terms`, `/refund-policy`, `/disclaimer`, `/accessibility`
+- `/sitemap.xml`, `/robots.txt`, `/manifest.webmanifest`
+
+### Public site API routes
+
+- `POST /api/contact` - contact form submission (Zod-validated, honeypot, rate-limited).
+- `POST /api/qualification` - Get Started / qualification wizard submission (same protections).
+
+### Internal / Shaikh OS routes
+
 - `/admin` - admin area.
 - `/admin/login` - admin login.
 - `/os/*` - Shaikh OS dashboards and detail pages.
-
-### API routes
-
 - `/api/os/command`
 - `/api/os/improve/feedback`
+- `/api/v2/command`, `/api/v2/health`, `/api/v2/debug-user`
 - `/api/integrations/google/connect`
 - `/api/integrations/google/callback`
 - `/api/integrations/google/accounts`
