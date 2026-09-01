@@ -1,0 +1,84 @@
+// Xeetrix — Prisma schema
+// Provider is PostgreSQL by default (Vercel Postgres / Neon / Supabase /
+// Railway all work as-is). For local dev without a Postgres instance,
+// switch `provider` to "sqlite" and point DATABASE_URL at a local file —
+// note SQLite does not support the String[] fields below, so swap those
+// for a comma-joined String column if you go that route.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  IMPORTER
+  EXPORTER
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      Role     @default(IMPORTER)
+  company   String?
+  phone     String?
+  country   String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products Product[] @relation("ImporterProducts")
+
+  @@map("users")
+}
+
+model Category {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+  image       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  products Product[]
+
+  @@map("categories")
+}
+
+model Product {
+  id             String   @id @default(cuid())
+  title          String
+  slug           String   @unique
+  description    String
+  wholesalePrice Float
+  regularPrice   Float
+  moq            Int      @default(1)
+  unit           String   @default("piece")
+  stock          Int      @default(0)
+  images         String[]
+  isPublished    Boolean  @default(true)
+  isFeatured     Boolean  @default(false)
+
+  seoTitle       String?
+  seoDescription String?
+
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  importerId String?
+  importer   User?   @relation("ImporterProducts", fields: [importerId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([categoryId])
+  @@index([importerId])
+  @@map("products")
+}

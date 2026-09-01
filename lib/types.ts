@@ -1,0 +1,50 @@
+export type Role = "ADMIN" | "IMPORTER" | "EXPORTER";
+
+export type Category = {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  image: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type Product = {
+  id: string;
+  title: string;
+  slug: string;
+  description: string;
+  wholesalePrice: number;
+  regularPrice: number;
+  moq: number;
+  unit: string;
+  stock: number;
+  images: string[];
+  isPublished: boolean;
+  isFeatured: boolean;
+  seoTitle: string | null;
+  seoDescription: string | null;
+  categoryId: string;
+  importerId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type ProductWithCategory = Product & { category: Category };
+
+export type AppUser = {
+  id: string;
+  name: string;
+  email: string;
+  password: string;
+  role: Role;
+  company: string | null;
+  phone: string | null;
+  country: string | null;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type SafeUser = Omit<AppUser, "password">;

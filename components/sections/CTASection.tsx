@@ -1,41 +1,44 @@
-import { Container } from '@/components/ui/Container';
-import { MagneticButton } from '@/components/ui/MagneticButton';
+import Link from "next/link";
+import { ArrowRight } from "lucide-react";
+import { Container } from "@/components/ui/Container";
+import { FadeIn } from "@/components/ui/FadeIn";
 
-type CTASectionProps = {
-  eyebrow?: string;
-  title?: string;
-  description?: string;
-  primary?: { label: string; href: string };
-  secondary?: { label: string; href: string };
-};
-
-export function CTASection({
-  eyebrow = 'Get Started',
-  title = 'Ready to Build Your US Business Infrastructure?',
-  description = "Tell us where you are today. We'll help you understand the next practical steps.",
-  primary = { label: 'Start Your Setup', href: '/get-started' },
-  secondary = { label: 'Talk to Xeetrix', href: '/contact' },
-}: CTASectionProps) {
+export function CTASection() {
   return (
-    <section className="relative overflow-hidden py-28">
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute left-1/2 top-1/2 h-96 w-[52rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-radial-fade blur-3xl"
-      />
+    <section className="py-20 sm:py-24">
       <Container>
-        <div className="card-glass mx-auto max-w-3xl rounded-[32px] border border-white/10 px-8 py-16 text-center">
-          <span className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.15em] text-cyber-blue">
-            {eyebrow}
-          </span>
-          <h2 className="mt-6 text-balance text-3xl font-semibold tracking-tight text-white sm:text-4xl">{title}</h2>
-          <p className="mx-auto mt-4 max-w-xl text-balance text-lg leading-relaxed text-muted">{description}</p>
-          <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
-            <MagneticButton href={primary.href}>{primary.label}</MagneticButton>
-            <MagneticButton href={secondary.href} variant="secondary">
-              {secondary.label}
-            </MagneticButton>
+        <FadeIn>
+          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-brand-700 via-brand-600 to-brand-800 px-6 py-16 text-center shadow-elevated sm:px-16">
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0 opacity-[0.08] [background-image:linear-gradient(to_right,white_1px,transparent_1px),linear-gradient(to_bottom,white_1px,transparent_1px)] [background-size:40px_40px]"
+            />
+            <div className="relative">
+              <h2 className="font-display text-3xl font-bold text-white sm:text-4xl">
+                Ready to trade globally?
+              </h2>
+              <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-brand-100 sm:text-base">
+                Join thousands of importers and exporters already sourcing and
+                selling wholesale through Xeetrix.
+              </p>
+              <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
+                <Link
+                  href="/products"
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-white px-7 py-3.5 text-sm font-semibold text-brand-700 shadow-card transition-transform hover:-translate-y-0.5"
+                >
+                  Start Sourcing
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+                <Link
+                  href="/contact"
+                  className="inline-flex items-center justify-center gap-2 rounded-full border border-white/30 px-7 py-3.5 text-sm font-semibold text-white transition-colors hover:bg-white/10"
+                >
+                  Talk to Our Team
+                </Link>
+              </div>
+            </div>
           </div>
-        </div>
+        </FadeIn>
       </Container>
     </section>
   );
