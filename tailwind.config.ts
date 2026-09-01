@@ -1,89 +1,87 @@
-import type { Config } from 'tailwindcss';
+import type { Config } from "tailwindcss";
 
 const config: Config = {
-  darkMode: 'class',
   content: [
-    './app/**/*.{ts,tsx}',
-    './components/**/*.{ts,tsx}',
+    "./app/**/*.{js,ts,jsx,tsx,mdx}",
+    "./components/**/*.{js,ts,jsx,tsx,mdx}",
   ],
   theme: {
     extend: {
       colors: {
-        background: '#050505',
-        surface: '#0a0a0d',
-        border: 'rgba(255,255,255,0.1)',
-        'cyber-blue': '#0070F3',
-        'electric-purple': '#7928CA',
-        muted: '#9aa1ac',
+        brand: {
+          50: "#eff9f3",
+          100: "#d7f0e1",
+          200: "#b0e0c4",
+          300: "#7dc9a2",
+          400: "#4bab7e",
+          500: "#2c8f63",
+          600: "#1d7350",
+          700: "#175c42",
+          800: "#154936",
+          900: "#123c2d",
+          950: "#08221a",
+        },
+        accent: {
+          50: "#fff7ed",
+          100: "#ffedd4",
+          200: "#ffd8a8",
+          300: "#ffbb70",
+          400: "#ff9538",
+          500: "#fd7a12",
+          600: "#ee5f08",
+          700: "#c54709",
+          800: "#9c3810",
+          900: "#7e3010",
+        },
+        ink: {
+          50: "#f6f7f8",
+          100: "#eceef1",
+          200: "#d5d9e0",
+          300: "#b1b9c4",
+          400: "#8691a2",
+          500: "#677286",
+          600: "#535c6f",
+          700: "#444b5b",
+          800: "#3a3f4c",
+          900: "#252831",
+          950: "#14161b",
+        },
       },
       fontFamily: {
-        sans: ['var(--font-sans)', 'system-ui', 'sans-serif'],
-      },
-      backgroundImage: {
-        'grid-pattern':
-          'linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px)',
-        'radial-fade':
-          'radial-gradient(60% 60% at 50% 0%, rgba(0,112,243,0.18) 0%, rgba(121,40,202,0.12) 45%, transparent 80%)',
-      },
-      backgroundSize: {
-        grid: '48px 48px',
+        sans: [
+          "var(--font-inter)",
+          "ui-sans-serif",
+          "system-ui",
+          "-apple-system",
+          "sans-serif",
+        ],
+        display: [
+          "var(--font-sora)",
+          "ui-sans-serif",
+          "system-ui",
+          "sans-serif",
+        ],
       },
       boxShadow: {
-        glow: '0 0 60px -10px rgba(0,112,243,0.55)',
-        'glow-purple': '0 0 60px -10px rgba(121,40,202,0.55)',
-        'inner-line': 'inset 0 1px 0 0 rgba(255,255,255,0.06)',
-        'inner-border': 'inset 0 0 0 1px rgba(255,255,255,0.09)',
-        hardware:
-          'inset 0 0 0 1px rgba(255,255,255,0.09), inset 0 1px 0 0 rgba(255,255,255,0.14), 0 40px 80px -30px rgba(0,0,0,0.6)',
+        card: "0 1px 2px 0 rgb(0 0 0 / 0.04), 0 1px 6px -1px rgb(0 0 0 / 0.06)",
+        elevated:
+          "0 4px 12px -2px rgb(0 0 0 / 0.08), 0 12px 32px -8px rgb(0 0 0 / 0.10)",
       },
       animation: {
-        marquee: 'marquee 32s linear infinite',
-        'marquee-reverse': 'marquee-reverse 32s linear infinite',
-        'spin-slow': 'spin 14s linear infinite',
-        float: 'float 6s ease-in-out infinite',
-        'fade-up': 'fade-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards',
-        aurora: 'aurora 18s ease-in-out infinite',
-        'border-beam': 'border-beam calc(var(--duration)*1s) infinite linear',
-        grain: 'grain 8s steps(10) infinite',
+        "fade-up": "fadeUp 0.6s ease-out forwards",
+        marquee: "marquee 32s linear infinite",
       },
       keyframes: {
+        fadeUp: {
+          "0%": { opacity: "0", transform: "translateY(16px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
         marquee: {
-          '0%': { transform: 'translateX(0%)' },
-          '100%': { transform: 'translateX(-50%)' },
-        },
-        'marquee-reverse': {
-          '0%': { transform: 'translateX(-50%)' },
-          '100%': { transform: 'translateX(0%)' },
-        },
-        float: {
-          '0%, 100%': { transform: 'translateY(0px)' },
-          '50%': { transform: 'translateY(-14px)' },
-        },
-        'fade-up': {
-          '0%': { opacity: '0', transform: 'translateY(24px)' },
-          '100%': { opacity: '1', transform: 'translateY(0)' },
-        },
-        aurora: {
-          '0%, 100%': { transform: 'translate(0, 0) scale(1)' },
-          '33%': { transform: 'translate(4%, -6%) scale(1.05)' },
-          '66%': { transform: 'translate(-3%, 4%) scale(0.98)' },
-        },
-        'border-beam': {
-          '100%': { 'offset-distance': '100%' },
-        },
-        grain: {
-          '0%, 100%': { transform: 'translate(0, 0)' },
-          '10%': { transform: 'translate(-1%, -3%)' },
-          '20%': { transform: 'translate(-3%, 1%)' },
-          '30%': { transform: 'translate(2%, -6%)' },
-          '40%': { transform: 'translate(-1%, 4%)' },
-          '50%': { transform: 'translate(-3%, 2%)' },
-          '60%': { transform: 'translate(4%, 0%)' },
-          '70%': { transform: 'translate(0%, 5%)' },
-          '80%': { transform: 'translate(-2%, -2%)' },
-          '90%': { transform: 'translate(3%, -1%)' },
+          "0%": { transform: "translateX(0)" },
+          "100%": { transform: "translateX(-50%)" },
         },
       },
+      containerCenter: true,
     },
   },
   plugins: [],

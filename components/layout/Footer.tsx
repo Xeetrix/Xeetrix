@@ -1,39 +1,57 @@
-import Link from 'next/link';
-import { Mail, Zap } from 'lucide-react';
+import Link from "next/link";
+import { Globe2, Mail, MapPin, Phone } from "lucide-react";
+import { Container } from "@/components/ui/Container";
+import { SITE_NAME, SITE_TAGLINE } from "@/lib/constants";
 
-import { Container } from '@/components/ui/Container';
-import { footerLinks } from '@/lib/content/nav';
-import { complianceNote, siteConfig } from '@/lib/content/site';
+const columns = [
+  {
+    title: "Marketplace",
+    links: [
+      { href: "/products", label: "All Products" },
+      { href: "/categories", label: "Categories" },
+      { href: "/products?featured=1", label: "Featured Deals" },
+    ],
+  },
+  {
+    title: "Company",
+    links: [
+      { href: "/about", label: "About Xeetrix" },
+      { href: "/contact", label: "Contact Us" },
+      { href: "/admin", label: "Admin Portal" },
+    ],
+  },
+];
 
 export function Footer() {
   return (
-    <footer className="relative border-t border-white/10 bg-black/40">
-      <Container className="grid gap-12 py-16 md:grid-cols-[1.3fr_1fr_1fr_1fr]">
-        <div>
-          <Link href="/" className="flex items-center gap-2">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-cyber-blue to-electric-purple">
-              <Zap className="h-4 w-4 text-white" strokeWidth={2.5} />
+    <footer className="border-t border-ink-100 bg-ink-950 text-ink-200">
+      <Container className="grid grid-cols-1 gap-10 py-14 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="lg:col-span-1">
+          <Link href="/" className="flex items-center gap-2 font-display text-xl font-bold text-white">
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-600">
+              <Globe2 className="h-5 w-5" strokeWidth={2.2} />
             </span>
-            <span className="text-base font-bold tracking-tight text-white">Xeetrix</span>
+            {SITE_NAME}
           </Link>
-          <p className="mt-4 max-w-xs text-sm leading-relaxed text-muted">{siteConfig.tagline}</p>
-
-          <a
-            href={`mailto:${siteConfig.contactEmail}`}
-            className="mt-6 inline-flex items-center gap-2 text-sm text-white/70 transition-colors hover:text-white"
-          >
-            <Mail className="h-4 w-4" aria-hidden="true" />
-            {siteConfig.contactEmail}
-          </a>
+          <p className="mt-3 text-sm text-ink-400">{SITE_TAGLINE}</p>
+          <p className="mt-4 max-w-xs text-sm leading-relaxed text-ink-400">
+            Connecting local entrepreneurs with verified importers and
+            exporters for transparent, factory-direct wholesale trade.
+          </p>
         </div>
 
-        {Object.entries(footerLinks).map(([heading, links]) => (
-          <div key={heading}>
-            <h4 className="text-sm font-semibold text-white">{heading}</h4>
+        {columns.map((col) => (
+          <div key={col.title}>
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-white">
+              {col.title}
+            </h3>
             <ul className="mt-4 space-y-3">
-              {links.map((link) => (
-                <li key={link.label}>
-                  <Link href={link.href} className="text-sm text-muted transition-colors hover:text-white">
+              {col.links.map((link) => (
+                <li key={link.href}>
+                  <Link
+                    href={link.href}
+                    className="text-sm text-ink-400 transition-colors hover:text-brand-300"
+                  >
                     {link.label}
                   </Link>
                 </li>
@@ -41,12 +59,34 @@ export function Footer() {
             </ul>
           </div>
         ))}
+
+        <div>
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-white">
+            Get in Touch
+          </h3>
+          <ul className="mt-4 space-y-3 text-sm text-ink-400">
+            <li className="flex items-start gap-2">
+              <Mail className="mt-0.5 h-4 w-4 flex-shrink-0 text-brand-400" />
+              hello@xeetrix.com
+            </li>
+            <li className="flex items-start gap-2">
+              <Phone className="mt-0.5 h-4 w-4 flex-shrink-0 text-brand-400" />
+              +1 (000) 000-0000
+            </li>
+            <li className="flex items-start gap-2">
+              <MapPin className="mt-0.5 h-4 w-4 flex-shrink-0 text-brand-400" />
+              Global trade desks across Asia, MENA &amp; North America
+            </li>
+          </ul>
+        </div>
       </Container>
 
-      <div className="border-t border-white/5 py-6">
-        <Container>
-          <p className="max-w-4xl text-xs leading-relaxed text-white/40">{complianceNote}</p>
-          <p className="mt-4 text-sm text-muted">© {new Date().getFullYear()} {siteConfig.legalName}. All rights reserved.</p>
+      <div className="border-t border-white/10">
+        <Container className="flex flex-col items-center justify-between gap-2 py-6 text-xs text-ink-500 sm:flex-row">
+          <p>
+            &copy; {new Date().getFullYear()} {SITE_NAME}. All rights reserved.
+          </p>
+          <p>Bridge to Global Trade</p>
         </Container>
       </div>
     </footer>
