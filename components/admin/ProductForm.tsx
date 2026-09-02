@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Save } from "lucide-react";
 import type { Category, Product } from "@/lib/types";
+import { MultiImageDropzone } from "@/components/admin/MultiImageDropzone";
 
 function slugify(value: string) {
   return value
@@ -25,6 +26,7 @@ export function ProductForm({
   const [title, setTitle] = useState(product?.title ?? "");
   const [slug, setSlug] = useState(product?.slug ?? "");
   const [slugTouched, setSlugTouched] = useState(isEdit);
+  const [images, setImages] = useState<string[]>(product?.images ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -43,10 +45,7 @@ export function ProductForm({
       moq: Number(form.get("moq")),
       unit: String(form.get("unit") ?? "piece"),
       stock: Number(form.get("stock") ?? 0),
-      images: String(form.get("images") ?? "")
-        .split("\n")
-        .map((s) => s.trim())
-        .filter(Boolean),
+      images,
       isPublished: form.get("isPublished") === "on",
       isFeatured: form.get("isFeatured") === "on",
       seoTitle: String(form.get("seoTitle") ?? ""),
@@ -177,15 +176,7 @@ export function ProductForm({
         </Field>
       </div>
 
-      <Field label="Image URLs (one per line)">
-        <textarea
-          name="images"
-          rows={3}
-          defaultValue={product?.images.join("\n")}
-          placeholder="https://images.unsplash.com/..."
-          className="input"
-        />
-      </Field>
+      <MultiImageDropzone value={images} onChange={setImages} folder="products" label="Product Images" />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="SEO Title (optional)">

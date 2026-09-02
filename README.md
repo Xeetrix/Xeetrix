@@ -94,6 +94,61 @@ See `.env.example` for the full list with descriptions:
 - `NEXT_PUBLIC_CONTACT_EMAIL` — shown in the footer, contact page, and about page
 - `ADMIN_EMAIL`, `ADMIN_PASSWORD` — seed admin / bootstrap login credentials
 - `AUTH_SECRET` — signs admin session JWTs (generate with `openssl rand -base64 32`)
+- `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` — power the image uploaders in the admin Category/Product forms; see **Image uploads** below
+
+## Image uploads (Supabase Storage)
+
+The Category and Product admin forms upload images by drag-and-drop or file
+picker directly from the browser to a Supabase Storage bucket, then save the
+returned public URL — no more pasting image URLs by hand.
+
+- `lib/supabase-client.ts` — browser Supabase client (anon key only, never a service-role key)
+- `lib/upload-image.ts` — validates file type/size (≤5MB, JPG/PNG/WEBP/GIF/AVIF), generates a unique filename (`crypto.randomUUID()`), uploads, and returns the public URL
+- `components/admin/ImageDropzone.tsx` — single-image uploader (Category)
+- `components/admin/MultiImageDropzone.tsx` — multi-image uploader with reordering-free grid, per-image remove, and an 8-image cap (Product; first image is the storefront "cover")
+
+### One-time Supabase setup
+
+1. In your Supabase project, note the **Project URL** and **anon public key**
+   (Settings → API) and set them as `NEXT_PUBLIC_SUPABASE_URL` /
+   `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+2. Create the bucket and its policies by running this once in the Supabase
+   **SQL Editor** (bucket id must stay `xeetrix-images` — it's hardcoded as
+   `SUPABASE_IMAGE_BUCKET` in `lib/constants.ts`):
+
+   ```sql
+   -- Create a public bucket named xeetrix-images
+   insert into storage.buckets (id, name, public)
+   values ('xeetrix-images', 'xeetrix-images', true)
+   on conflict (id) do nothing;
+
+   -- Anyone can read/view files in this bucket (needed for public image URLs)
+   create policy "Public read access for xeetrix-images"
+   on storage.objects for select
+   using (bucket_id = 'xeetrix-images');
+
+   -- The anon key can upload into this bucket (the upload UI itself is only
+   -- reachable through the /admin dashboard, which is already session-gated;
+   -- this policy only governs direct calls to the Storage API)
+   create policy "Public upload access for xeetrix-images"
+   on storage.objects for insert
+   with check (bucket_id = 'xeetrix-images');
+   ```
+
+   Alternatively, create the bucket from **Storage → New bucket** in the
+   dashboard (toggle **Public bucket**), then add an INSERT policy on
+   `storage.objects` scoped to `bucket_id = 'xeetrix-images'` for the `anon`
+   role from **Storage → Policies**.
+
+**Security note:** because the upload happens client-side with the public
+anon key, the bucket's own Storage policies — not the app's admin
+session — are what actually gate who can write to it. The policy above
+intentionally scopes writes to only the `xeetrix-images` bucket, so it
+can't be used to touch any other bucket in the project. If you need
+uploads gated by your app's own admin session (so a valid Supabase anon
+key alone isn't enough), swap this for a server-side `/api/upload` route
+that checks `getCurrentUser()` before writing to Storage with a
+service-role key.
 
 ## SEO implementation
 
