@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { LayoutGrid } from "lucide-react";
 import { Container } from "@/components/ui/Container";
 import { CategoryCard } from "@/components/CategoryCard";
 import { getCategories } from "@/lib/data/categories";
@@ -27,11 +28,19 @@ export default async function CategoriesPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-        {categories.map((category) => (
-          <CategoryCard key={category.id} category={category} />
-        ))}
-      </div>
+      {categories.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-ink-200 py-24 text-center">
+          <LayoutGrid className="h-10 w-10 text-ink-300" />
+          <p className="font-medium text-ink-700">No categories yet</p>
+          <p className="text-sm text-ink-400">Check back soon — new categories are added regularly.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {categories.map((category) => (
+            <CategoryCard key={category.id} category={category} />
+          ))}
+        </div>
+      )}
     </Container>
   );
 }

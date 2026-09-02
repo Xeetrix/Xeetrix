@@ -52,7 +52,7 @@ export default function ContactPage() {
             <div className="flex items-start gap-3">
               <Phone className="mt-0.5 h-5 w-5 flex-shrink-0 text-brand-600" />
               <div>
-                <p className="text-sm font-semibold text-ink-900">Phone / WhatsApp</p>
+                <p className="text-sm font-semibold text-ink-900">Phone</p>
                 <p className="text-sm text-ink-500">{CONTACT_PHONE_DISPLAY}</p>
               </div>
             </div>
