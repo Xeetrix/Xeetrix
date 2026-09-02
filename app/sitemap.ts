@@ -3,6 +3,10 @@ import { getCategories } from "@/lib/data/categories";
 import { getProducts } from "@/lib/data/products";
 import { SITE_URL } from "@/lib/constants";
 
+// Newly added/removed products and categories should appear in the
+// sitemap right away rather than waiting for the next build.
+export const revalidate = 0;
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const [categories, products] = await Promise.all([
     getCategories(),

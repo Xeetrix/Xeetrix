@@ -72,13 +72,3 @@ export async function getRelatedProducts(
   const all = await getProducts({ categorySlug: product.category.slug });
   return all.filter((p) => p.id !== product.id).slice(0, limit);
 }
-
-export async function getAllProductSlugs(): Promise<string[]> {
-  try {
-    const products = await prisma.product.findMany({ select: { slug: true } });
-    return products.map((p) => p.slug);
-  } catch (error) {
-    console.error("getAllProductSlugs failed:", error);
-    return [];
-  }
-}

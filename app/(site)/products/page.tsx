@@ -19,6 +19,12 @@ export const metadata: Metadata = {
   },
 };
 
+// Admin-created products must show up immediately, not only after the
+// next build — always render this page fresh from the database. (The
+// searchParams usage below already forces dynamic rendering; this makes
+// it explicit and future-proof.)
+export const dynamic = "force-dynamic";
+
 type SearchParams = {
   category?: string;
   min?: string;
