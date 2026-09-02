@@ -2,11 +2,12 @@ import Link from "next/link";
 import { AlertTriangle, LayoutGrid, Package, Users } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { mockCategories, mockProducts } from "@/lib/mock-data";
+import { getCurrentUser } from "@/lib/require-admin";
 
-async function getCounts() {
+async function getCounts(isAdmin: boolean, userId: string) {
   try {
     const [products, categories, users] = await Promise.all([
-      prisma.product.count(),
+      isAdmin ? prisma.product.count() : prisma.product.count({ where: { importerId: userId } }),
       prisma.category.count(),
       prisma.user.count(),
     ]);
@@ -22,19 +23,27 @@ async function getCounts() {
 }
 
 export default async function AdminOverviewPage() {
-  const counts = await getCounts();
+  const user = await getCurrentUser();
+  const isAdmin = user?.role === "ADMIN";
+  const counts = await getCounts(isAdmin, user?.sub ?? "");
 
   const cards = [
     { label: "Products", value: counts.products, icon: Package, href: "/admin/products" },
-    { label: "Categories", value: counts.categories, icon: LayoutGrid, href: "/admin/categories" },
-    { label: "Users", value: counts.users, icon: Users, href: "/admin/users" },
+    ...(isAdmin
+      ? [
+          { label: "Categories", value: counts.categories, icon: LayoutGrid, href: "/admin/categories" },
+          { label: "Users", value: counts.users, icon: Users, href: "/admin/users" },
+        ]
+      : []),
   ];
 
   return (
     <div>
-      <h1 className="font-display text-2xl font-bold text-ink-950">Overview</h1>
+      <h1 className="font-display text-xl font-bold text-ink-950 sm:text-2xl">Overview</h1>
       <p className="mt-1 text-sm text-ink-500">
-        Manage your Xeetrix wholesale marketplace.
+        {isAdmin
+          ? "Manage your Xeetrix wholesale marketplace."
+          : "Manage the products you supply on the Xeetrix marketplace."}
       </p>
 
       {!counts.dbConnected && (
@@ -52,18 +61,18 @@ export default async function AdminOverviewPage() {
         </div>
       )}
 
-      <div className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-3">
+      <div className="mt-6 grid grid-cols-1 gap-4 sm:mt-8 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3">
         {cards.map((card) => (
           <Link
             key={card.label}
             href={card.href}
-            className="flex items-center gap-4 rounded-2xl border border-ink-100 bg-white p-6 shadow-card transition-shadow hover:shadow-elevated"
+            className="flex items-center gap-4 rounded-2xl border border-ink-100 bg-white p-5 shadow-card transition-shadow hover:shadow-elevated sm:p-6"
           >
-            <span className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
-              <card.icon className="h-6 w-6" strokeWidth={1.75} />
+            <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600 sm:h-12 sm:w-12">
+              <card.icon className="h-5 w-5 sm:h-6 sm:w-6" strokeWidth={1.75} />
             </span>
             <div>
-              <p className="font-display text-2xl font-bold text-ink-950">{card.value}</p>
+              <p className="font-display text-xl font-bold text-ink-950 sm:text-2xl">{card.value}</p>
               <p className="text-sm text-ink-500">{card.label}</p>
             </div>
           </Link>

@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentAdmin } from "@/lib/require-admin";
+import { getCurrentUser } from "@/lib/require-admin";
 import { productSchema } from "@/lib/validation/product";
 
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const admin = await getCurrentAdmin();
-  if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
   try {
@@ -17,6 +17,9 @@ export async function GET(
       include: { category: true },
     });
     if (!product) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (user.role !== "ADMIN" && product.importerId !== user.sub) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
     return NextResponse.json({ product });
   } catch {
     return NextResponse.json({ error: "Database not configured." }, { status: 503 });
@@ -27,8 +30,8 @@ export async function PUT(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const admin = await getCurrentAdmin();
-  if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
   const body = await request.json().catch(() => null);
@@ -41,6 +44,13 @@ export async function PUT(
   }
 
   try {
+    if (user.role !== "ADMIN") {
+      const existing = await prisma.product.findUnique({ where: { id } });
+      if (!existing || existing.importerId !== user.sub) {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+    }
+
     const product = await prisma.product.update({
       where: { id },
       data: {
@@ -59,11 +69,18 @@ export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const admin = await getCurrentAdmin();
-  if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
   try {
+    if (user.role !== "ADMIN") {
+      const existing = await prisma.product.findUnique({ where: { id } });
+      if (!existing || existing.importerId !== user.sub) {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+    }
+
     await prisma.product.delete({ where: { id } });
     return NextResponse.json({ ok: true });
   } catch {
