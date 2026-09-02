@@ -34,13 +34,12 @@ app/
   sitemap.ts, robots.ts, manifest.ts  SEO plumbing
 components/            Shared UI, section, and admin components
 lib/
-  data/                Data-access layer: Prisma first, mock catalog fallback
-  mock-data.ts         Bundled demo catalog (6 categories, 12 products)
+  data/                Data-access layer: reads straight from Prisma
   validation/          Zod schemas for forms/API input
   auth.ts, require-admin.ts   Session signing/verification helpers
 prisma/
   schema.prisma        User / Category / Product models
-  seed.ts               Seeds the admin user + demo catalog into a real DB
+  seed.ts               Seeds (or ensures) the admin user in a real DB
 ```
 
 ## Getting started
@@ -51,23 +50,20 @@ cp .env.example .env.local   # fill in values — see below
 npm run dev
 ```
 
-The site works immediately with **zero configuration**: every data-fetching
-function in `lib/data/*` tries the database first and falls back to the
-bundled mock catalog (`lib/mock-data.ts`) only when the database is
-*unreachable* (no `DATABASE_URL`, connection refused, missing tables,
-etc.). This means the storefront, SEO pages, and static generation all
-work out of the box before you connect anything. The moment
-`DATABASE_URL` resolves successfully, every read and write goes straight
-to Postgres — an empty table shows as an empty catalog, it is never
-silently replaced by mock data. Only the **admin CRUD** screens require a
-real database to persist changes.
+The site requires a database to show any content: every data-fetching
+function in `lib/data/*` reads straight from Postgres via Prisma. With no
+`DATABASE_URL` (or an unreachable one), reads fail gracefully and pages
+render their empty state — an empty catalog, not a crash — but you'll want
+a database connected before deploying. The **admin CRUD** screens also
+require it to persist changes.
 
 ### Connecting a database (via terminal)
 
 1. Provision a Postgres database (Vercel Postgres, Neon, Supabase, Railway, etc.)
 2. Set `DATABASE_URL` in `.env.local` (or your hosting provider's env vars)
 3. Push the schema: `npm run db:push`
-4. Seed the admin user + demo catalog: `npm run db:seed`
+4. Seed the admin user: `npm run db:seed`
+5. Add categories and products from `/admin` once signed in
 
 ### Connecting a database (via the Supabase SQL editor, no terminal)
 
@@ -75,10 +71,11 @@ If you're provisioning through the Supabase dashboard instead, paste
 [`supabase/schema.sql`](supabase/schema.sql) into **SQL Editor → New query**
 and run it once. It creates the `Role` enum, the `users`/`categories`/`products`
 tables with the exact column names Prisma expects, the foreign keys, a
-default `ADMIN` user, and (in an optional, clearly-marked section) the same
-demo catalog as `lib/mock-data.ts` so the storefront isn't empty on first
-connect. Then just set `DATABASE_URL` in your deployment environment —
-no `db:push` / `db:seed` needed since the SQL already did that.
+default `ADMIN` user, and (in an optional, clearly-marked section) a small
+demo catalog so the storefront isn't empty on first connect — delete that
+section if you'd rather add your own products from `/admin`. Then just set
+`DATABASE_URL` in your deployment environment — no `db:push` / `db:seed`
+needed since the SQL already did that.
 
 `ADMIN_EMAIL` / `ADMIN_PASSWORD` in your environment control the seeded
 admin account (`prisma/seed.ts`) — or, for the SQL route above, the
@@ -128,7 +125,7 @@ independently re-check the session server-side before mutating data.
 | `npm run start` | Start the production server |
 | `npm run lint` | Lint |
 | `npm run db:push` | Push `schema.prisma` to `DATABASE_URL` |
-| `npm run db:seed` | Seed admin user + demo catalog |
+| `npm run db:seed` | Ensure the admin user exists |
 | `npm run db:studio` | Open Prisma Studio |
 
 ## Deploying to Vercel

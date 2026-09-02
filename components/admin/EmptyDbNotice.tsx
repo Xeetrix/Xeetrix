@@ -10,8 +10,7 @@ export function EmptyDbNotice({ entity }: { entity: string }) {
         your environment and run{" "}
         <code className="rounded bg-amber-100 px-1 py-0.5">npm run db:push</code> (then{" "}
         <code className="rounded bg-amber-100 px-1 py-0.5">npm run db:seed</code>) to
-        start managing {entity} here. The public storefront keeps working from the
-        bundled demo catalog in the meantime.
+        start managing {entity} here. The public storefront will stay empty until then.
       </p>
     </div>
   );

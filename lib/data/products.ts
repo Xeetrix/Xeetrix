@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/prisma";
-import { getMockProductsWithCategory } from "@/lib/mock-data";
 import type { ProductWithCategory } from "@/lib/types";
 
 export type ProductFilters = {
@@ -10,32 +9,10 @@ export type ProductFilters = {
   search?: string;
 };
 
-function applyMockFilters(
-  products: ProductWithCategory[],
-  filters: ProductFilters
-): ProductWithCategory[] {
-  return products.filter((p) => {
-    if (!p.isPublished) return false;
-    if (filters.categorySlug && p.category.slug !== filters.categorySlug) return false;
-    if (filters.minPrice !== undefined && p.wholesalePrice < filters.minPrice) return false;
-    if (filters.maxPrice !== undefined && p.wholesalePrice > filters.maxPrice) return false;
-    if (filters.featuredOnly && !p.isFeatured) return false;
-    if (
-      filters.search &&
-      !p.title.toLowerCase().includes(filters.search.toLowerCase())
-    )
-      return false;
-    return true;
-  });
-}
-
 /**
- * Every getter here prefers the live database and falls back to the
- * bundled mock catalog ONLY when the database is unreachable (query
- * throws — no DATABASE_URL, connection refused, missing table, etc.).
- * Once the database answers successfully, its result is authoritative
- * even if empty — an empty catalog is a real state, not a reason to
- * mask it with demo data.
+ * Every getter here reads straight from the database. If the database is
+ * unreachable or a query fails, the error is logged and an empty result
+ * is returned so pages can render an empty state instead of crashing.
  */
 export async function getProducts(
   filters: ProductFilters = {}
@@ -63,8 +40,9 @@ export async function getProducts(
       include: { category: true },
       orderBy: { createdAt: "desc" },
     });
-  } catch {
-    return applyMockFilters(getMockProductsWithCategory(), filters);
+  } catch (error) {
+    console.error("getProducts failed:", error);
+    return [];
   }
 }
 
@@ -81,8 +59,9 @@ export async function getProductBySlug(
       where: { slug },
       include: { category: true },
     });
-  } catch {
-    return getMockProductsWithCategory().find((p) => p.slug === slug) ?? null;
+  } catch (error) {
+    console.error("getProductBySlug failed:", error);
+    return null;
   }
 }
 
@@ -98,7 +77,8 @@ export async function getAllProductSlugs(): Promise<string[]> {
   try {
     const products = await prisma.product.findMany({ select: { slug: true } });
     return products.map((p) => p.slug);
-  } catch {
-    return getMockProductsWithCategory().map((p) => p.slug);
+  } catch (error) {
+    console.error("getAllProductSlugs failed:", error);
+    return [];
   }
 }

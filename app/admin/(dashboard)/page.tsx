@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { AlertTriangle, LayoutGrid, Package, Users } from "lucide-react";
 import { prisma } from "@/lib/prisma";
-import { mockCategories, mockProducts } from "@/lib/mock-data";
 import { getCurrentUser } from "@/lib/require-admin";
 
 async function getCounts(isAdmin: boolean, userId: string) {
@@ -12,13 +11,9 @@ async function getCounts(isAdmin: boolean, userId: string) {
       prisma.user.count(),
     ]);
     return { products, categories, users, dbConnected: true };
-  } catch {
-    return {
-      products: mockProducts.length,
-      categories: mockCategories.length,
-      users: 0,
-      dbConnected: false,
-    };
+  } catch (error) {
+    console.error("getCounts failed:", error);
+    return { products: 0, categories: 0, users: 0, dbConnected: false };
   }
 }
 
@@ -52,8 +47,7 @@ export default async function AdminOverviewPage() {
           <div>
             <p className="font-semibold">No database connected</p>
             <p className="mt-0.5">
-              The storefront is showing the bundled demo catalog. Set{" "}
-              <code className="rounded bg-amber-100 px-1 py-0.5">DATABASE_URL</code>{" "}
+              Set <code className="rounded bg-amber-100 px-1 py-0.5">DATABASE_URL</code>{" "}
               and run <code className="rounded bg-amber-100 px-1 py-0.5">npm run db:push</code> to
               enable product, category, and user management here.
             </p>

@@ -1,13 +1,10 @@
 import { prisma } from "@/lib/prisma";
-import { mockCategories } from "@/lib/mock-data";
 import type { Category } from "@/lib/types";
 
 /**
- * Every getter here prefers the live database and falls back to the
- * bundled mock catalog ONLY when the database is unreachable (query
- * throws — no DATABASE_URL configured, connection refused, missing
- * table, etc.). Once the database answers successfully, its result is
- * authoritative even if empty.
+ * Every getter here reads straight from the database. If the database is
+ * unreachable or a query fails, the error is logged and an empty result
+ * is returned so pages can render an empty state instead of crashing.
  */
 
 export async function getCategories(): Promise<Category[]> {
@@ -15,15 +12,17 @@ export async function getCategories(): Promise<Category[]> {
     return await prisma.category.findMany({
       orderBy: { name: "asc" },
     });
-  } catch {
-    return mockCategories;
+  } catch (error) {
+    console.error("getCategories failed:", error);
+    return [];
   }
 }
 
 export async function getCategoryBySlug(slug: string): Promise<Category | null> {
   try {
     return await prisma.category.findUnique({ where: { slug } });
-  } catch {
-    return mockCategories.find((c) => c.slug === slug) ?? null;
+  } catch (error) {
+    console.error("getCategoryBySlug failed:", error);
+    return null;
   }
 }
