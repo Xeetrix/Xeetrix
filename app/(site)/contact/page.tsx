@@ -4,7 +4,12 @@ import { Container } from "@/components/ui/Container";
 import { ContactForm } from "@/components/ContactForm";
 import { WhatsAppButton } from "@/components/WhatsAppButton";
 import { FadeIn } from "@/components/ui/FadeIn";
-import { SITE_NAME } from "@/lib/constants";
+import {
+  CONTACT_ADDRESS,
+  CONTACT_EMAIL,
+  CONTACT_PHONE_DISPLAY,
+  SITE_NAME,
+} from "@/lib/constants";
 
 export const metadata: Metadata = {
   title: "Contact Us",
@@ -41,21 +46,21 @@ export default function ContactPage() {
               <Mail className="mt-0.5 h-5 w-5 flex-shrink-0 text-brand-600" />
               <div>
                 <p className="text-sm font-semibold text-ink-900">Email</p>
-                <p className="text-sm text-ink-500">hello@xeetrix.com</p>
+                <p className="text-sm text-ink-500">{CONTACT_EMAIL}</p>
               </div>
             </div>
             <div className="flex items-start gap-3">
               <Phone className="mt-0.5 h-5 w-5 flex-shrink-0 text-brand-600" />
               <div>
-                <p className="text-sm font-semibold text-ink-900">Phone</p>
-                <p className="text-sm text-ink-500">+1 (000) 000-0000</p>
+                <p className="text-sm font-semibold text-ink-900">Phone / WhatsApp</p>
+                <p className="text-sm text-ink-500">{CONTACT_PHONE_DISPLAY}</p>
               </div>
             </div>
             <div className="flex items-start gap-3">
               <MapPin className="mt-0.5 h-5 w-5 flex-shrink-0 text-brand-600" />
               <div>
-                <p className="text-sm font-semibold text-ink-900">Trade Desks</p>
-                <p className="text-sm text-ink-500">Asia · MENA · North America</p>
+                <p className="text-sm font-semibold text-ink-900">Address</p>
+                <p className="text-sm text-ink-500">{CONTACT_ADDRESS}</p>
               </div>
             </div>
             <div className="flex items-start gap-3">

@@ -29,11 +29,19 @@ function applyMockFilters(
   });
 }
 
+/**
+ * Every getter here prefers the live database and falls back to the
+ * bundled mock catalog ONLY when the database is unreachable (query
+ * throws — no DATABASE_URL, connection refused, missing table, etc.).
+ * Once the database answers successfully, its result is authoritative
+ * even if empty — an empty catalog is a real state, not a reason to
+ * mask it with demo data.
+ */
 export async function getProducts(
   filters: ProductFilters = {}
 ): Promise<ProductWithCategory[]> {
   try {
-    const products = await prisma.product.findMany({
+    return await prisma.product.findMany({
       where: {
         isPublished: true,
         ...(filters.categorySlug
@@ -55,13 +63,9 @@ export async function getProducts(
       include: { category: true },
       orderBy: { createdAt: "desc" },
     });
-
-    const total = await prisma.product.count();
-    if (total > 0) return products;
   } catch {
-    // fall through to mock data
+    return applyMockFilters(getMockProductsWithCategory(), filters);
   }
-  return applyMockFilters(getMockProductsWithCategory(), filters);
 }
 
 export async function getFeaturedProducts(limit = 8): Promise<ProductWithCategory[]> {
@@ -73,15 +77,13 @@ export async function getProductBySlug(
   slug: string
 ): Promise<ProductWithCategory | null> {
   try {
-    const product = await prisma.product.findUnique({
+    return await prisma.product.findUnique({
       where: { slug },
       include: { category: true },
     });
-    if (product) return product;
   } catch {
-    // fall through to mock data
+    return getMockProductsWithCategory().find((p) => p.slug === slug) ?? null;
   }
-  return getMockProductsWithCategory().find((p) => p.slug === slug) ?? null;
 }
 
 export async function getRelatedProducts(
@@ -95,9 +97,8 @@ export async function getRelatedProducts(
 export async function getAllProductSlugs(): Promise<string[]> {
   try {
     const products = await prisma.product.findMany({ select: { slug: true } });
-    if (products.length > 0) return products.map((p) => p.slug);
+    return products.map((p) => p.slug);
   } catch {
-    // fall through to mock data
+    return getMockProductsWithCategory().map((p) => p.slug);
   }
-  return getMockProductsWithCategory().map((p) => p.slug);
 }

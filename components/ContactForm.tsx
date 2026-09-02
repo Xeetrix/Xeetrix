@@ -1,47 +1,35 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { Loader2, Send } from "lucide-react";
+import { Send } from "lucide-react";
+import { whatsappLink } from "@/lib/constants";
 
 export function ContactForm() {
-  const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">(
-    "idle"
-  );
-  const [error, setError] = useState("");
+  const [sent, setSent] = useState(false);
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setStatus("loading");
-    setError("");
 
     const form = event.currentTarget;
     const data = Object.fromEntries(new FormData(form).entries());
+    const name = String(data.name ?? "").trim();
+    const email = String(data.email ?? "").trim();
+    const company = String(data.company ?? "").trim();
+    const message = String(data.message ?? "").trim();
 
-    try {
-      const res = await fetch("/api/contact", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Something went wrong");
-      setStatus("success");
-      form.reset();
-    } catch (err) {
-      setStatus("error");
-      setError(err instanceof Error ? err.message : "Something went wrong");
-    }
-  }
+    const lines = [
+      "New inquiry from the Xeetrix contact form:",
+      "",
+      `Name: ${name}`,
+      `Email: ${email}`,
+      ...(company ? [`Company: ${company}`] : []),
+      "",
+      `Message: ${message}`,
+    ];
 
-  if (status === "success") {
-    return (
-      <div className="rounded-2xl border border-brand-200 bg-brand-50 p-6 text-center">
-        <p className="font-semibold text-brand-800">Message sent!</p>
-        <p className="mt-1 text-sm text-brand-700">
-          Our team will get back to you within one business day.
-        </p>
-      </div>
-    );
+    window.open(whatsappLink(lines.join("\n")), "_blank", "noopener,noreferrer");
+    setSent(true);
+    form.reset();
   }
 
   return (
@@ -96,19 +84,18 @@ export function ContactForm() {
         />
       </div>
 
-      {status === "error" && <p className="text-sm text-red-600">{error}</p>}
+      {sent && (
+        <p className="text-sm font-medium text-brand-700">
+          Opening WhatsApp in a new tab — send the pre-filled message to reach our team.
+        </p>
+      )}
 
       <button
         type="submit"
-        disabled={status === "loading"}
-        className="inline-flex items-center justify-center gap-2 rounded-full bg-brand-600 px-6 py-3.5 text-sm font-semibold text-white transition-colors hover:bg-brand-700 disabled:opacity-60"
+        className="inline-flex items-center justify-center gap-2 rounded-full bg-brand-600 px-6 py-3.5 text-sm font-semibold text-white transition-colors hover:bg-brand-700"
       >
-        {status === "loading" ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <Send className="h-4 w-4" />
-        )}
-        Send Message
+        <Send className="h-4 w-4" />
+        Send via WhatsApp
       </button>
     </form>
   );

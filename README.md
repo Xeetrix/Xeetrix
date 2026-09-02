@@ -53,22 +53,39 @@ npm run dev
 
 The site works immediately with **zero configuration**: every data-fetching
 function in `lib/data/*` tries the database first and falls back to the
-bundled mock catalog (`lib/mock-data.ts`) whenever `DATABASE_URL` is unset,
-unreachable, or the tables are empty. This means the storefront, SEO pages,
-and static generation all work out of the box — only the **admin CRUD**
-screens require a real database to persist changes.
+bundled mock catalog (`lib/mock-data.ts`) only when the database is
+*unreachable* (no `DATABASE_URL`, connection refused, missing tables,
+etc.). This means the storefront, SEO pages, and static generation all
+work out of the box before you connect anything. The moment
+`DATABASE_URL` resolves successfully, every read and write goes straight
+to Postgres — an empty table shows as an empty catalog, it is never
+silently replaced by mock data. Only the **admin CRUD** screens require a
+real database to persist changes.
 
-### Connecting a database
+### Connecting a database (via terminal)
 
 1. Provision a Postgres database (Vercel Postgres, Neon, Supabase, Railway, etc.)
 2. Set `DATABASE_URL` in `.env.local` (or your hosting provider's env vars)
 3. Push the schema: `npm run db:push`
 4. Seed the admin user + demo catalog: `npm run db:seed`
 
+### Connecting a database (via the Supabase SQL editor, no terminal)
+
+If you're provisioning through the Supabase dashboard instead, paste
+[`supabase/schema.sql`](supabase/schema.sql) into **SQL Editor → New query**
+and run it once. It creates the `Role` enum, the `users`/`categories`/`products`
+tables with the exact column names Prisma expects, the foreign keys, a
+default `ADMIN` user, and (in an optional, clearly-marked section) the same
+demo catalog as `lib/mock-data.ts` so the storefront isn't empty on first
+connect. Then just set `DATABASE_URL` in your deployment environment —
+no `db:push` / `db:seed` needed since the SQL already did that.
+
 `ADMIN_EMAIL` / `ADMIN_PASSWORD` in your environment control the seeded
-admin account. Until the database is connected, the same credentials work
-as a **bootstrap login** for `/admin` (see `app/api/auth/login/route.ts`),
-so you can preview the dashboard immediately.
+admin account (`prisma/seed.ts`) — or, for the SQL route above, the
+credentials are baked into the INSERT statement. Until the database is
+connected, the same credentials work as a **bootstrap login** for `/admin`
+(see `app/api/auth/login/route.ts`), so you can preview the dashboard
+immediately.
 
 ### Environment variables
 
@@ -76,7 +93,8 @@ See `.env.example` for the full list with descriptions:
 
 - `DATABASE_URL` — Postgres connection string (Prisma)
 - `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_SITE_NAME` — used in metadata/JSON-LD
-- `NEXT_PUBLIC_WHATSAPP_NUMBER` — powers the "Order via WhatsApp" CTA
+- `NEXT_PUBLIC_WHATSAPP_NUMBER` — powers every "Order via WhatsApp" CTA and the contact form (which opens a pre-filled `wa.me` chat instead of submitting to an API)
+- `NEXT_PUBLIC_CONTACT_EMAIL` — shown in the footer, contact page, and about page
 - `ADMIN_EMAIL`, `ADMIN_PASSWORD` — seed admin / bootstrap login credentials
 - `AUTH_SECRET` — signs admin session JWTs (generate with `openssl rand -base64 32`)
 
