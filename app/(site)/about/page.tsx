@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { Globe2, Handshake, ShieldCheck, TrendingUp } from "lucide-react";
+import { Globe2, Handshake, MapPin, ShieldCheck, TrendingUp } from "lucide-react";
 import { Container } from "@/components/ui/Container";
 import { FadeIn, Stagger, StaggerItem } from "@/components/ui/FadeIn";
-import { SITE_NAME, SITE_TAGLINE } from "@/lib/constants";
+import { CONTACT_ADDRESS, SITE_NAME, SITE_TAGLINE } from "@/lib/constants";
 
 export const metadata: Metadata = {
   title: "About Us",
@@ -49,6 +49,10 @@ export default function AboutPage() {
           middlemen. We connect importers and exporters directly, with
           transparent pricing, minimum order quantities, and verified trade
           partners — so you can source or sell with confidence.
+        </p>
+        <p className="mt-4 flex items-start gap-2 text-sm text-ink-500">
+          <MapPin className="mt-0.5 h-4 w-4 flex-shrink-0 text-brand-600" />
+          Headquartered at {CONTACT_ADDRESS}
         </p>
       </FadeIn>
 

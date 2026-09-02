@@ -5,7 +5,12 @@ export const SITE_DESCRIPTION =
 export const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL ?? "https://xeetrix.com";
 export const WHATSAPP_NUMBER =
-  process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? "8801XXXXXXXXX";
+  process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? "8801968562688";
+export const CONTACT_EMAIL =
+  process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? "work.xeetrix@gmail.com";
+export const CONTACT_PHONE_DISPLAY = "+880 1968-562688";
+export const CONTACT_ADDRESS =
+  "Skyview Trade Valley, Naya Paltan, VIP Road, Dhaka-1000, Bangladesh";
 
 export function whatsappLink(message: string) {
   return `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;

@@ -1,7 +1,14 @@
 import Link from "next/link";
 import { Globe2, Mail, MapPin, Phone } from "lucide-react";
 import { Container } from "@/components/ui/Container";
-import { SITE_NAME, SITE_TAGLINE } from "@/lib/constants";
+import {
+  CONTACT_ADDRESS,
+  CONTACT_EMAIL,
+  CONTACT_PHONE_DISPLAY,
+  SITE_NAME,
+  SITE_TAGLINE,
+  whatsappLink,
+} from "@/lib/constants";
 
 const columns = [
   {
@@ -67,15 +74,24 @@ export function Footer() {
           <ul className="mt-4 space-y-3 text-sm text-ink-400">
             <li className="flex items-start gap-2">
               <Mail className="mt-0.5 h-4 w-4 flex-shrink-0 text-brand-400" />
-              hello@xeetrix.com
+              <a href={`mailto:${CONTACT_EMAIL}`} className="transition-colors hover:text-brand-300">
+                {CONTACT_EMAIL}
+              </a>
             </li>
             <li className="flex items-start gap-2">
               <Phone className="mt-0.5 h-4 w-4 flex-shrink-0 text-brand-400" />
-              +1 (000) 000-0000
+              <a
+                href={whatsappLink("Hi Xeetrix, I'd like to learn more about the platform.")}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="transition-colors hover:text-brand-300"
+              >
+                {CONTACT_PHONE_DISPLAY}
+              </a>
             </li>
             <li className="flex items-start gap-2">
               <MapPin className="mt-0.5 h-4 w-4 flex-shrink-0 text-brand-400" />
-              Global trade desks across Asia, MENA &amp; North America
+              {CONTACT_ADDRESS}
             </li>
           </ul>
         </div>

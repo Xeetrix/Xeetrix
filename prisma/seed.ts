@@ -5,8 +5,8 @@ import { mockCategories, mockProducts } from "../lib/mock-data";
 const prisma = new PrismaClient();
 
 async function main() {
-  const adminEmail = process.env.ADMIN_EMAIL ?? "admin@xeetrix.com";
-  const adminPassword = process.env.ADMIN_PASSWORD ?? "ChangeMe123!";
+  const adminEmail = process.env.ADMIN_EMAIL ?? "work.xeetrix@gmail.com";
+  const adminPassword = process.env.ADMIN_PASSWORD ?? "xeetrixadmin123";
   const hashed = await bcrypt.hash(adminPassword, 10);
 
   await prisma.user.upsert({

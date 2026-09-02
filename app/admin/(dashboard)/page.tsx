@@ -10,13 +10,7 @@ async function getCounts() {
       prisma.category.count(),
       prisma.user.count(),
     ]);
-    const usingMock = products === 0 && categories === 0;
-    return {
-      products: usingMock ? mockProducts.length : products,
-      categories: usingMock ? mockCategories.length : categories,
-      users,
-      dbConnected: true,
-    };
+    return { products, categories, users, dbConnected: true };
   } catch {
     return {
       products: mockProducts.length,
