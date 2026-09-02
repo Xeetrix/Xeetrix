@@ -12,6 +12,9 @@ export const CONTACT_PHONE_DISPLAY = "+880 965 803 6631";
 export const CONTACT_ADDRESS =
   "Skyview Trade Valley, Naya Paltan, VIP Road, Dhaka-1000, Bangladesh";
 
+/** Supabase Storage bucket that backs the admin image uploaders. */
+export const SUPABASE_IMAGE_BUCKET = "xeetrix-images";
+
 export function whatsappLink(message: string) {
   return `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
 }

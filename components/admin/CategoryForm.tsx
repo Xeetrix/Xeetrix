@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Save } from "lucide-react";
 import type { Category } from "@/lib/types";
+import { ImageDropzone } from "@/components/admin/ImageDropzone";
 
 function slugify(value: string) {
   return value
@@ -19,6 +20,7 @@ export function CategoryForm({ category }: { category?: Category }) {
   const [name, setName] = useState(category?.name ?? "");
   const [slug, setSlug] = useState(category?.slug ?? "");
   const [slugTouched, setSlugTouched] = useState(isEdit);
+  const [image, setImage] = useState(category?.image ?? "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -32,7 +34,7 @@ export function CategoryForm({ category }: { category?: Category }) {
       name,
       slug,
       description: String(form.get("description") ?? ""),
-      image: String(form.get("image") ?? ""),
+      image,
     };
 
     try {
@@ -92,15 +94,7 @@ export function CategoryForm({ category }: { category?: Category }) {
         />
       </label>
 
-      <label className="flex flex-col gap-1.5">
-        <span className="text-sm font-medium text-ink-700">Image URL</span>
-        <input
-          name="image"
-          defaultValue={category?.image ?? ""}
-          placeholder="https://images.unsplash.com/..."
-          className="input"
-        />
-      </label>
+      <ImageDropzone value={image} onChange={setImage} folder="categories" label="Category Image" />
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
