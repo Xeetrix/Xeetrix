@@ -1,14 +1,16 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentAdmin } from "@/lib/require-admin";
+import { getCurrentUser } from "@/lib/require-admin";
 import { productSchema } from "@/lib/validation/product";
 
 export async function GET() {
-  const admin = await getCurrentAdmin();
-  if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const isAdmin = user.role === "ADMIN";
 
   try {
     const products = await prisma.product.findMany({
+      where: isAdmin ? undefined : { importerId: user.sub },
       include: { category: true },
       orderBy: { createdAt: "desc" },
     });
@@ -22,8 +24,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const admin = await getCurrentAdmin();
-  if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const isAdmin = user.role === "ADMIN";
 
   const body = await request.json().catch(() => null);
   const parsed = productSchema.safeParse(body);
@@ -40,6 +43,10 @@ export async function POST(request: Request) {
         ...parsed.data,
         seoTitle: parsed.data.seoTitle || null,
         seoDescription: parsed.data.seoDescription || null,
+        // Non-admin sellers (Importer/Exporter) always own the products
+        // they create — this is derived from the session, never trusted
+        // from client input.
+        importerId: isAdmin ? null : user.sub,
       },
     });
     return NextResponse.json({ product }, { status: 201 });

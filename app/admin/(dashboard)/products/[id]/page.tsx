@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { ProductForm } from "@/components/admin/ProductForm";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/require-admin";
 
 export default async function EditProductPage({
   params,
@@ -9,6 +10,7 @@ export default async function EditProductPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  const user = await getCurrentUser();
 
   let product;
   let categories;
@@ -22,6 +24,7 @@ export default async function EditProductPage({
   }
 
   if (!product) notFound();
+  if (user?.role !== "ADMIN" && product.importerId !== user?.sub) notFound();
 
   return (
     <div>

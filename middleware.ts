@@ -11,7 +11,13 @@ export async function middleware(request: NextRequest) {
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   const session = token ? await verifySessionToken(token) : null;
 
-  if (!session || session.role !== "ADMIN") {
+  // Any authenticated dashboard role (ADMIN, IMPORTER, EXPORTER) may enter
+  // /admin — role-specific access (Users/Categories management stays
+  // ADMIN-only) is enforced deeper in the tree, not here. Gating this on
+  // role === "ADMIN" caused an infinite bounce for non-admin logins: they'd
+  // authenticate successfully, land on /admin, get redirected straight
+  // back to /admin/login, and appear stuck.
+  if (!session) {
     const loginUrl = new URL("/admin/login", request.url);
     loginUrl.searchParams.set("from", pathname);
     return NextResponse.redirect(loginUrl);
