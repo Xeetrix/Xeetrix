@@ -3,16 +3,14 @@ import { notFound } from "next/navigation";
 import { Container } from "@/components/ui/Container";
 import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { ProductCard } from "@/components/ProductCard";
-import { getCategories, getCategoryBySlug } from "@/lib/data/categories";
+import { getCategoryBySlug } from "@/lib/data/categories";
 import { getProducts } from "@/lib/data/products";
 import { SITE_NAME, SITE_URL } from "@/lib/constants";
 
-export const revalidate = 3600;
-
-export async function generateStaticParams() {
-  const categories = await getCategories();
-  return categories.map((c) => ({ slug: c.slug }));
-}
+// Admin-created/edited categories must show up immediately, not only
+// after the next build (or the next hour, under ISR) — always render
+// this page fresh from the database.
+export const dynamic = "force-dynamic";
 
 export async function generateMetadata({
   params,

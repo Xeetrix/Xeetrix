@@ -11,6 +11,10 @@ import { ProductCard } from "@/components/ProductCard";
 import { getCategories } from "@/lib/data/categories";
 import { getFeaturedProducts, getProducts } from "@/lib/data/products";
 
+// Admin-created categories/products must show up immediately, not only
+// after the next build — always render this page fresh from the database.
+export const dynamic = "force-dynamic";
+
 export default async function HomePage() {
   const [categories, featuredProducts, latestProducts] = await Promise.all([
     getCategories(),

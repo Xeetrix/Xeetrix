@@ -13,6 +13,10 @@ export const metadata: Metadata = {
   openGraph: { title: `Wholesale Categories | ${SITE_NAME}` },
 };
 
+// Admin-created categories must show up immediately, not only after the
+// next build — always render this page fresh from the database.
+export const dynamic = "force-dynamic";
+
 export default async function CategoriesPage() {
   const categories = await getCategories();
 

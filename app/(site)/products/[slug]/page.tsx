@@ -8,19 +8,13 @@ import { ProductGallery } from "@/components/ProductGallery";
 import { ProductCard } from "@/components/ProductCard";
 import { WhatsAppButton } from "@/components/WhatsAppButton";
 import { FadeIn } from "@/components/ui/FadeIn";
-import {
-  getAllProductSlugs,
-  getProductBySlug,
-  getRelatedProducts,
-} from "@/lib/data/products";
+import { getProductBySlug, getRelatedProducts } from "@/lib/data/products";
 import { formatCurrency, SITE_NAME, SITE_URL } from "@/lib/constants";
 
-export const revalidate = 3600;
-
-export async function generateStaticParams() {
-  const slugs = await getAllProductSlugs();
-  return slugs.map((slug) => ({ slug }));
-}
+// Admin-created/edited products must show up immediately, not only
+// after the next build (or the next hour, under ISR) — always render
+// this page fresh from the database.
+export const dynamic = "force-dynamic";
 
 export async function generateMetadata({
   params,
