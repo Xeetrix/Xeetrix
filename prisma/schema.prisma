@@ -53,18 +53,25 @@ model Category {
 }
 
 model Product {
-  id             String   @id @default(cuid())
-  title          String
-  slug           String   @unique
-  description    String
+  id          String @id @default(cuid())
+  title       String
+  slug        String @unique
+  description String
+
+  // wholesalePrice/moq mirror the entry-level tier (the priceTiers row
+  // with the lowest minQty) so list pages, filters, the sitemap, and
+  // JSON-LD can show a single "from" price without joining priceTiers.
+  // The API derives and overwrites both from priceTiers on every
+  // create/update — never edit them directly.
   wholesalePrice Float
-  regularPrice   Float
-  moq            Int      @default(1)
-  unit           String   @default("piece")
-  stock          Int      @default(0)
-  images         String[]
-  isPublished    Boolean  @default(true)
-  isFeatured     Boolean  @default(false)
+  moq            Int   @default(1)
+
+  regularPrice Float
+  unit         String   @default("piece")
+  stock        Int      @default(0)
+  images       String[]
+  isPublished  Boolean  @default(true)
+  isFeatured   Boolean  @default(false)
 
   seoTitle       String?
   seoDescription String?
@@ -75,10 +82,30 @@ model Product {
   importerId String?
   importer   User?   @relation("ImporterProducts", fields: [importerId], references: [id], onDelete: SetNull)
 
+  priceTiers PriceTier[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([categoryId])
   @@index([importerId])
   @@map("products")
+}
+
+// Bulk/MOQ pricing tiers, e.g. "100 units @ ৳165", "200 units @ ৳160",
+// "500 units @ ৳150". A product needs at least one tier — the API layer
+// enforces that, not the schema, so a still-mid-edit product can't end
+// up with a state the DB itself would reject.
+model PriceTier {
+  id     String @id @default(cuid())
+  minQty Int
+  price  Float
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([productId])
+  @@map("price_tiers")
 }

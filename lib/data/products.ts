@@ -57,7 +57,7 @@ export async function getProductBySlug(
   try {
     return await prisma.product.findUnique({
       where: { slug },
-      include: { category: true },
+      include: { category: true, priceTiers: { orderBy: { minQty: "asc" } } },
     });
   } catch (error) {
     console.error("getProductBySlug failed:", error);

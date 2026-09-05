@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { Loader2, Save } from "lucide-react";
 import type { Category, Product } from "@/lib/types";
 import { MultiImageDropzone } from "@/components/admin/MultiImageDropzone";
+import { PriceTiersEditor, type PriceTierRow } from "@/components/admin/PriceTiersEditor";
+import { CURRENCY_SYMBOL } from "@/lib/constants";
 
 function slugify(value: string) {
   return value
@@ -27,22 +29,48 @@ export function ProductForm({
   const [slug, setSlug] = useState(product?.slug ?? "");
   const [slugTouched, setSlugTouched] = useState(isEdit);
   const [images, setImages] = useState<string[]>(product?.images ?? []);
+  const [priceTiers, setPriceTiers] = useState<PriceTierRow[]>(
+    product?.priceTiers && product.priceTiers.length > 0
+      ? product.priceTiers.map((t) => ({ minQty: String(t.minQty), price: String(t.price) }))
+      : [{ minQty: "", price: "" }]
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setLoading(true);
     setError("");
+
+    const parsedTiers = priceTiers
+      .filter((t) => t.minQty !== "" || t.price !== "")
+      .map((t) => ({ minQty: Number(t.minQty), price: Number(t.price) }));
+
+    if (parsedTiers.length === 0) {
+      setError("Add at least one bulk price tier.");
+      return;
+    }
+    if (parsedTiers.some((t) => !Number.isFinite(t.minQty) || t.minQty <= 0)) {
+      setError("Each tier needs a valid minimum quantity greater than 0.");
+      return;
+    }
+    if (parsedTiers.some((t) => !Number.isFinite(t.price) || t.price <= 0)) {
+      setError("Each tier needs a valid price greater than 0.");
+      return;
+    }
+    if (new Set(parsedTiers.map((t) => t.minQty)).size !== parsedTiers.length) {
+      setError("Each tier needs a distinct minimum quantity.");
+      return;
+    }
+
+    setLoading(true);
 
     const form = new FormData(event.currentTarget);
     const payload = {
       title,
       slug,
       description: String(form.get("description") ?? ""),
-      wholesalePrice: Number(form.get("wholesalePrice")),
+      priceTiers: parsedTiers,
       regularPrice: Number(form.get("regularPrice")),
-      moq: Number(form.get("moq")),
       unit: String(form.get("unit") ?? "piece"),
       stock: Number(form.get("stock") ?? 0),
       images,
@@ -109,19 +137,12 @@ export function ProductForm({
         />
       </Field>
 
+      <div className="rounded-2xl border border-ink-100 bg-ink-50/40 p-4 sm:p-5">
+        <PriceTiersEditor value={priceTiers} onChange={setPriceTiers} />
+      </div>
+
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Field label="Wholesale Price ($)">
-          <input
-            name="wholesalePrice"
-            type="number"
-            step="0.01"
-            min="0"
-            required
-            defaultValue={product?.wholesalePrice}
-            className="input"
-          />
-        </Field>
-        <Field label="Regular Price ($)">
+        <Field label={`Regular Price (${CURRENCY_SYMBOL})`}>
           <input
             name="regularPrice"
             type="number"
@@ -132,22 +153,9 @@ export function ProductForm({
             className="input"
           />
         </Field>
-        <Field label="MOQ">
-          <input
-            name="moq"
-            type="number"
-            min="1"
-            required
-            defaultValue={product?.moq ?? 100}
-            className="input"
-          />
-        </Field>
         <Field label="Unit">
           <input name="unit" defaultValue={product?.unit ?? "piece"} className="input" />
         </Field>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Stock Quantity">
           <input
             name="stock"

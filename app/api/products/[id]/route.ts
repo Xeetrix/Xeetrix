@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/require-admin";
 import { productSchema } from "@/lib/validation/product";
+import { getBaseTier } from "@/lib/pricing";
 
 export async function GET(
   _request: Request,
@@ -17,6 +18,7 @@ export async function GET(
       include: {
         category: true,
         importer: { select: { id: true, name: true, company: true, role: true } },
+        priceTiers: { orderBy: { minQty: "asc" } },
       },
     });
     if (!product) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -46,6 +48,9 @@ export async function PUT(
     );
   }
 
+  const { priceTiers, ...rest } = parsed.data;
+  const baseTier = getBaseTier(priceTiers);
+
   try {
     if (user.role !== "ADMIN") {
       const existing = await prisma.product.findUnique({ where: { id } });
@@ -57,10 +62,21 @@ export async function PUT(
     const product = await prisma.product.update({
       where: { id },
       data: {
-        ...parsed.data,
-        seoTitle: parsed.data.seoTitle || null,
-        seoDescription: parsed.data.seoDescription || null,
+        ...rest,
+        seoTitle: rest.seoTitle || null,
+        seoDescription: rest.seoDescription || null,
+        // wholesalePrice/moq mirror the cheapest tier — see prisma/schema.prisma.
+        wholesalePrice: baseTier.price,
+        moq: baseTier.minQty,
+        // Replace the tier set wholesale: this is a small, admin-only
+        // form submission (never hundreds of rows), so delete-then-recreate
+        // is simpler and just as correct as diffing each row.
+        priceTiers: {
+          deleteMany: {},
+          create: priceTiers.map((tier) => ({ minQty: tier.minQty, price: tier.price })),
+        },
       },
+      include: { priceTiers: { orderBy: { minQty: "asc" } } },
     });
     return NextResponse.json({ product });
   } catch {

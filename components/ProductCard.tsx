@@ -51,6 +51,7 @@ export function ProductCard({ product }: { product: ProductWithCategory }) {
         <div className="mt-auto flex items-end justify-between pt-2">
           <div>
             <p className="font-display text-lg font-bold text-ink-950">
+              <span className="mr-1 text-xs font-normal text-ink-400">From</span>
               {formatCurrency(product.wholesalePrice)}
               <span className="ml-1 text-xs font-normal text-ink-400">/{product.unit}</span>
             </p>

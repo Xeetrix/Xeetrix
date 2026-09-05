@@ -10,11 +10,20 @@ export type Category = {
   updatedAt: Date;
 };
 
+export type PriceTier = {
+  id: string;
+  minQty: number;
+  price: number;
+  productId: string;
+  createdAt: Date;
+};
+
 export type Product = {
   id: string;
   title: string;
   slug: string;
   description: string;
+  /** Mirrors the lowest-minQty priceTiers row — see prisma/schema.prisma. */
   wholesalePrice: number;
   regularPrice: number;
   moq: number;
@@ -29,6 +38,8 @@ export type Product = {
   importerId: string | null;
   createdAt: Date;
   updatedAt: Date;
+  /** Present when the query includes it; sorted by minQty ascending. */
+  priceTiers?: PriceTier[];
 };
 
 export type ProductWithCategory = Product & { category: Category };
