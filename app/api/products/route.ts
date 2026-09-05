@@ -11,7 +11,10 @@ export async function GET() {
   try {
     const products = await prisma.product.findMany({
       where: isAdmin ? undefined : { importerId: user.sub },
-      include: { category: true },
+      include: {
+        category: true,
+        importer: { select: { id: true, name: true, company: true, role: true } },
+      },
       orderBy: { createdAt: "desc" },
     });
     return NextResponse.json({ products });

@@ -43,11 +43,12 @@ export default async function AdminUsersPage() {
           <p className="p-10 text-center text-ink-400">No users yet.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px] text-left text-sm">
+            <table className="w-full min-w-[680px] text-left text-sm">
               <thead className="border-b border-ink-100 bg-ink-50/60 text-xs uppercase tracking-wide text-ink-500">
                 <tr>
                   <th className="px-3 py-3 font-medium sm:px-5">Name</th>
                   <th className="px-3 py-3 font-medium sm:px-5">Email</th>
+                  <th className="whitespace-nowrap px-3 py-3 font-medium sm:px-5">Company</th>
                   <th className="whitespace-nowrap px-3 py-3 font-medium sm:px-5">Role</th>
                   <th className="whitespace-nowrap px-3 py-3 font-medium sm:px-5">Status</th>
                   <th className="whitespace-nowrap px-3 py-3 text-right font-medium sm:px-5">Actions</th>
@@ -58,6 +59,9 @@ export default async function AdminUsersPage() {
                   <tr key={user.id}>
                     <td className="px-3 py-3 font-medium text-ink-900 sm:px-5">{user.name}</td>
                     <td className="px-3 py-3 text-ink-500 sm:px-5">{user.email}</td>
+                    <td className="whitespace-nowrap px-3 py-3 text-ink-500 sm:px-5">
+                      {user.company || <span className="text-ink-300">—</span>}
+                    </td>
                     <td className="whitespace-nowrap px-3 py-3 sm:px-5">
                       <span
                         className={`rounded-full px-2.5 py-1 text-xs font-semibold ${roleStyles[user.role]}`}
@@ -107,6 +111,7 @@ function loadUsers() {
       id: true,
       name: true,
       email: true,
+      company: true,
       role: true,
       isActive: true,
     },

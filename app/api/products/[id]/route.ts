@@ -14,7 +14,10 @@ export async function GET(
   try {
     const product = await prisma.product.findUnique({
       where: { id },
-      include: { category: true },
+      include: {
+        category: true,
+        importer: { select: { id: true, name: true, company: true, role: true } },
+      },
     });
     if (!product) return NextResponse.json({ error: "Not found" }, { status: 404 });
     if (user.role !== "ADMIN" && product.importerId !== user.sub) {
