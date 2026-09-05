@@ -42,11 +42,12 @@ export default async function AdminProductsPage() {
           <p className="p-10 text-center text-ink-400">No products yet.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-left text-sm">
+            <table className="w-full min-w-[760px] text-left text-sm">
               <thead className="border-b border-ink-100 bg-ink-50/60 text-xs uppercase tracking-wide text-ink-500">
                 <tr>
                   <th className="px-3 py-3 font-medium sm:px-5">Product</th>
                   <th className="whitespace-nowrap px-3 py-3 font-medium sm:px-5">Category</th>
+                  <th className="whitespace-nowrap px-3 py-3 font-medium sm:px-5">Supplier</th>
                   <th className="whitespace-nowrap px-3 py-3 font-medium sm:px-5">Wholesale</th>
                   <th className="whitespace-nowrap px-3 py-3 font-medium sm:px-5">MOQ</th>
                   <th className="whitespace-nowrap px-3 py-3 font-medium sm:px-5">Status</th>
@@ -60,6 +61,20 @@ export default async function AdminProductsPage() {
                       {product.title}
                     </td>
                     <td className="whitespace-nowrap px-3 py-3 text-ink-500 sm:px-5">{product.category.name}</td>
+                    <td className="whitespace-nowrap px-3 py-3 sm:px-5">
+                      {product.importer ? (
+                        <div className="flex flex-col">
+                          <span className="font-medium text-ink-800">
+                            {product.importer.company || product.importer.name}
+                          </span>
+                          {product.importer.company && (
+                            <span className="text-xs text-ink-400">{product.importer.name}</span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-ink-400">Admin</span>
+                      )}
+                    </td>
                     <td className="whitespace-nowrap px-3 py-3 text-ink-700 sm:px-5">
                       {formatCurrency(product.wholesalePrice)}
                     </td>
@@ -101,7 +116,10 @@ export default async function AdminProductsPage() {
 function loadProducts(importerId: string | undefined) {
   return prisma.product.findMany({
     where: importerId ? { importerId } : undefined,
-    include: { category: true },
+    include: {
+      category: true,
+      importer: { select: { id: true, name: true, company: true, role: true } },
+    },
     orderBy: { createdAt: "desc" },
   });
 }
