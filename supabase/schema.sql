@@ -7,9 +7,10 @@
 --   1) Extension needed for gen_random_uuid()
 --   2) Role enum
 --   3) users / categories / products tables
---   4) Indexes + foreign keys
+--   4) Indexes + foreign keys, price_tiers table
 --   5) Default admin user
 --   6-7) OPTIONAL demo catalog (safe to skip/delete if you'll add your own)
+--   8) OPTIONAL price tiers for the demo catalog
 
 -- 1) Needed for gen_random_uuid() as a column default (native in PG14+,
 --    this makes it work on older Postgres too — harmless either way).
@@ -88,6 +89,26 @@ ALTER TABLE "products"
   ADD CONSTRAINT "products_importerId_fkey"
   FOREIGN KEY ("importerId") REFERENCES "users"("id")
   ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- 4b) price_tiers — bulk/MOQ pricing rows per product, e.g.
+--     "100 units @ ৳165", "200 units @ ৳160", "500 units @ ৳150".
+--     products."wholesalePrice"/"moq" mirror the lowest-minQty tier so
+--     list pages can show a single "from" price without a join; the app
+--     keeps both in sync on every product create/update.
+CREATE TABLE IF NOT EXISTS "price_tiers" (
+  "id"        TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+  "minQty"    INTEGER NOT NULL,
+  "price"     DOUBLE PRECISION NOT NULL,
+  "productId" TEXT NOT NULL,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "price_tiers_pkey" PRIMARY KEY ("id")
+);
+CREATE INDEX IF NOT EXISTS "price_tiers_productId_idx" ON "price_tiers"("productId");
+
+ALTER TABLE "price_tiers"
+  ADD CONSTRAINT "price_tiers_productId_fkey"
+  FOREIGN KEY ("productId") REFERENCES "products"("id")
+  ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- 5) Default admin user
 -- Email:    work.xeetrix@gmail.com
@@ -381,3 +402,25 @@ VALUES (
   CURRENT_TIMESTAMP
 )
 ON CONFLICT ("slug") DO NOTHING;
+
+-- 8) Price tiers for the demo catalog (optional)
+-- Every demo product above gets one tier equal to its own
+-- wholesalePrice/moq, so the catalog stays valid under the new schema
+-- (every product needs at least one tier). The cotton t-shirt product
+-- also gets two deeper-discount tiers to demonstrate bulk/MOQ pricing.
+INSERT INTO "price_tiers" ("id", "minQty", "price", "productId", "createdAt")
+SELECT gen_random_uuid()::text, "moq", "wholesalePrice", "id", CURRENT_TIMESTAMP
+FROM "products"
+WHERE NOT EXISTS (
+  SELECT 1 FROM "price_tiers" WHERE "price_tiers"."productId" = "products"."id"
+);
+
+INSERT INTO "price_tiers" ("id", "minQty", "price", "productId", "createdAt")
+SELECT gen_random_uuid()::text, 1000, 2.1, "id", CURRENT_TIMESTAMP
+FROM "products"
+WHERE "slug" = 'premium-cotton-crew-neck-tshirts-bulk';
+
+INSERT INTO "price_tiers" ("id", "minQty", "price", "productId", "createdAt")
+SELECT gen_random_uuid()::text, 5000, 1.85, "id", CURRENT_TIMESTAMP
+FROM "products"
+WHERE "slug" = 'premium-cotton-crew-neck-tshirts-bulk';

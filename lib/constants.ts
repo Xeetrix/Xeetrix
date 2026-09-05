@@ -19,11 +19,22 @@ export function whatsappLink(message: string) {
   return `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
 }
 
+/**
+ * The Bangladeshi Taka symbol used everywhere prices are displayed.
+ * Deliberately not delegated to Intl's `currency: "BDT"` formatting —
+ * in the "en-US" locale that renders as the literal text "BDT 1,500.00"
+ * (no ৳ glyph at all), and the "bn-BD" locale that does use ৳ also
+ * switches to Bengali numerals, which doesn't fit an English-language UI.
+ * So this formats the number with Intl (for comma grouping) and
+ * prepends ৳ manually, which is correct in every locale.
+ */
+export const CURRENCY_SYMBOL = "৳";
+
 export function formatCurrency(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "BDT",
-    minimumFractionDigits: value < 10 ? 2 : 0,
+  const hasFraction = !Number.isInteger(value);
+  const formatted = new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: hasFraction ? 2 : 0,
     maximumFractionDigits: 2,
   }).format(value);
+  return `${CURRENCY_SYMBOL}${formatted}`;
 }

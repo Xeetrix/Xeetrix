@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/require-admin";
 import { productSchema } from "@/lib/validation/product";
+import { getBaseTier } from "@/lib/pricing";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -14,6 +15,7 @@ export async function GET() {
       include: {
         category: true,
         importer: { select: { id: true, name: true, company: true, role: true } },
+        priceTiers: { orderBy: { minQty: "asc" } },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -40,17 +42,27 @@ export async function POST(request: Request) {
     );
   }
 
+  const { priceTiers, ...rest } = parsed.data;
+  const baseTier = getBaseTier(priceTiers);
+
   try {
     const product = await prisma.product.create({
       data: {
-        ...parsed.data,
-        seoTitle: parsed.data.seoTitle || null,
-        seoDescription: parsed.data.seoDescription || null,
+        ...rest,
+        seoTitle: rest.seoTitle || null,
+        seoDescription: rest.seoDescription || null,
+        // wholesalePrice/moq mirror the cheapest tier — see prisma/schema.prisma.
+        wholesalePrice: baseTier.price,
+        moq: baseTier.minQty,
         // Non-admin sellers (Importer/Exporter) always own the products
         // they create — this is derived from the session, never trusted
         // from client input.
         importerId: isAdmin ? null : user.sub,
+        priceTiers: {
+          create: priceTiers.map((tier) => ({ minQty: tier.minQty, price: tier.price })),
+        },
       },
+      include: { priceTiers: { orderBy: { minQty: "asc" } } },
     });
     return NextResponse.json({ product }, { status: 201 });
   } catch (error) {

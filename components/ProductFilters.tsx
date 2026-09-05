@@ -8,10 +8,10 @@ import { cn } from "@/lib/utils";
 
 const PRICE_BUCKETS = [
   { label: "Any Price", min: undefined, max: undefined },
-  { label: "Under $5", min: undefined, max: 5 },
-  { label: "$5 – $20", min: 5, max: 20 },
-  { label: "$20 – $100", min: 20, max: 100 },
-  { label: "Over $100", min: 100, max: undefined },
+  { label: "Under ৳500", min: undefined, max: 500 },
+  { label: "৳500 – ৳2,000", min: 500, max: 2000 },
+  { label: "৳2,000 – ৳10,000", min: 2000, max: 10000 },
+  { label: "Over ৳10,000", min: 10000, max: undefined },
 ];
 
 export function ProductFilters({ categories }: { categories: Category[] }) {

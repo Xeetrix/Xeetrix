@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { BadgeCheck, Boxes, Layers, ShieldCheck } from "lucide-react";
+import { BadgeCheck, Boxes, Layers, Package, ShieldCheck } from "lucide-react";
 import { Container } from "@/components/ui/Container";
 import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { ProductGallery } from "@/components/ProductGallery";
@@ -62,6 +62,13 @@ export default async function ProductPage({
 
   const related = await getRelatedProducts(product);
 
+  const tiers = product.priceTiers && product.priceTiers.length > 0
+    ? product.priceTiers
+    : [{ id: "base", minQty: product.moq, price: product.wholesalePrice, productId: product.id, createdAt: product.createdAt }];
+  const tierPrices = tiers.map((t) => t.price);
+  const availability =
+    product.stock > 0 ? "https://schema.org/InStock" : "https://schema.org/PreOrder";
+
   const productJsonLd = {
     "@context": "https://schema.org",
     "@type": "Product",
@@ -71,22 +78,36 @@ export default async function ProductPage({
     sku: product.id,
     category: product.category.name,
     brand: { "@type": "Brand", name: SITE_NAME },
-    offers: {
-      "@type": "Offer",
-      url: `${SITE_URL}/products/${product.slug}`,
-      priceCurrency: "USD",
-      price: product.wholesalePrice.toFixed(2),
-      availability:
-        product.stock > 0
-          ? "https://schema.org/InStock"
-          : "https://schema.org/PreOrder",
-      itemCondition: "https://schema.org/NewCondition",
-      eligibleQuantity: {
-        "@type": "QuantitativeValue",
-        minValue: product.moq,
-        unitText: product.unit,
-      },
-    },
+    offers:
+      tiers.length > 1
+        ? {
+            "@type": "AggregateOffer",
+            url: `${SITE_URL}/products/${product.slug}`,
+            priceCurrency: "BDT",
+            lowPrice: Math.min(...tierPrices).toFixed(2),
+            highPrice: Math.max(...tierPrices).toFixed(2),
+            offerCount: tiers.length,
+            availability,
+            itemCondition: "https://schema.org/NewCondition",
+            eligibleQuantity: {
+              "@type": "QuantitativeValue",
+              minValue: product.moq,
+              unitText: product.unit,
+            },
+          }
+        : {
+            "@type": "Offer",
+            url: `${SITE_URL}/products/${product.slug}`,
+            priceCurrency: "BDT",
+            price: product.wholesalePrice.toFixed(2),
+            availability,
+            itemCondition: "https://schema.org/NewCondition",
+            eligibleQuantity: {
+              "@type": "QuantitativeValue",
+              minValue: product.moq,
+              unitText: product.unit,
+            },
+          },
   };
 
   const breadcrumbJsonLd = {
@@ -201,6 +222,37 @@ export default async function ProductPage({
                 <span className="font-display font-semibold text-ink-900">Supplier</span>
               </div>
             </div>
+
+            {tiers.length > 1 && (
+              <div className="overflow-hidden rounded-2xl border border-ink-100">
+                <div className="flex items-center gap-2 border-b border-ink-100 bg-ink-50/60 px-4 py-2.5">
+                  <Package className="h-3.5 w-3.5 text-brand-600" />
+                  <span className="text-xs font-semibold uppercase tracking-wide text-ink-600">
+                    Bulk Pricing
+                  </span>
+                </div>
+                <table className="w-full text-left text-sm">
+                  <thead className="text-xs uppercase tracking-wide text-ink-400">
+                    <tr>
+                      <th className="px-4 py-2 font-medium">Order Quantity</th>
+                      <th className="px-4 py-2 font-medium">Price / {product.unit}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-ink-100">
+                    {tiers.map((tier) => (
+                      <tr key={tier.id}>
+                        <td className="px-4 py-2.5 text-ink-700">
+                          {tier.minQty.toLocaleString()}+ {product.unit}
+                        </td>
+                        <td className="px-4 py-2.5 font-semibold text-ink-900">
+                          {formatCurrency(tier.price)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
             <p className="leading-relaxed text-ink-600">{product.description}</p>
 
