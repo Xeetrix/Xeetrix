@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/require-admin";
 import { productSchema } from "@/lib/validation/product";
 import { getBaseTier } from "@/lib/pricing";
+import { dbErrorMessage } from "@/lib/db-error";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -20,9 +21,14 @@ export async function GET() {
       orderBy: { createdAt: "desc" },
     });
     return NextResponse.json({ products });
-  } catch {
+  } catch (error) {
     return NextResponse.json(
-      { error: "Database not configured. Set DATABASE_URL to manage products." },
+      {
+        error: dbErrorMessage(
+          error,
+          "Database not configured. Set DATABASE_URL to manage products."
+        ),
+      },
       { status: 503 }
     );
   }
@@ -69,7 +75,7 @@ export async function POST(request: Request) {
     const message =
       error instanceof Error && error.message.includes("Unique constraint")
         ? "A product with that slug already exists."
-        : "Database not configured. Set DATABASE_URL to manage products.";
+        : dbErrorMessage(error, "Unable to create product.");
     return NextResponse.json({ error: message }, { status: 503 });
   }
 }

@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { getCurrentAdmin } from "@/lib/require-admin";
 import { userUpdateSchema } from "@/lib/validation/user";
+import { dbErrorMessage } from "@/lib/db-error";
 
 const safeSelect = {
   id: true,
@@ -29,8 +30,11 @@ export async function GET(
     const user = await prisma.user.findUnique({ where: { id }, select: safeSelect });
     if (!user) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json({ user });
-  } catch {
-    return NextResponse.json({ error: "Database not configured." }, { status: 503 });
+  } catch (error) {
+    return NextResponse.json(
+      { error: dbErrorMessage(error, "Database not configured.") },
+      { status: 503 }
+    );
   }
 }
 
@@ -67,8 +71,11 @@ export async function PUT(
 
     const user = await prisma.user.update({ where: { id }, data, select: safeSelect });
     return NextResponse.json({ user });
-  } catch {
-    return NextResponse.json({ error: "Unable to update user." }, { status: 503 });
+  } catch (error) {
+    return NextResponse.json(
+      { error: dbErrorMessage(error, "Unable to update user.") },
+      { status: 503 }
+    );
   }
 }
 
@@ -90,7 +97,10 @@ export async function DELETE(
   try {
     await prisma.user.delete({ where: { id } });
     return NextResponse.json({ ok: true });
-  } catch {
-    return NextResponse.json({ error: "Unable to delete user." }, { status: 503 });
+  } catch (error) {
+    return NextResponse.json(
+      { error: dbErrorMessage(error, "Unable to delete user.") },
+      { status: 503 }
+    );
   }
 }

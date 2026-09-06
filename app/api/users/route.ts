@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { getCurrentAdmin } from "@/lib/require-admin";
 import { userCreateSchema } from "@/lib/validation/user";
+import { dbErrorMessage } from "@/lib/db-error";
 
 const safeSelect = {
   id: true,
@@ -27,9 +28,14 @@ export async function GET() {
       orderBy: { createdAt: "desc" },
     });
     return NextResponse.json({ users });
-  } catch {
+  } catch (error) {
     return NextResponse.json(
-      { error: "Database not configured. Set DATABASE_URL to manage users." },
+      {
+        error: dbErrorMessage(
+          error,
+          "Database not configured. Set DATABASE_URL to manage users."
+        ),
+      },
       { status: 503 }
     );
   }
@@ -68,7 +74,7 @@ export async function POST(request: Request) {
     const message =
       error instanceof Error && error.message.includes("Unique constraint")
         ? "A user with that email already exists."
-        : "Database not configured. Set DATABASE_URL to manage users.";
+        : dbErrorMessage(error, "Unable to create user.");
     return NextResponse.json({ error: message }, { status: 503 });
   }
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentAdmin } from "@/lib/require-admin";
 import { categorySchema } from "@/lib/validation/category";
+import { dbErrorMessage } from "@/lib/db-error";
 
 export async function GET(
   _request: Request,
@@ -15,8 +16,11 @@ export async function GET(
     const category = await prisma.category.findUnique({ where: { id } });
     if (!category) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json({ category });
-  } catch {
-    return NextResponse.json({ error: "Database not configured." }, { status: 503 });
+  } catch (error) {
+    return NextResponse.json(
+      { error: dbErrorMessage(error, "Database not configured.") },
+      { status: 503 }
+    );
   }
 }
 
@@ -48,8 +52,11 @@ export async function PUT(
       },
     });
     return NextResponse.json({ category });
-  } catch {
-    return NextResponse.json({ error: "Unable to update category." }, { status: 503 });
+  } catch (error) {
+    return NextResponse.json(
+      { error: dbErrorMessage(error, "Unable to update category.") },
+      { status: 503 }
+    );
   }
 }
 
@@ -71,7 +78,10 @@ export async function DELETE(
     }
     await prisma.category.delete({ where: { id } });
     return NextResponse.json({ ok: true });
-  } catch {
-    return NextResponse.json({ error: "Unable to delete category." }, { status: 503 });
+  } catch (error) {
+    return NextResponse.json(
+      { error: dbErrorMessage(error, "Unable to delete category.") },
+      { status: 503 }
+    );
   }
 }

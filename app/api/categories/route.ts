@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentAdmin } from "@/lib/require-admin";
 import { categorySchema } from "@/lib/validation/category";
+import { dbErrorMessage } from "@/lib/db-error";
 
 export async function GET() {
   const admin = await getCurrentAdmin();
@@ -13,9 +14,14 @@ export async function GET() {
       include: { _count: { select: { products: true } } },
     });
     return NextResponse.json({ categories });
-  } catch {
+  } catch (error) {
     return NextResponse.json(
-      { error: "Database not configured. Set DATABASE_URL to manage categories." },
+      {
+        error: dbErrorMessage(
+          error,
+          "Database not configured. Set DATABASE_URL to manage categories."
+        ),
+      },
       { status: 503 }
     );
   }
@@ -48,7 +54,7 @@ export async function POST(request: Request) {
     const message =
       error instanceof Error && error.message.includes("Unique constraint")
         ? "A category with that slug already exists."
-        : "Database not configured. Set DATABASE_URL to manage categories.";
+        : dbErrorMessage(error, "Unable to create category.");
     return NextResponse.json({ error: message }, { status: 503 });
   }
 }

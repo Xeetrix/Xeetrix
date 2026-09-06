@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/require-admin";
 import { productSchema } from "@/lib/validation/product";
 import { getBaseTier } from "@/lib/pricing";
+import { dbErrorMessage } from "@/lib/db-error";
 
 export async function GET(
   _request: Request,
@@ -26,8 +27,11 @@ export async function GET(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
     return NextResponse.json({ product });
-  } catch {
-    return NextResponse.json({ error: "Database not configured." }, { status: 503 });
+  } catch (error) {
+    return NextResponse.json(
+      { error: dbErrorMessage(error, "Database not configured.") },
+      { status: 503 }
+    );
   }
 }
 
@@ -79,8 +83,11 @@ export async function PUT(
       include: { priceTiers: { orderBy: { minQty: "asc" } } },
     });
     return NextResponse.json({ product });
-  } catch {
-    return NextResponse.json({ error: "Unable to update product." }, { status: 503 });
+  } catch (error) {
+    return NextResponse.json(
+      { error: dbErrorMessage(error, "Unable to update product.") },
+      { status: 503 }
+    );
   }
 }
 
@@ -102,7 +109,10 @@ export async function DELETE(
 
     await prisma.product.delete({ where: { id } });
     return NextResponse.json({ ok: true });
-  } catch {
-    return NextResponse.json({ error: "Unable to delete product." }, { status: 503 });
+  } catch (error) {
+    return NextResponse.json(
+      { error: dbErrorMessage(error, "Unable to delete product.") },
+      { status: 503 }
+    );
   }
 }
