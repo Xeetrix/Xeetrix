@@ -5,7 +5,7 @@
   "description": "Xeetrix — Bridge to Global Trade. B2B wholesale platform connecting local entrepreneurs with importers and exporters.",
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && prisma db push --accept-data-loss --skip-generate && next build",
+    "build": "prisma generate && (prisma db push --accept-data-loss --skip-generate || echo 'Warning: prisma db push failed (DATABASE_URL unreachable or unset) - continuing build; pages will render their empty state until the schema is synced.') && next build",
     "start": "next start",
     "lint": "next lint",
     "postinstall": "prisma generate",
