@@ -5,7 +5,7 @@
   "description": "Xeetrix — Bridge to Global Trade. B2B wholesale platform connecting local entrepreneurs with importers and exporters.",
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && next build",
+    "build": "prisma generate && prisma db push --accept-data-loss --skip-generate && next build",
     "start": "next start",
     "lint": "next lint",
     "postinstall": "prisma generate",
