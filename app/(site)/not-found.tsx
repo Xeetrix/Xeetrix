@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { Container } from "@/components/ui/Container";
-import { Plane, ArrowLeft } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
+import { BrandLogo } from "@/components/ui/BrandLogo";
 
 export default function NotFound() {
   return (
     <Container className="flex flex-col items-center justify-center gap-4 py-32 text-center">
-      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-50 text-brand-700 border border-brand-200">
-        <Plane className="h-8 w-8" />
+      <div className="mb-2">
+        <BrandLogo size="xl" variant="badge" showText={false} />
       </div>
       <h1 className="font-display text-3xl font-bold text-slate-900">
         Page Not Found

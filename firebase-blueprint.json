@@ -1,0 +1,63 @@
+{
+  "entities": {
+    "users": {
+      "title": "User Profile",
+      "description": "Passenger and agency account profiles",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "phone": { "type": "string" },
+        "passportNumber": { "type": "string" },
+        "preferredClass": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "email"]
+    },
+    "inquiries": {
+      "title": "Flight Booking Inquiry",
+      "description": "Customer flight quotation and reservation inquiries",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "referenceCode": { "type": "string" },
+        "userId": { "type": "string" },
+        "origin": { "type": "string" },
+        "destination": { "type": "string" },
+        "tripType": { "type": "string" },
+        "departureDate": { "type": "string" },
+        "returnDate": { "type": "string" },
+        "passengers": { "type": "number" },
+        "cabinClass": { "type": "string" },
+        "fareType": { "type": "string" },
+        "contactName": { "type": "string" },
+        "contactEmail": { "type": "string" },
+        "contactPhone": { "type": "string" },
+        "notes": { "type": "string" },
+        "status": { "type": "string" },
+        "pnr": { "type": "string" },
+        "quotedFare": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["referenceCode", "origin", "destination", "contactName", "contactPhone"]
+    },
+    "saved_flights": {
+      "title": "Saved Flight Watchlist",
+      "description": "Monitored routes and saved flight net-fares",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "route": { "type": "string" },
+        "airline": { "type": "string" },
+        "fare": { "type": "string" },
+        "baggage": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["userId", "route"]
+    }
+  }
+}

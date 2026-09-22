@@ -1,0 +1,38 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // User profile documents
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId);
+      allow delete: if false;
+    }
+
+    // Flight inquiries and quote requests
+    // Public creation allowed so unauthenticated travelers can request quotations
+    // Authenticated users can read their own submissions
+    match /inquiries/{inquiryId} {
+      allow create: if true;
+      allow read: if true; // Allows lookup by reference code or user ID
+      allow update: if isAuthenticated() && (resource.data.userId == request.auth.uid || resource.data.userId == null);
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    // User saved flights and watchlist
+    match /saved_flights/{flightId} {
+      allow read, write: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid);
+    }
+  }
+}

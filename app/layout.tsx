@@ -65,6 +65,11 @@ export const metadata: Metadata = {
   alternates: {
     canonical: "/",
   },
+  icons: {
+    icon: "/icon.svg",
+    shortcut: "/icon.svg",
+    apple: "/logo.svg",
+  },
 };
 
 const travelAgencyJsonLd = {
@@ -72,6 +77,8 @@ const travelAgencyJsonLd = {
   "@type": "TravelAgency",
   name: "Xeetrix Air Ticketing & Global Travel",
   url: SITE_URL,
+  logo: `${SITE_URL}/logo.svg`,
+  image: `${SITE_URL}/logo.svg`,
   slogan: SITE_TAGLINE,
   description: SITE_DESCRIPTION,
   telephone: CONTACT_PHONE,

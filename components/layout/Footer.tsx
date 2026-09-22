@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { Plane, Mail, MapPin, Phone, ShieldCheck, Clock, Award, CheckCircle2 } from "lucide-react";
+import { Mail, MapPin, Phone, ShieldCheck, Clock, Award, CheckCircle2 } from "lucide-react";
 import { Container } from "@/components/ui/Container";
+import { BrandLogo } from "@/components/ui/BrandLogo";
 import {
   CONTACT_ADDRESS,
   CONTACT_EMAIL,
@@ -56,15 +57,9 @@ export function Footer() {
       <Container className="grid grid-cols-1 gap-10 py-14 sm:grid-cols-2 lg:grid-cols-5">
         {/* Brand info */}
         <div className="lg:col-span-2">
-          <Link href="/" className="flex items-center gap-2.5 font-display text-2xl font-bold text-white group">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-700 text-white shadow-sm">
-              <Plane className="h-5 w-5 transform -rotate-45" />
-            </span>
-            {SITE_NAME}
+          <Link href="/" className="group inline-flex items-center" aria-label="Xeetrix Home">
+            <BrandLogo size="md" variant="badge" inverted />
           </Link>
-          <p className="mt-3 text-sm font-medium text-brand-400">
-            Air Ticketing & Global Travel Solutions
-          </p>
           <p className="mt-3 max-w-sm text-sm leading-relaxed text-slate-400">
             Official travel agency providing seamless flight ticket issuance, special Middle East worker quotas, student luggage support, Umrah travel arrangements, and 24/7 date re-issue services.
           </p>

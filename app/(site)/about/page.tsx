@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Plane, ShieldCheck, Clock, Award, MapPin, Phone, ArrowRight } from "lucide-react";
+import { ShieldCheck, Clock, Award, MapPin, Phone, ArrowRight } from "lucide-react";
 import { Container } from "@/components/ui/Container";
 import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
+import { BrandLogo, BrandGlobeIcon } from "@/components/ui/BrandLogo";
 import {
   CONTACT_ADDRESS,
   CONTACT_PHONE_DISPLAY,
@@ -35,7 +36,7 @@ const VALUES = [
     description: "Our dedicated officers are always reachable for rapid issuance, flight cancellations, and emergency date adjustments.",
   },
   {
-    icon: Plane,
+    icon: BrandGlobeIcon,
     title: "Specialized Quotas",
     description: "Dedicated baggage allowances and preferential worker & student ticket rules for international departures.",
   },
@@ -47,23 +48,32 @@ export default function AboutPage() {
       <Container className="space-y-12">
         <Breadcrumbs items={[{ label: "Home", href: "/" }, { label: "About Xeetrix" }]} />
 
-        <div className="max-w-3xl">
-          <span className="text-xs font-bold uppercase tracking-wider text-brand-700 bg-brand-50 px-3 py-1 rounded-full border border-brand-200">
-            About {SITE_NAME}
-          </span>
-          <h1 className="mt-3 font-display text-3xl font-extrabold tracking-tight text-slate-900 sm:text-5xl">
-            {SITE_TAGLINE}
-          </h1>
-          <p className="mt-4 text-base sm:text-lg text-slate-600 leading-relaxed">
-            Xeetrix is an authorized air ticketing agency committed to providing
-            travelers, migrant workers, students, and corporate clients with seamless,
-            transparent, and dependable flight reservation services worldwide.
-          </p>
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-8">
+          <div className="max-w-3xl">
+            <span className="text-xs font-bold uppercase tracking-wider text-brand-700 bg-brand-50 px-3 py-1 rounded-full border border-brand-200">
+              About {SITE_NAME}
+            </span>
+            <h1 className="mt-3 font-display text-3xl font-extrabold tracking-tight text-slate-900 sm:text-5xl">
+              {SITE_TAGLINE}
+            </h1>
+            <p className="mt-4 text-base sm:text-lg text-slate-600 leading-relaxed">
+              Xeetrix is an authorized air ticketing agency committed to providing
+              travelers, migrant workers, students, and corporate clients with seamless,
+              transparent, and dependable flight reservation services worldwide.
+            </p>
 
-          <p className="mt-3 flex items-start gap-2 text-sm text-slate-500">
-            <MapPin className="mt-0.5 h-4 w-4 text-brand-700 shrink-0" />
-            Headquartered at {CONTACT_ADDRESS}
-          </p>
+            <p className="mt-3 flex items-start gap-2 text-sm text-slate-500">
+              <MapPin className="mt-0.5 h-4 w-4 text-brand-700 shrink-0" />
+              Headquartered at {CONTACT_ADDRESS}
+            </p>
+          </div>
+
+          <div className="shrink-0 rounded-3xl bg-white p-6 border border-slate-200 shadow-card flex flex-col items-center text-center">
+            <BrandLogo size="lg" variant="badge" />
+            <div className="mt-4 text-xs font-semibold text-slate-500">
+              Official Agency Brandmark
+            </div>
+          </div>
         </div>
 
         {/* Stats */}

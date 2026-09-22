@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Send,
   CheckCircle2,
@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   Plane,
   AlertCircle,
+  UserCheck,
 } from "lucide-react";
 import {
   CONTACT_PHONE_DISPLAY,
@@ -21,6 +22,9 @@ import {
   AIRPORTS,
 } from "@/lib/constants";
 import type { TripType, CabinClass } from "@/lib/types";
+import { useAuth } from "@/lib/auth-context";
+import { db } from "@/lib/firebase";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 
 export function BookingInquiryForm({
   defaultFrom = "DAC",
@@ -33,12 +37,18 @@ export function BookingInquiryForm({
   defaultTrip?: TripType;
   defaultClass?: CabinClass;
 }) {
+  const { user } = useAuth();
   const [tripType, setTripType] = useState<TripType>(defaultTrip);
-  const [fullName, setFullName] = useState("");
+  const [fullName, setFullName] = useState(user?.displayName || "");
   const [phone, setPhone] = useState("");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(user?.email || "");
   const [fromCity, setFromCity] = useState(defaultFrom);
   const [toCity, setToCity] = useState(defaultTo);
+
+  useEffect(() => {
+    if (user?.displayName) setFullName((prev) => prev || user.displayName || "");
+    if (user?.email) setEmail((prev) => prev || user.email || "");
+  }, [user]);
 
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
@@ -85,12 +95,40 @@ export function BookingInquiryForm({
           passengerCategory,
           preferredAirline: preferredAirline || undefined,
           specialRequirements: specialRequirements || undefined,
+          userId: user?.uid || null,
         }),
       });
 
       const data = await res.json();
       if (!res.ok || !data.success) {
         throw new Error(data.message || "Failed to submit flight inquiry");
+      }
+
+      // Persist to Firestore inquiries collection
+      try {
+        await addDoc(collection(db, "inquiries"), {
+          referenceCode: data.referenceId,
+          userId: user?.uid || null,
+          userEmail: user?.email || email,
+          contactName: fullName,
+          contactPhone: phone,
+          contactEmail: email,
+          tripType,
+          origin: fromLabel,
+          destination: toLabel,
+          departureDate,
+          returnDate: tripType === "roundtrip" ? returnDate : null,
+          cabinClass,
+          passengers,
+          passengerCategory,
+          preferredAirline: preferredAirline || "Any Airline",
+          specialRequirements: specialRequirements || "",
+          status: "Under Agent Review",
+          pnr: "Pending Issuance",
+          createdAt: serverTimestamp(),
+        });
+      } catch (firestoreErr) {
+        console.warn("Firestore sync optional fallback:", firestoreErr);
       }
 
       setSuccessReference(data.referenceId);
