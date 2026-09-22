@@ -1,0 +1,6 @@
+{
+  "name": "Xeetrix",
+  "description": "Xeetrix — Seamless Air Ticket Booking & Global Travel Solutions. Best fares for domestic & international flights, visa assistance, and dedicated 24/7 support.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

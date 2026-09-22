@@ -2,24 +2,16 @@
   "name": "xeetrix",
   "version": "1.0.0",
   "private": true,
-  "description": "Xeetrix — Bridge to Global Trade. B2B wholesale platform connecting local entrepreneurs with importers and exporters.",
+  "description": "Xeetrix — Seamless Air Ticket Booking & Global Travel Solutions. Best fares for domestic & international flights, visa assistance, and 24/7 support.",
   "scripts": {
-    "dev": "next dev",
-    "build": "prisma generate && (timeout 30 prisma db push --accept-data-loss --skip-generate || echo 'Warning: prisma db push failed, timed out, or is unsupported here (e.g. a PgBouncer transaction-mode pooler on DATABASE_URL) - continuing build; pages will render their empty state until the schema is synced.') && next build",
+    "dev": "next dev -p 3000 -H 0.0.0.0",
+    "build": "next build",
     "start": "next start",
-    "lint": "next lint",
-    "postinstall": "prisma generate",
-    "db:push": "prisma db push",
-    "db:seed": "tsx prisma/seed.ts",
-    "db:studio": "prisma studio"
+    "lint": "next lint"
   },
   "dependencies": {
-    "@prisma/client": "^5.22.0",
-    "@supabase/supabase-js": "^2.114.0",
-    "bcryptjs": "^2.4.3",
     "clsx": "^2.1.1",
     "framer-motion": "^11.15.0",
-    "jose": "^5.9.6",
     "lucide-react": "^0.469.0",
     "next": "^14.2.18",
     "react": "^18.3.1",
@@ -28,7 +20,6 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20.17.6",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
@@ -36,12 +27,8 @@
     "eslint": "^8.57.1",
     "eslint-config-next": "^14.2.18",
     "postcss": "^8.4.49",
-    "prisma": "^5.22.0",
     "tailwindcss": "^3.4.17",
-    "tsx": "^4.19.2",
     "typescript": "^5.7.2"
-  },
-  "prisma": {
-    "seed": "tsx prisma/seed.ts"
   }
 }
+

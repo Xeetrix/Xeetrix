@@ -1,39 +1,19 @@
 import type { MetadataRoute } from "next";
-import { getCategories } from "@/lib/data/categories";
-import { getProducts } from "@/lib/data/products";
 import { SITE_URL } from "@/lib/constants";
 
-// Newly added/removed products and categories should appear in the
-// sitemap right away rather than waiting for the next build.
-export const revalidate = 0;
-
-export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const [categories, products] = await Promise.all([
-    getCategories(),
-    getProducts(),
-  ]);
-
-  const staticRoutes: MetadataRoute.Sitemap = [
-    { url: `${SITE_URL}/`, changeFrequency: "daily", priority: 1 },
-    { url: `${SITE_URL}/products`, changeFrequency: "daily", priority: 0.9 },
-    { url: `${SITE_URL}/categories`, changeFrequency: "weekly", priority: 0.8 },
-    { url: `${SITE_URL}/about`, changeFrequency: "monthly", priority: 0.5 },
-    { url: `${SITE_URL}/contact`, changeFrequency: "monthly", priority: 0.5 },
+export default function sitemap(): MetadataRoute.Sitemap {
+  const routes = [
+    { url: `${SITE_URL}`, changeFrequency: "daily" as const, priority: 1.0 },
+    { url: `${SITE_URL}/flights`, changeFrequency: "daily" as const, priority: 0.9 },
+    { url: `${SITE_URL}/routes`, changeFrequency: "daily" as const, priority: 0.9 },
+    { url: `${SITE_URL}/services`, changeFrequency: "weekly" as const, priority: 0.8 },
+    { url: `${SITE_URL}/how-it-works`, changeFrequency: "weekly" as const, priority: 0.7 },
+    { url: `${SITE_URL}/contact`, changeFrequency: "weekly" as const, priority: 0.8 },
+    { url: `${SITE_URL}/about`, changeFrequency: "monthly" as const, priority: 0.6 },
   ];
 
-  const categoryRoutes: MetadataRoute.Sitemap = categories.map((category) => ({
-    url: `${SITE_URL}/categories/${category.slug}`,
-    changeFrequency: "weekly",
-    priority: 0.7,
-    lastModified: category.updatedAt,
+  return routes.map((r) => ({
+    ...r,
+    lastModified: new Date(),
   }));
-
-  const productRoutes: MetadataRoute.Sitemap = products.map((product) => ({
-    url: `${SITE_URL}/products/${product.slug}`,
-    changeFrequency: "weekly",
-    priority: 0.8,
-    lastModified: product.updatedAt,
-  }));
-
-  return [...staticRoutes, ...categoryRoutes, ...productRoutes];
 }

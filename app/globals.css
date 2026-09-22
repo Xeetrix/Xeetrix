@@ -8,17 +8,29 @@
   }
 
   body {
-    @apply bg-white text-ink-900 antialiased;
+    @apply bg-white text-slate-900 antialiased;
   }
 
   ::selection {
-    @apply bg-brand-200 text-brand-950;
+    @apply bg-brand-100 text-brand-900;
   }
 }
 
 @layer components {
   .input {
-    @apply w-full rounded-xl border border-ink-200 px-4 py-2.5 text-sm text-ink-900 outline-none transition-colors focus:border-brand-500;
+    @apply w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-all focus:border-brand-700 focus:ring-2 focus:ring-brand-700/10;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center font-medium transition-all duration-150 rounded-xl bg-brand-700 text-white hover:bg-brand-800 shadow-sm active:scale-[0.99];
+  }
+
+  .btn-gold {
+    @apply inline-flex items-center justify-center font-medium transition-all duration-150 rounded-xl bg-gold-600 text-white hover:bg-gold-700 shadow-sm hover:shadow active:scale-[0.99];
+  }
+
+  .btn-outline {
+    @apply inline-flex items-center justify-center font-medium transition-all duration-150 rounded-xl border border-slate-200 bg-white text-slate-800 hover:bg-slate-50 hover:border-slate-300;
   }
 }
 
