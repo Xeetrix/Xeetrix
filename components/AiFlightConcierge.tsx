@@ -11,13 +11,8 @@ import {
   MapPin,
   ExternalLink,
   Phone,
-  RefreshCw,
-  Cpu,
-  Zap,
-  HelpCircle,
-  MessageSquare,
-  ShieldCheck,
-  ChevronDown,
+  RotateCcw,
+  Languages,
 } from "lucide-react";
 import { BrandGlobeIcon } from "@/components/ui/BrandLogo";
 import { CONTACT_PHONE_DISPLAY, CONTACT_PHONE_TEL } from "@/lib/constants";
@@ -36,10 +31,10 @@ interface Message {
 
 const PRESET_PROMPTS = [
   "Baggage allowance for migrant workers to Saudi Arabia (40-46kg)",
+  "ঢাকা থেকে জেদ্দা বিমান টিকেটের বর্তমান ভাড়া ও লাগেজ সুবিধা কত?",
   "What are the transit visa requirements for Dubai DXB airport?",
-  " Hazrat Shahjalal Airport (DAC) Terminal 3 status and airlines",
-  "Student discount & extra luggage options to UK / Europe",
-  "How to verify my flight PNR on official airline websites?",
+  "শাহজালাল বিমানবন্দর (DAC) টার্মিনাল ৩ আপডেট এবং ফ্লাইটের তথ্য",
+  "Student discount & extra luggage options to UK / Europe / USA",
 ];
 
 export function AiFlightConcierge({
@@ -57,14 +52,14 @@ export function AiFlightConcierge({
       id: "welcome",
       role: "assistant",
       content:
-        "Hello! I am your Xeetrix AI Flight Concierge. I can help you with live airline net-fares, 40–46kg migrant worker luggage allowances, transit visa rules, and airport terminal guides using Google Search & Maps intelligence. How can I assist your journey today?",
+        "স্বাগতম! আমি Xeetrix AI Flight Concierge।\nআমি আপনাকে লাইভ এয়ার টিকেট ফেয়ার, রেমিট্যান্স যোদ্ধা স্পেশাল লাগেজ সুবিধা (৪০-৪৬ কেজি), ট্রানজিট ভিসা তথ্য ও এয়ারপোর্ট টার্মিনাল গাইড দিতে পারি।\n\nHello! I am your Xeetrix AI Flight Concierge powered by Gemini 3.8 Flash. How can I assist with your flight booking or travel inquiries today?",
       timestamp: new Date(),
     },
   ]);
 
   const [input, setInput] = useState(initialQuery || "");
   const [isLoading, setIsLoading] = useState(false);
-  const [mode, setMode] = useState<"general" | "search" | "maps" | "complex" | "fast">("general");
+  const [mode, setMode] = useState<"general" | "search" | "maps">("general");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -84,6 +79,18 @@ export function AiFlightConcierge({
       setInput(initialQuery);
     }
   }, [initialQuery]);
+
+  const handleResetChat = () => {
+    setMessages([
+      {
+        id: `welcome_${Date.now()}`,
+        role: "assistant",
+        content:
+          "নতুন কনভারসেশন শুরু হয়েছে! আপনার গন্তব্য, বাজেট বা ফ্লাইট সংক্রান্ত যেকোনো প্রশ্ন বাংলায় বা ইংরেজিতে লিখুন।\n\nNew conversation started. Ask me any flight query in English or Bengali!",
+        timestamp: new Date(),
+      },
+    ]);
+  };
 
   const handleSend = async (queryText?: string) => {
     const textToSend = (queryText || input).trim();
@@ -136,7 +143,7 @@ export function AiFlightConcierge({
           id: `err_${Date.now()}`,
           role: "assistant",
           content:
-            "A temporary connection error occurred. Our 24/7 Ticketing Desk is active — you can call us directly at +880 965 803 6631.",
+            "সাময়িক নেটওয়ার্ক সমস্যা হয়েছে। আমাদের ২৪/৭ সরাসরি হেল্পলাইনে কল করুন: +880 965 803 6631। (A temporary connection error occurred. Our 24/7 ticketing desk is ready to help!)",
           timestamp: new Date(),
         },
       ]);
@@ -166,7 +173,7 @@ export function AiFlightConcierge({
             animate={{ y: 0, opacity: 1, scale: 1 }}
             exit={{ y: 40, opacity: 0, scale: 0.95 }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            className="w-full sm:w-[480px] h-[92dvh] sm:h-[680px] max-h-[95dvh] sm:max-h-[750px] flex flex-col bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 overflow-hidden"
+            className="w-full sm:w-[500px] h-[92dvh] sm:h-[680px] max-h-[95dvh] sm:max-h-[750px] flex flex-col bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 overflow-hidden"
           >
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-3.5 bg-slate-950 text-white border-b border-slate-800">
@@ -177,43 +184,58 @@ export function AiFlightConcierge({
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="font-display font-bold text-sm text-white">
-                      Xeetrix AI Concierge
+                      Xeetrix AI Flight Concierge
                     </span>
                     <span className="flex h-2 w-2 relative">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                       <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                     </span>
                   </div>
-                  <p className="text-[11px] text-slate-400">
-                    Live Flight Intel • Search &amp; Maps Grounded
+                  <p className="text-[11px] text-slate-400 flex items-center gap-1">
+                    <span>Gemini 3.8 Flash</span>
+                    <span>•</span>
+                    <Languages className="h-3 w-3 inline text-emerald-400" />
+                    <span>বাংলা ও English</span>
                   </p>
                 </div>
               </div>
 
-              <button
-                onClick={onClose}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-                aria-label="Close AI Concierge"
-              >
-                <X className="h-5 w-5" />
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleResetChat}
+                  title="নতুন চ্যাট শুরু করুন (Reset Chat)"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                  aria-label="Reset Chat"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={onClose}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                  aria-label="Close AI Concierge"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
             </div>
 
             {/* AI Capability Mode Switcher */}
             <div className="flex items-center gap-1.5 px-4 py-2 bg-slate-50 border-b border-slate-200 overflow-x-auto text-[11px] scrollbar-none">
               <span className="font-semibold text-slate-500 uppercase tracking-wider text-[9px] mr-1 shrink-0">
-                Mode:
+                Intel Mode:
               </span>
               <button
                 type="button"
                 onClick={() => setMode("general")}
-                className={`px-2.5 py-1 rounded-full font-medium shrink-0 transition-all ${
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-full font-medium shrink-0 transition-all ${
                   mode === "general"
                     ? "bg-[#0B5D3A] text-white shadow-xs"
                     : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
                 }`}
               >
-                Auto Grounded
+                <Sparkles className="h-3 w-3" />
+                Smart Assist
               </button>
               <button
                 type="button"
@@ -225,7 +247,7 @@ export function AiFlightConcierge({
                 }`}
               >
                 <Globe2 className="h-3 w-3" />
-                Google Search
+                Google Search Live
               </button>
               <button
                 type="button"
@@ -237,33 +259,7 @@ export function AiFlightConcierge({
                 }`}
               >
                 <MapPin className="h-3 w-3" />
-                Google Maps
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode("complex")}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-full font-medium shrink-0 transition-all ${
-                  mode === "complex"
-                    ? "bg-[#0B5D3A] text-white shadow-xs"
-                    : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
-                }`}
-                title="Uses Gemini 3.1 Pro Preview for complex itineraries"
-              >
-                <Cpu className="h-3 w-3" />
-                Pro Analysis
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode("fast")}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-full font-medium shrink-0 transition-all ${
-                  mode === "fast"
-                    ? "bg-[#0B5D3A] text-white shadow-xs"
-                    : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
-                }`}
-                title="Uses Gemini 3.1 Flash-Lite for fast speed"
-              >
-                <Zap className="h-3 w-3" />
-                Fast
+                Airport &amp; Maps
               </button>
             </div>
 
@@ -277,7 +273,7 @@ export function AiFlightConcierge({
                   }`}
                 >
                   <div
-                    className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                    className={`max-w-[88%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
                       m.role === "user"
                         ? "bg-[#0B5D3A] text-white rounded-br-xs shadow-xs"
                         : "bg-slate-100 text-slate-800 rounded-bl-xs border border-slate-200/80"
@@ -310,23 +306,21 @@ export function AiFlightConcierge({
                     )}
 
                     {/* Metadata tags */}
-                    {m.modelUsed && (
-                      <div className="mt-2 flex items-center justify-between text-[10px] text-slate-400">
-                        <span>
-                          {m.modelUsed.includes("pro")
-                            ? "Gemini Pro"
-                            : m.modelUsed.includes("lite")
-                            ? "Flash-Lite"
-                            : "Gemini 3.5 Flash"}
-                        </span>
-                        <span>
-                          {m.timestamp.toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </span>
-                      </div>
-                    )}
+                    <div className="mt-2 flex items-center justify-between text-[10px] text-slate-400">
+                      <span>
+                        {m.modelUsed?.includes("3.8")
+                          ? "Gemini 3.8 Flash"
+                          : m.role === "user"
+                          ? "You"
+                          : "AI Assistant"}
+                      </span>
+                      <span>
+                        {m.timestamp.toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </span>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -336,7 +330,7 @@ export function AiFlightConcierge({
                   <div className="rounded-2xl rounded-bl-xs bg-slate-100 border border-slate-200 px-4 py-3 text-slate-600 flex items-center gap-2">
                     <Loader2 className="h-4 w-4 animate-spin text-[#0B5D3A]" />
                     <span className="text-xs">
-                      Checking GDS inventory &amp; grounding data...
+                      এয়ারলাইন ডাটা এবং লাইভ তথ্য যাচাই করা হচ্ছে...
                     </span>
                   </div>
                 </div>
@@ -349,7 +343,7 @@ export function AiFlightConcierge({
             {messages.length < 3 && (
               <div className="px-4 py-2 border-t border-slate-100 bg-slate-50/50">
                 <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1.5">
-                  Frequently Asked:
+                  দ্রুত প্রশ্ন নির্বাচন করুন / Frequent Inquiries:
                 </span>
                 <div className="flex flex-wrap gap-1.5">
                   {PRESET_PROMPTS.slice(0, 3).map((prompt, i) => (
@@ -357,7 +351,7 @@ export function AiFlightConcierge({
                       key={i}
                       type="button"
                       onClick={() => handleSend(prompt)}
-                      className="text-left rounded-lg bg-white px-2.5 py-1 text-[11px] text-slate-700 border border-slate-200 hover:border-brand-500 hover:text-brand-700 transition-colors"
+                      className="text-left rounded-lg bg-white px-2.5 py-1 text-[11px] text-slate-700 border border-slate-200 hover:border-[#0B5D3A] hover:text-[#0B5D3A] transition-colors"
                     >
                       {prompt}
                     </button>
@@ -375,7 +369,7 @@ export function AiFlightConcierge({
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="Ask about flights, worker baggage, airport terminals..."
+                  placeholder="প্রশ্ন লিখুন (যেমন: ঢাকা থেকে দুবাই টিকেটের ভাড়া কত?)..."
                   disabled={isLoading}
                   className="flex-1 rounded-xl bg-slate-100 px-3.5 py-2.5 text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0B5D3A] focus:bg-white transition-all disabled:opacity-50"
                 />
@@ -396,7 +390,7 @@ export function AiFlightConcierge({
 
               {/* Support footnote */}
               <div className="flex items-center justify-between mt-2 pt-1.5 text-[10px] text-slate-400 px-1">
-                <span>Direct Ticketing Hotline:</span>
+                <span>২৪/৭ সরাসরি বুকিং হটলাইন:</span>
                 <a
                   href={CONTACT_PHONE_TEL}
                   className="font-bold text-[#0B5D3A] hover:underline flex items-center gap-1"
@@ -432,7 +426,7 @@ export function AiConciergeFloatingButton({
       </div>
       <div className="flex flex-col text-left">
         <span className="text-xs font-bold leading-none">AI Flight Concierge</span>
-        <span className="text-[10px] text-emerald-200 font-medium">Search &amp; Maps Intel</span>
+        <span className="text-[10px] text-emerald-200 font-medium">বাংলা ও English • Gemini 3.8</span>
       </div>
     </button>
   );

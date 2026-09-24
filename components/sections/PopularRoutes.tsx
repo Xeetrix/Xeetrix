@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Plane, Clock, Luggage, ArrowRight, Check, Tag } from "lucide-react";
+import { Plane, Clock, Luggage, ArrowRight, Check, Tag, Sparkles } from "lucide-react";
 import { Container } from "@/components/ui/Container";
 import { SectionHeader } from "@/components/ui/SectionHeader";
 import { POPULAR_ROUTES, formatCurrency } from "@/lib/constants";
 import type { PopularRoute } from "@/lib/constants";
+import { useAiConcierge } from "@/lib/ai-concierge-context";
 
 interface PopularRoutesProps {
   onSelectRoute?: (route: PopularRoute) => void;
@@ -20,6 +21,7 @@ export function PopularRoutes({
   isEmbedded = false,
 }: PopularRoutesProps) {
   const [activeCategory, setActiveCategory] = useState<string>("All");
+  const { openConcierge } = useAiConcierge();
 
   const categories = ["All", "Middle East", "Southeast Asia", "Europe & UK"];
 
@@ -31,72 +33,48 @@ export function PopularRoutes({
   const content = (
     <>
       {!hideHeader && (
-        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-8 sm:mb-10">
+        <div className="mb-10 text-center">
           <SectionHeader
-            eyebrow="Top International Connections"
-            title="Popular Routes & Fare Highlights"
-            description="High-frequency routes from Dhaka (DAC) and Chittagong (CGP) with guaranteed seat quotas, flexible cancellation policies, and competitive net pricing."
+            eyebrow="Popular Destinations"
+            title="Featured International Routes & Net-Fares"
+            description="Explore our most-booked routes with confirmed airline seat quotas, transparent pricing, and special baggage allowances."
           />
-
-          {/* Category Tabs */}
-          <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-xl bg-slate-100 border border-slate-200/80 self-start lg:self-end">
-            {categories.map((cat) => (
-              <button
-                key={cat}
-                type="button"
-                onClick={() => setActiveCategory(cat)}
-                className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all min-h-[34px] ${
-                  activeCategory === cat
-                    ? "bg-brand-700 text-white shadow-xs"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
         </div>
       )}
 
-      {hideHeader && (
-        <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-xl bg-slate-100 border border-slate-200/80 mb-6 self-start w-fit">
-          {categories.map((cat) => (
-            <button
-              key={cat}
-              type="button"
-              onClick={() => setActiveCategory(cat)}
-              className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all min-h-[34px] ${
-                activeCategory === cat
-                  ? "bg-brand-700 text-white shadow-xs"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              {cat}
-            </button>
-          ))}
-        </div>
-      )}
+      {/* Filter Category Tabs */}
+      <div className="flex flex-wrap items-center justify-center gap-2 mb-8 sm:mb-10">
+        {categories.map((cat) => (
+          <button
+            key={cat}
+            onClick={() => setActiveCategory(cat)}
+            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
+              activeCategory === cat
+                ? "bg-[#0B5D3A] text-white shadow-xs"
+                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+            }`}
+          >
+            {cat}
+          </button>
+        ))}
+      </div>
 
       {/* Route Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {filteredRoutes.map((route) => (
           <div
             key={route.id}
-            className="group relative flex flex-col justify-between rounded-2xl bg-white border border-slate-200/90 p-5 sm:p-6 shadow-card hover:shadow-elevated transition-all duration-200 hover:-translate-y-1"
+            className="group relative flex flex-col justify-between rounded-2xl bg-white p-5 sm:p-6 border border-slate-200 shadow-card hover:shadow-elevated transition-all duration-300 hover:-translate-y-1"
           >
+            {/* Top row: badge & category */}
             <div>
-              {/* Header Tag & Flight type */}
               <div className="flex items-center justify-between gap-2 mb-3">
-                {route.featuredTag ? (
-                  <span className="inline-flex items-center gap-1 rounded-md bg-gold-50 border border-gold-200 px-2 py-0.5 text-[11px] font-bold text-gold-800">
-                    <Tag className="h-3 w-3" />
-                    {route.featuredTag}
-                  </span>
-                ) : (
-                  <div />
-                )}
-                <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
-                  {route.flightType}
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-brand-800">
+                  <Tag className="h-3 w-3" />
+                  {route.featuredTag}
+                </span>
+                <span className="text-[11px] font-medium text-slate-400">
+                  {route.category}
                 </span>
               </div>
 
@@ -150,7 +128,7 @@ export function PopularRoutes({
             </div>
 
             {/* Price & Booking Trigger */}
-            <div className="pt-3.5 border-t border-slate-100 flex items-center justify-between gap-3">
+            <div className="pt-3.5 border-t border-slate-100 flex items-center justify-between gap-2">
               <div>
                 <span className="text-[10px] text-slate-400 block uppercase font-medium">From</span>
                 <span className="font-display text-lg sm:text-xl font-extrabold text-brand-700">
@@ -158,24 +136,39 @@ export function PopularRoutes({
                 </span>
               </div>
 
-              {onSelectRoute ? (
+              <div className="flex items-center gap-1.5">
                 <button
                   type="button"
-                  onClick={() => onSelectRoute(route)}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-gold-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-gold-700 transition-colors min-h-[36px]"
+                  onClick={() =>
+                    openConcierge(
+                      `${route.fromCity} (${route.fromCode}) থেকে ${route.toCity} (${route.toCode}) ফ্লাইটের লাইভ ভাড়া, লাগেজ নিয়ম ও টিকিট বুকিং পদ্ধতি সম্পর্কে বিস্তারিত বলুন`
+                    )
+                  }
+                  title="Ask AI Concierge about this route"
+                  className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-[#0B5D3A] border border-emerald-200 hover:bg-emerald-100 transition-colors"
                 >
-                  <span>Book Route</span>
-                  <ArrowRight className="h-3.5 w-3.5" />
+                  <Sparkles className="h-4 w-4" />
                 </button>
-              ) : (
-                <Link
-                  href={`/contact?from=${route.fromCode}&to=${route.toCode}&price=${route.startingPrice}#quote`}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-gold-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-gold-700 transition-colors min-h-[36px]"
-                >
-                  <span>Book Route</span>
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </Link>
-              )}
+
+                {onSelectRoute ? (
+                  <button
+                    type="button"
+                    onClick={() => onSelectRoute(route)}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-gold-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-gold-700 transition-colors min-h-[36px]"
+                  >
+                    <span>Book Route</span>
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </button>
+                ) : (
+                  <Link
+                    href={`/contact?from=${route.fromCode}&to=${route.toCode}&price=${route.startingPrice}#quote`}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-gold-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-gold-700 transition-colors min-h-[36px]"
+                  >
+                    <span>Book Route</span>
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
+                )}
+              </div>
             </div>
           </div>
         ))}
@@ -189,13 +182,27 @@ export function PopularRoutes({
             We issue tickets for 250+ global airports with live GDS fares on all major airlines.
           </p>
         </div>
-        <Link
-          href="/contact#quote"
-          className="shrink-0 inline-flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-xs sm:text-sm font-bold text-slate-900 hover:bg-slate-100 transition-colors"
-        >
-          <span>Request Custom Flight Quote</span>
-          <ArrowRight className="h-4 w-4 text-brand-700" />
-        </Link>
+        <div className="flex flex-wrap items-center gap-3 shrink-0">
+          <button
+            type="button"
+            onClick={() =>
+              openConcierge(
+                "I want to check ticket prices and airline options for a custom international flight route"
+              )
+            }
+            className="inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-xs sm:text-sm font-bold text-white hover:bg-emerald-800 transition-colors"
+          >
+            <Sparkles className="h-4 w-4 text-emerald-200" />
+            <span>Ask AI Flight Concierge</span>
+          </button>
+          <Link
+            href="/contact#quote"
+            className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-xs sm:text-sm font-bold text-slate-900 hover:bg-slate-100 transition-colors"
+          >
+            <span>Request Custom Quote</span>
+            <ArrowRight className="h-4 w-4 text-brand-700" />
+          </Link>
+        </div>
       </div>
     </>
   );
