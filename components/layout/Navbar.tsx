@@ -73,14 +73,14 @@ export function Navbar({
       </div>
 
       {/* Main navigation */}
-      <Container className="flex h-20 items-center justify-between">
+      <Container className="flex h-16 sm:h-20 items-center justify-between">
         {/* Brand Logo */}
-        <Link href="/" className="group inline-flex items-center" aria-label="Xeetrix Home">
+        <Link href="/" className="group inline-flex items-center shrink-0" aria-label="Xeetrix Home">
           <BrandLogo size="md" variant="badge" />
         </Link>
 
         {/* Desktop Nav Links */}
-        <nav className="hidden lg:flex items-center gap-7">
+        <nav className="hidden lg:flex items-center gap-6 xl:gap-7">
           {NAV_LINKS.map((link) => {
             const active =
               pathname === link.href ||
@@ -104,7 +104,7 @@ export function Navbar({
         </nav>
 
         {/* Desktop Header CTAs */}
-        <div className="hidden sm:flex items-center gap-2.5">
+        <div className="hidden lg:flex items-center gap-2.5">
           {/* AI Concierge quick button */}
           {onOpenAiConcierge && (
             <button

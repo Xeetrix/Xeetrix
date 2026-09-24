@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { AuthProvider } from "@/lib/auth-context";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
+import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
 import {
   AiFlightConcierge,
   AiConciergeFloatingButton,
@@ -16,7 +17,7 @@ export function SiteClientWrapper({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthProvider>
-      <div className="flex min-h-screen flex-col">
+      <div className="flex min-h-screen flex-col pb-16 lg:pb-0">
         <Navbar
           onOpenAiConcierge={() => setIsAiOpen(true)}
           onOpenAuth={() => setIsAuthOpen(true)}
@@ -30,8 +31,13 @@ export function SiteClientWrapper({ children }: { children: React.ReactNode }) {
           onClose={() => setIsAiOpen(false)}
         />
 
-        {/* Global Floating AI Trigger Button */}
+        {/* Global Floating AI Trigger Button (Desktop) */}
         <AiConciergeFloatingButton onClick={() => setIsAiOpen(true)} />
+
+        {/* Global Mobile Sticky Bottom Nav (Mobile/Tablet) */}
+        <MobileBottomNav
+          onOpenAiConcierge={() => setIsAiOpen(true)}
+        />
 
         {/* Global Auth & Passenger Profile Modal */}
         <AuthModal

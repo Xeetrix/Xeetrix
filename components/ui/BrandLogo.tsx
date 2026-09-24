@@ -124,10 +124,10 @@ export function BrandLogo({
       )}
 
       {showText && (
-        <div className="flex flex-col leading-tight">
+        <div className="flex flex-col leading-tight min-w-0">
           <span
             className={cn(
-              "font-display font-black tracking-tight",
+              "font-display font-black tracking-tight truncate",
               currentSize.text,
               inverted ? "text-white" : "text-slate-950"
             )}
@@ -137,7 +137,7 @@ export function BrandLogo({
           {subtext && (
             <span
               className={cn(
-                "uppercase font-semibold tracking-wider -mt-0.5",
+                "uppercase font-semibold tracking-wider -mt-0.5 truncate hidden sm:inline-block",
                 currentSize.sub,
                 inverted ? "text-brand-300" : "text-brand-700"
               )}

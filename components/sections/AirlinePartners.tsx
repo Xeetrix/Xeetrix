@@ -1,30 +1,64 @@
-import { Plane } from "lucide-react";
+import { Plane, CheckCircle2, ShieldCheck } from "lucide-react";
 import { Container } from "@/components/ui/Container";
-import { PARTNER_AIRLINES } from "@/lib/constants";
+
+const PARTNER_DATA = [
+  { name: "Biman Bangladesh", code: "BG", hub: "Dhaka (DAC)", flag: "🇧🇩" },
+  { name: "Saudia Airlines", code: "SV", hub: "Jeddah (JED) / Riyadh", flag: "🇸🇦" },
+  { name: "Emirates", code: "EK", hub: "Dubai (DXB)", flag: "🇦🇪" },
+  { name: "Qatar Airways", code: "QR", hub: "Doha (DOH)", flag: "🇶🇦" },
+  { name: "Singapore Airlines", code: "SQ", hub: "Singapore (SIN)", flag: "🇸🇬" },
+  { name: "flydubai", code: "FZ", hub: "Dubai (DXB)", flag: "🇦🇪" },
+  { name: "Air Arabia", code: "G9", hub: "Sharjah (SHJ)", flag: "🇦🇪" },
+  { name: "US-Bangla", code: "BS", hub: "Dhaka (DAC)", flag: "🇧🇩" },
+  { name: "Malaysia Airlines", code: "MH", hub: "Kuala Lumpur (KUL)", flag: "🇲🇾" },
+  { name: "Oman Air", code: "WY", hub: "Muscat (MCT)", flag: "🇴🇲" },
+  { name: "Kuwait Airways", code: "KU", hub: "Kuwait (KWI)", flag: "🇰🇼" },
+  { name: "Gulf Air", code: "GF", hub: "Bahrain (BAH)", flag: "🇧🇭" },
+];
 
 export function AirlinePartners() {
   return (
-    <section className="py-14 bg-white border-b border-slate-200/80">
+    <section className="py-12 sm:py-16 bg-white border-b border-slate-200/80">
       <Container>
-        <div className="text-center mb-8">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-            Official Global Airline Partnerships &amp; GDS Inventories
-          </span>
-          <p className="text-sm text-slate-600 mt-1">
-            Direct ticketing and wholesale fares on over 120+ scheduled international airlines
-          </p>
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
+          <div>
+            <span className="text-xs font-bold uppercase tracking-wider text-brand-700 bg-brand-50 px-3 py-1 rounded-full border border-brand-200 inline-block mb-2">
+              Official Airline Partnerships
+            </span>
+            <h2 className="font-display text-xl sm:text-2xl font-bold text-slate-900">
+              Direct GDS Inventories on 120+ Scheduled Airlines
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-600 mt-1 max-w-xl">
+              Authentic airline booking system net-fares with immediate PNR generation and official web check-in.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 shrink-0">
+            <ShieldCheck className="h-4 w-4 text-brand-700" />
+            <span>IATA Direct Wholesale Fares</span>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-4">
-          {PARTNER_AIRLINES.map((airline) => (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4">
+          {PARTNER_DATA.map((airline) => (
             <div
-              key={airline}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50/70 hover:bg-white hover:border-brand-300 hover:shadow-card transition-all text-xs sm:text-sm font-semibold text-slate-800"
+              key={airline.name}
+              className="group flex flex-col justify-between p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 bg-slate-50/60 hover:bg-white hover:border-brand-500 hover:shadow-card transition-all"
             >
-              <div className="flex h-6 w-6 items-center justify-center rounded-md bg-brand-700/10 text-brand-700">
-                <Plane className="h-3.5 w-3.5" />
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-lg">{airline.flag}</span>
+                <span className="font-mono text-[11px] font-bold text-brand-700 bg-brand-50 border border-brand-200 px-1.5 py-0.5 rounded">
+                  {airline.code}
+                </span>
               </div>
-              <span>{airline}</span>
+              <div>
+                <h4 className="text-xs sm:text-sm font-bold text-slate-900 group-hover:text-brand-700 transition-colors line-clamp-1">
+                  {airline.name}
+                </h4>
+                <p className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 truncate">
+                  {airline.hub}
+                </p>
+              </div>
             </div>
           ))}
         </div>

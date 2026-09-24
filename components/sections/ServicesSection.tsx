@@ -26,9 +26,9 @@ const ICON_MAP = {
 
 export function ServicesSection() {
   return (
-    <section id="services" className="py-20 bg-slate-50 border-t border-b border-slate-200/80">
+    <section id="services" className="py-16 sm:py-20 bg-slate-50 border-t border-b border-slate-200/80">
       <Container>
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-12">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-10 sm:mb-12">
           <SectionHeader
             eyebrow="Specialized Travel Solutions"
             title="Comprehensive Air Ticketing & Fares"
@@ -37,7 +37,7 @@ export function ServicesSection() {
           <div className="shrink-0">
             <a
               href={CONTACT_PHONE_TEL}
-              className="inline-flex items-center gap-2 text-sm font-bold text-brand-700 hover:text-brand-800 bg-white border border-slate-200 px-4 py-2.5 rounded-xl shadow-card"
+              className="inline-flex items-center gap-2 text-xs sm:text-sm font-bold text-brand-700 hover:text-brand-800 bg-white border border-slate-200 px-4 py-2.5 rounded-xl shadow-card"
             >
               <Phone className="h-4 w-4 text-gold-600" />
               Ticketing Desk: {CONTACT_PHONE_DISPLAY}
@@ -45,7 +45,7 @@ export function ServicesSection() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
           {CORE_SERVICES.map((service, idx) => {
             const IconComponent =
               ICON_MAP[service.icon as keyof typeof ICON_MAP] || Plane;
@@ -53,7 +53,7 @@ export function ServicesSection() {
             return (
               <div
                 key={service.id}
-                className="group relative flex flex-col justify-between rounded-2xl bg-white p-7 border border-slate-200/90 shadow-card hover:shadow-elevated transition-all duration-200 hover:-translate-y-1"
+                className="group relative flex flex-col justify-between rounded-2xl bg-white p-5 sm:p-7 border border-slate-200/90 shadow-card hover:shadow-elevated transition-all duration-200 hover:-translate-y-1"
               >
                 <div>
                   <div className="flex items-center justify-between mb-5">

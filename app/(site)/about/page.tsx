@@ -53,40 +53,40 @@ export default function AboutPage() {
             <span className="text-xs font-bold uppercase tracking-wider text-brand-700 bg-brand-50 px-3 py-1 rounded-full border border-brand-200">
               About {SITE_NAME}
             </span>
-            <h1 className="mt-3 font-display text-3xl font-extrabold tracking-tight text-slate-900 sm:text-5xl">
+            <h1 className="mt-3 font-display text-2xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-slate-900">
               {SITE_TAGLINE}
             </h1>
-            <p className="mt-4 text-base sm:text-lg text-slate-600 leading-relaxed">
+            <p className="mt-4 text-sm sm:text-lg text-slate-600 leading-relaxed">
               Xeetrix is an authorized air ticketing agency committed to providing
               travelers, migrant workers, students, and corporate clients with seamless,
               transparent, and dependable flight reservation services worldwide.
             </p>
 
-            <p className="mt-3 flex items-start gap-2 text-sm text-slate-500">
+            <p className="mt-3 flex items-start gap-2 text-xs sm:text-sm text-slate-500">
               <MapPin className="mt-0.5 h-4 w-4 text-brand-700 shrink-0" />
               Headquartered at {CONTACT_ADDRESS}
             </p>
           </div>
 
-          <div className="shrink-0 rounded-3xl bg-white p-6 border border-slate-200 shadow-card flex flex-col items-center text-center">
+          <div className="shrink-0 rounded-3xl bg-white p-5 sm:p-6 border border-slate-200 shadow-card flex flex-col items-center text-center">
             <BrandLogo size="lg" variant="badge" />
-            <div className="mt-4 text-xs font-semibold text-slate-500">
+            <div className="mt-3 text-xs font-semibold text-slate-500">
               Official Agency Brandmark
             </div>
           </div>
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-6">
           {TRUST_STATS.map((s) => (
             <div
               key={s.label}
-              className="rounded-2xl bg-white p-6 border border-slate-200 shadow-card text-center"
+              className="rounded-2xl bg-white p-4 sm:p-6 border border-slate-200 shadow-card text-center"
             >
-              <div className="font-display text-2xl sm:text-3xl font-bold text-brand-700">
+              <div className="font-display text-xl sm:text-2xl lg:text-3xl font-bold text-brand-700">
                 {s.value}
               </div>
-              <div className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">
+              <div className="text-[11px] sm:text-xs text-slate-500 mt-1 font-medium">
                 {s.label}
               </div>
             </div>

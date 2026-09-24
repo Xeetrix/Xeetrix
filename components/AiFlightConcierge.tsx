@@ -166,7 +166,7 @@ export function AiFlightConcierge({
             animate={{ y: 0, opacity: 1, scale: 1 }}
             exit={{ y: 40, opacity: 0, scale: 0.95 }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            className="w-full sm:w-[480px] h-[92vh] sm:h-[680px] max-h-[750px] flex flex-col bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 overflow-hidden"
+            className="w-full sm:w-[480px] h-[92dvh] sm:h-[680px] max-h-[95dvh] sm:max-h-[750px] flex flex-col bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 overflow-hidden"
           >
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-3.5 bg-slate-950 text-white border-b border-slate-800">
@@ -424,7 +424,7 @@ export function AiConciergeFloatingButton({
   return (
     <button
       onClick={onClick}
-      className="fixed bottom-5 right-5 z-40 flex items-center gap-2.5 rounded-full bg-[#0B5D3A] px-4 py-3 text-white shadow-elevated hover:bg-[#094d30] transition-all hover:scale-105 active:scale-95 group border border-emerald-400/20"
+      className="fixed bottom-6 right-6 z-30 hidden lg:flex items-center gap-2.5 rounded-full bg-[#0B5D3A] px-4 py-3 text-white shadow-elevated hover:bg-[#094d30] transition-all hover:scale-105 active:scale-95 group border border-emerald-400/20"
       aria-label="Open Xeetrix AI Flight Concierge"
     >
       <div className="flex h-7 w-7 items-center justify-center rounded-full bg-white/15 p-1">

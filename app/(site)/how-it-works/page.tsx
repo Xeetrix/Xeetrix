@@ -48,16 +48,16 @@ export default function HowItWorksPage() {
           <span className="text-xs font-bold uppercase tracking-wider text-brand-700 bg-brand-50 px-3 py-1 rounded-full border border-brand-200">
             Booking Guide &amp; Process
           </span>
-          <h1 className="mt-3 font-display text-3xl font-extrabold tracking-tight text-slate-900 sm:text-5xl">
+          <h1 className="mt-3 font-display text-2xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-slate-900">
             Reliable, Transparent Air Ticketing in 3 Steps
           </h1>
-          <p className="mt-3 text-base text-slate-600 leading-relaxed">
+          <p className="mt-3 text-sm sm:text-base text-slate-600 leading-relaxed">
             From initial fare comparison to ticket delivery and airport check-in, we keep the
             entire process transparent, fast, and verified.
           </p>
         </div>
 
-        <HowItWorks />
+        <HowItWorks isEmbedded />
 
         {/* Payment Methods Section */}
         <div className="rounded-3xl bg-white p-8 sm:p-10 border border-slate-200 shadow-card">

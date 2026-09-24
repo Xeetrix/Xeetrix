@@ -4,14 +4,12 @@ import React, { useEffect, useState } from "react";
 import Image from "next/image";
 import { Container } from "@/components/ui/Container";
 import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
-import { BrandLogo } from "@/components/ui/BrandLogo";
 import { useAuth } from "@/lib/auth-context";
 import { db } from "@/lib/firebase";
 import {
   collection,
   query,
   where,
-  orderBy,
   onSnapshot,
 } from "firebase/firestore";
 import {
@@ -23,11 +21,7 @@ import {
   AlertCircle,
   User,
   ShieldCheck,
-  Calendar,
-  Users,
-  Luggage,
   Phone,
-  FileText,
   ArrowRight,
   Sparkles,
 } from "lucide-react";
@@ -98,12 +92,11 @@ export default function DashboardPage() {
     }
   }, [user]);
 
-  const handlePnrSearch = (e: React.FormEvent) => {
-    e.preventDefault();
+  const runSearch = (queryStrRaw: string) => {
     setSearchError("");
     setSearchedRecord(null);
 
-    const queryStr = pnrSearch.trim().toUpperCase();
+    const queryStr = queryStrRaw.trim().toUpperCase();
     if (!queryStr) return;
 
     // Check user's own list first
@@ -118,11 +111,11 @@ export default function DashboardPage() {
       return;
     }
 
-    // Mock/Simulate verified sample PNR for demonstration
-    if (queryStr.startsWith("XTX") || queryStr.length === 6) {
+    // Verified demo sample PNR
+    if (queryStr === "BG784K" || queryStr.startsWith("XTX") || queryStr.length === 6) {
       setSearchedRecord({
         id: "simulated",
-        referenceCode: queryStr,
+        referenceCode: queryStr.startsWith("XTX") ? queryStr : "XTX-849201",
         origin: "Dhaka Hazrat Shahjalal (DAC)",
         destination: "Jeddah King Abdulaziz (JED)",
         tripType: "oneway",
@@ -134,18 +127,23 @@ export default function DashboardPage() {
         passengerCategory: "Migrant Worker (46kg baggage)",
         preferredAirline: "Biman Bangladesh Airlines (BG-0335)",
         status: "Ticket Confirmed & Issued",
-        pnr: queryStr.length === 6 ? queryStr : "BG784K",
+        pnr: queryStr.length === 6 && !queryStr.startsWith("XTX") ? queryStr : "BG784K",
       });
     } else {
       setSearchError(
-        "No matching booking or PNR found. Please check your reference code (e.g. XTX-123456 or 6-character airline PNR) or call our 24/7 desk."
+        "No matching booking found for this code. Try demo code BG784K or check your reference format."
       );
     }
   };
 
+  const handlePnrSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    runSearch(pnrSearch);
+  };
+
   return (
-    <div className="min-h-screen bg-slate-50 py-10">
-      <Container className="space-y-10">
+    <div className="min-h-screen bg-slate-50 py-8 sm:py-10">
+      <Container className="space-y-8 sm:space-y-10">
         <Breadcrumbs
           items={[{ label: "Home", href: "/" }, { label: "Passenger Portal" }]}
         />
@@ -157,36 +155,36 @@ export default function DashboardPage() {
               <ShieldCheck className="h-3.5 w-3.5 text-[#0B5D3A]" />
               Xeetrix Passenger Portal &amp; PNR Tracker
             </div>
-            <h1 className="font-display text-3xl font-extrabold text-slate-900 sm:text-4xl">
+            <h1 className="font-display text-2xl sm:text-3xl lg:text-4xl font-extrabold text-slate-900">
               My Bookings &amp; Inquiries
             </h1>
-            <p className="mt-1 text-sm text-slate-600">
+            <p className="mt-1 text-xs sm:text-sm text-slate-600">
               Track quotation status, download verified e-tickets, and manage date change requests.
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 self-start md:self-auto">
             {user ? (
-              <div className="flex items-center gap-3 rounded-2xl bg-white p-2.5 border border-slate-200 shadow-xs">
+              <div className="flex items-center gap-3 rounded-2xl bg-white p-2 sm:p-2.5 border border-slate-200 shadow-xs">
                 {user.photoURL ? (
                   <Image
                     src={user.photoURL}
                     alt={user.displayName || "Avatar"}
                     width={40}
                     height={40}
-                    className="h-10 w-10 rounded-xl object-cover"
+                    className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl object-cover"
                     referrerPolicy="no-referrer"
                   />
                 ) : (
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-brand-700">
+                  <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl bg-emerald-50 text-brand-700">
                     <User className="h-5 w-5" />
                   </div>
                 )}
-                <div className="text-left pr-2">
-                  <span className="block text-xs font-bold text-slate-900 leading-tight">
+                <div className="text-left pr-2 min-w-0">
+                  <span className="block text-xs font-bold text-slate-900 leading-tight truncate max-w-[120px]">
                     {user.displayName || "Passenger"}
                   </span>
-                  <span className="block text-[11px] text-slate-500 truncate max-w-[150px]">
+                  <span className="block text-[10px] sm:text-[11px] text-slate-500 truncate max-w-[130px]">
                     {user.email}
                   </span>
                 </div>
@@ -195,7 +193,7 @@ export default function DashboardPage() {
               <button
                 type="button"
                 onClick={() => setAuthModalOpen(true)}
-                className="inline-flex items-center gap-2 rounded-xl bg-[#0B5D3A] px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-[#084A2E] transition-all"
+                className="inline-flex items-center gap-2 rounded-xl bg-[#0B5D3A] px-4 py-2.5 text-xs sm:text-sm font-bold text-white shadow-xs hover:bg-[#084A2E] transition-all min-h-[40px]"
               >
                 <User className="h-4 w-4" />
                 Sign In with Google
@@ -205,34 +203,60 @@ export default function DashboardPage() {
         </div>
 
         {/* PNR Quick Verification Card */}
-        <div className="rounded-3xl bg-slate-950 p-6 sm:p-8 text-white border border-slate-800 shadow-xl">
+        <div className="rounded-3xl bg-slate-950 p-5 sm:p-8 text-white border border-slate-800 shadow-xl">
           <div className="max-w-2xl">
             <span className="text-xs font-bold uppercase tracking-wider text-brand-400">
               Live GDS Airline Verification
             </span>
-            <h2 className="mt-2 font-display text-2xl font-bold text-white">
+            <h2 className="mt-1.5 font-display text-xl sm:text-2xl font-bold text-white">
               Instant PNR / Reference Code Lookup
             </h2>
-            <p className="mt-2 text-sm text-slate-300 leading-relaxed">
+            <p className="mt-2 text-xs sm:text-sm text-slate-300 leading-relaxed">
               Enter your Xeetrix quotation reference code (e.g. <code>XTX-123456</code>) or 6-character airline PNR to verify real-time issuance status.
             </p>
 
-            <form onSubmit={handlePnrSearch} className="mt-5 flex flex-col sm:flex-row gap-2">
+            <form onSubmit={handlePnrSearch} className="mt-5 flex flex-col sm:flex-row gap-2.5">
               <input
                 type="text"
                 value={pnrSearch}
                 onChange={(e) => setPnrSearch(e.target.value)}
-                placeholder="Enter Reference (e.g. XTX-928472 or BG784K)"
-                className="flex-1 rounded-xl bg-slate-900 border border-slate-700 px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono uppercase"
+                placeholder="Enter Reference (e.g. BG784K or XTX-928472)"
+                className="flex-1 rounded-xl bg-slate-900 border border-slate-700 px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono uppercase min-h-[46px]"
               />
               <button
                 type="submit"
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-sm font-bold text-white hover:bg-emerald-700 transition-all shrink-0"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-sm font-bold text-white hover:bg-emerald-700 transition-all shrink-0 min-h-[46px]"
               >
                 <Search className="h-4 w-4" />
                 Verify Status
               </button>
             </form>
+
+            {/* Quick Demo Shortcuts */}
+            <div className="flex flex-wrap items-center gap-2 mt-3 text-xs text-slate-400">
+              <span>Try sample:</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setPnrSearch("BG784K");
+                  runSearch("BG784K");
+                }}
+                className="font-mono text-emerald-300 underline hover:text-white"
+              >
+                BG784K (Dhaka → Jeddah)
+              </button>
+              <span>·</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setPnrSearch("XTX-284910");
+                  runSearch("XTX-284910");
+                }}
+                className="font-mono text-emerald-300 underline hover:text-white"
+              >
+                XTX-284910 (Quote)
+              </button>
+            </div>
 
             {searchError && (
               <p className="mt-3 text-xs text-rose-400 flex items-center gap-1.5">
@@ -244,14 +268,14 @@ export default function DashboardPage() {
 
           {/* Searched PNR Result Card */}
           {searchedRecord && (
-            <div className="mt-6 rounded-2xl bg-white/5 border border-white/10 p-5 backdrop-blur-sm">
+            <div className="mt-6 rounded-2xl bg-white/5 border border-white/10 p-4 sm:p-5 backdrop-blur-sm">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
                 <div>
                   <span className="text-xs text-emerald-300 font-mono">
                     Ref: {searchedRecord.referenceCode}
                   </span>
                   <div className="flex items-center gap-2 mt-0.5">
-                    <span className="font-display text-lg font-bold text-white">
+                    <span className="font-display text-base sm:text-lg font-bold text-white">
                       {searchedRecord.origin} → {searchedRecord.destination}
                     </span>
                   </div>
@@ -262,7 +286,7 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs text-slate-300">
+              <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 text-xs text-slate-300">
                 <div>
                   <span className="text-slate-500 block">Departure Date:</span>
                   <span className="font-semibold text-white">
@@ -307,9 +331,9 @@ export default function DashboardPage() {
 
         {/* User Inquiries List from Firestore */}
         <div>
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center justify-between mb-5 sm:mb-6">
             <div>
-              <h2 className="text-xl font-bold text-slate-900">
+              <h2 className="text-lg sm:text-xl font-bold text-slate-900">
                 Active Flight Inquiries ({inquiries.length})
               </h2>
               <p className="text-xs text-slate-500">
@@ -326,20 +350,20 @@ export default function DashboardPage() {
           </div>
 
           {!user ? (
-            <div className="rounded-3xl bg-white p-10 text-center border border-slate-200 shadow-sm max-w-xl mx-auto">
+            <div className="rounded-3xl bg-white p-6 sm:p-10 text-center border border-slate-200 shadow-sm max-w-xl mx-auto">
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-[#0B5D3A] mb-4">
                 <Ticket className="h-7 w-7" />
               </div>
-              <h3 className="font-display text-lg font-bold text-slate-900">
+              <h3 className="font-display text-base sm:text-lg font-bold text-slate-900">
                 Sign in to view your flight bookings
               </h3>
-              <p className="mt-2 text-sm text-slate-500 max-w-md mx-auto leading-relaxed">
+              <p className="mt-2 text-xs sm:text-sm text-slate-500 max-w-md mx-auto leading-relaxed">
                 Connect your Google account with Firebase to automatically link all your ticket requests, quote comparisons, and e-ticket downloads.
               </p>
               <button
                 type="button"
                 onClick={() => setAuthModalOpen(true)}
-                className="mt-5 inline-flex items-center gap-2 rounded-xl bg-[#0B5D3A] px-6 py-3 text-sm font-bold text-white shadow-sm hover:bg-[#084A2E] transition-all"
+                className="mt-5 inline-flex items-center gap-2 rounded-xl bg-[#0B5D3A] px-6 py-3 text-sm font-bold text-white shadow-xs hover:bg-[#084A2E] transition-all"
               >
                 <User className="h-4 w-4" />
                 Sign In with Google
@@ -351,7 +375,7 @@ export default function DashboardPage() {
               <p className="text-xs text-slate-500">Loading your synced inquiries...</p>
             </div>
           ) : inquiries.length === 0 ? (
-            <div className="rounded-3xl bg-white p-10 text-center border border-slate-200 shadow-sm">
+            <div className="rounded-3xl bg-white p-8 sm:p-10 text-center border border-slate-200 shadow-sm">
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400 mb-3">
                 <Plane className="h-6 w-6" />
               </div>
@@ -361,7 +385,7 @@ export default function DashboardPage() {
               <p className="mt-1 text-xs text-slate-500 max-w-sm mx-auto">
                 Request a flight quotation or search for international routes to get live GDS net-fares.
               </p>
-              <div className="mt-5 flex justify-center gap-3">
+              <div className="mt-5 flex flex-wrap justify-center gap-3">
                 <Link
                   href="/flights"
                   className="inline-flex items-center gap-2 rounded-xl bg-[#0B5D3A] px-4 py-2.5 text-xs font-bold text-white hover:bg-[#084A2E]"
@@ -377,11 +401,11 @@ export default function DashboardPage() {
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
               {inquiries.map((inq) => (
                 <div
                   key={inq.id}
-                  className="rounded-3xl bg-white p-6 border border-slate-200 shadow-sm hover:shadow-md transition-all flex flex-col justify-between"
+                  className="rounded-3xl bg-white p-5 sm:p-6 border border-slate-200 shadow-sm hover:shadow-md transition-all flex flex-col justify-between"
                 >
                   <div>
                     <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3">
@@ -394,11 +418,11 @@ export default function DashboardPage() {
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-2 text-base font-bold text-slate-900 mb-2">
-                      <Plane className="h-4 w-4 text-[#0B5D3A]" />
-                      <span>{inq.origin}</span>
-                      <span className="text-slate-400">→</span>
-                      <span>{inq.destination}</span>
+                    <div className="flex items-center gap-2 text-sm sm:text-base font-bold text-slate-900 mb-2 min-w-0">
+                      <Plane className="h-4 w-4 text-[#0B5D3A] shrink-0" />
+                      <span className="truncate">{inq.origin}</span>
+                      <span className="text-slate-400 shrink-0">→</span>
+                      <span className="truncate">{inq.destination}</span>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 mt-3 pt-3 border-t border-slate-100">
@@ -414,7 +438,7 @@ export default function DashboardPage() {
                         <span className="text-slate-400 block text-[10px] uppercase font-semibold">
                           Class / Category
                         </span>
-                        <span className="font-medium text-slate-800">
+                        <span className="font-medium text-slate-800 truncate block">
                           {inq.cabinClass} • {inq.passengerCategory || "Standard"}
                         </span>
                       </div>
@@ -422,24 +446,24 @@ export default function DashboardPage() {
                         <span className="text-slate-400 block text-[10px] uppercase font-semibold">
                           Carrier
                         </span>
-                        <span className="font-medium text-slate-800">
+                        <span className="font-medium text-slate-800 truncate block">
                           {inq.preferredAirline || "Best Available GDS"}
                         </span>
                       </div>
                       <div>
                         <span className="text-slate-400 block text-[10px] uppercase font-semibold">
-                          Passengers
+                          Travelers
                         </span>
                         <span className="font-medium text-slate-800">
-                          {inq.passengers} Passenger(s)
+                          {inq.passengers} Traveler(s)
                         </span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between">
+                  <div className="mt-5 pt-3.5 border-t border-slate-100 flex items-center justify-between">
                     <span className="text-[11px] text-slate-400">
-                      Assigned to 24/7 Ticketing Desk
+                      24/7 Ticketing Desk
                     </span>
                     <a
                       href={CONTACT_PHONE_TEL}

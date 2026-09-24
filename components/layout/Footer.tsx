@@ -54,7 +54,7 @@ export function Footer() {
       </div>
 
       {/* Main Footer Links */}
-      <Container className="grid grid-cols-1 gap-10 py-14 sm:grid-cols-2 lg:grid-cols-5">
+      <Container className="grid grid-cols-1 gap-8 py-10 sm:py-14 sm:grid-cols-2 lg:grid-cols-5">
         {/* Brand info */}
         <div className="lg:col-span-2">
           <Link href="/" className="group inline-flex items-center" aria-label="Xeetrix Home">

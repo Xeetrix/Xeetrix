@@ -57,6 +57,7 @@ export function QuoteModal({
         <BookingInquiryForm
           defaultFrom={defaultOrigin}
           defaultTo={defaultDestination}
+          hideSidebar
         />
       </div>
     </div>

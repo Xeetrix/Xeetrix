@@ -109,8 +109,8 @@ export default function ContactPage() {
         </div>
 
         {/* Main Booking Form Section */}
-        <div className="pt-4">
-          <BookingInquiryForm />
+        <div className="pt-2">
+          <BookingInquiryForm hideSidebar />
         </div>
 
         {/* Frequently Asked Questions */}

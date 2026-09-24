@@ -18,23 +18,31 @@
 
 @layer components {
   .input {
-    @apply w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-all focus:border-brand-700 focus:ring-2 focus:ring-brand-700/10;
+    @apply w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-all focus:border-brand-700 focus:ring-2 focus:ring-brand-700/10 min-h-[44px];
   }
 
   .btn-primary {
-    @apply inline-flex items-center justify-center font-medium transition-all duration-150 rounded-xl bg-brand-700 text-white hover:bg-brand-800 shadow-sm active:scale-[0.99];
+    @apply inline-flex items-center justify-center font-medium transition-all duration-150 rounded-xl bg-brand-700 text-white hover:bg-brand-800 shadow-sm active:scale-[0.99] min-h-[44px];
   }
 
   .btn-gold {
-    @apply inline-flex items-center justify-center font-medium transition-all duration-150 rounded-xl bg-gold-600 text-white hover:bg-gold-700 shadow-sm hover:shadow active:scale-[0.99];
+    @apply inline-flex items-center justify-center font-medium transition-all duration-150 rounded-xl bg-gold-600 text-white hover:bg-gold-700 shadow-sm hover:shadow active:scale-[0.99] min-h-[44px];
   }
 
   .btn-outline {
-    @apply inline-flex items-center justify-center font-medium transition-all duration-150 rounded-xl border border-slate-200 bg-white text-slate-800 hover:bg-slate-50 hover:border-slate-300;
+    @apply inline-flex items-center justify-center font-medium transition-all duration-150 rounded-xl border border-slate-200 bg-white text-slate-800 hover:bg-slate-50 hover:border-slate-300 min-h-[44px];
   }
 }
 
 @layer utilities {
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
   .line-clamp-2 {
     display: -webkit-box;
     -webkit-line-clamp: 2;

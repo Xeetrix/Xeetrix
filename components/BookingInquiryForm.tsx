@@ -31,11 +31,13 @@ export function BookingInquiryForm({
   defaultTo = "JED",
   defaultTrip = "oneway",
   defaultClass = "Economy",
+  hideSidebar = false,
 }: {
   defaultFrom?: string;
   defaultTo?: string;
   defaultTrip?: TripType;
   defaultClass?: CabinClass;
+  hideSidebar?: boolean;
 }) {
   const { user } = useAuth();
   const [tripType, setTripType] = useState<TripType>(defaultTrip);
@@ -142,108 +144,117 @@ export function BookingInquiryForm({
   };
 
   return (
-    <div id="quote" className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+    <div
+      id="quote"
+      className={
+        hideSidebar
+          ? "w-full max-w-4xl mx-auto"
+          : "grid grid-cols-1 lg:grid-cols-12 gap-8 items-start"
+      }
+    >
       {/* Left side: Contact Info Cards */}
-      <div className="lg:col-span-5 space-y-5">
-        <div className="rounded-2xl bg-slate-900 text-white p-7 border border-slate-800 shadow-elevated">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-900/80 border border-brand-500/40 text-xs font-semibold text-brand-300 mb-4">
-            <ShieldCheck className="h-3.5 w-3.5 text-brand-400" />
-            Direct Ticketing Desk
+      {!hideSidebar && (
+        <div className="lg:col-span-5 space-y-5">
+          <div className="rounded-2xl bg-slate-900 text-white p-6 sm:p-7 border border-slate-800 shadow-elevated">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-900/80 border border-brand-500/40 text-xs font-semibold text-brand-300 mb-4">
+              <ShieldCheck className="h-3.5 w-3.5 text-brand-400" />
+              Direct Ticketing Desk
+            </div>
+
+            <h3 className="font-display text-2xl font-bold tracking-tight text-white mb-2">
+              Speak Directly With a Ticketing Agent
+            </h3>
+            <p className="text-sm text-slate-300 leading-relaxed mb-6">
+              For urgent departures within 24 hours, emergency date changes, or
+              bulk manpower worker quotes, our phone hotline provides instant
+              assistance.
+            </p>
+
+            <div className="space-y-4">
+              {/* Helpline Card */}
+              <div className="rounded-xl bg-slate-800/80 p-4 border border-slate-700/80 flex items-start gap-3.5">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gold-600/20 text-gold-400 border border-gold-500/30">
+                  <Phone className="h-5 w-5" />
+                </div>
+                <div>
+                  <span className="text-xs text-slate-400 block">
+                    24/7 Phone Helpline (Direct Dial)
+                  </span>
+                  <a
+                    href={CONTACT_PHONE_TEL}
+                    className="text-base font-bold text-white hover:text-gold-400 transition-colors block mt-0.5"
+                  >
+                    {CONTACT_PHONE_DISPLAY}
+                  </a>
+                  <span className="text-[11px] text-brand-400 mt-0.5 block">
+                    Toll-free routing &amp; live ticketing officer
+                  </span>
+                </div>
+              </div>
+
+              {/* Email Card */}
+              <div className="rounded-xl bg-slate-800/80 p-4 border border-slate-700/80 flex items-start gap-3.5">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-700/20 text-brand-400 border border-brand-500/30">
+                  <Mail className="h-5 w-5" />
+                </div>
+                <div>
+                  <span className="text-xs text-slate-400 block">
+                    Official Booking Email
+                  </span>
+                  <a
+                    href={`mailto:${CONTACT_EMAIL}`}
+                    className="text-sm font-semibold text-white hover:text-brand-300 transition-colors block mt-0.5 break-all"
+                  >
+                    {CONTACT_EMAIL}
+                  </a>
+                  <span className="text-[11px] text-slate-400 mt-0.5 block">
+                    Written quotations &amp; official invoices
+                  </span>
+                </div>
+              </div>
+
+              {/* Address */}
+              <div className="rounded-xl bg-slate-800/80 p-4 border border-slate-700/80 flex items-start gap-3.5">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-700 text-slate-300">
+                  <MapPin className="h-5 w-5" />
+                </div>
+                <div>
+                  <span className="text-xs text-slate-400 block">Corporate Office</span>
+                  <p className="text-xs text-slate-300 leading-relaxed mt-0.5">
+                    {CONTACT_ADDRESS}
+                  </p>
+                </div>
+              </div>
+
+              {/* Support Hours */}
+              <div className="rounded-xl bg-slate-800/80 p-4 border border-slate-700/80 flex items-start gap-3.5">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-700 text-slate-300">
+                  <Clock className="h-5 w-5" />
+                </div>
+                <div>
+                  <span className="text-xs text-slate-400 block">Operating Desk</span>
+                  <p className="text-xs text-brand-300 font-medium mt-0.5">
+                    {SUPPORT_HOURS}
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <h3 className="font-display text-2xl font-bold tracking-tight text-white mb-2">
-            Speak Directly With a Ticketing Agent
-          </h3>
-          <p className="text-sm text-slate-300 leading-relaxed mb-6">
-            For urgent departures within 24 hours, emergency date changes, or
-            bulk manpower worker quotes, our phone hotline provides instant
-            assistance.
-          </p>
-
-          <div className="space-y-4">
-            {/* Helpline Card */}
-            <div className="rounded-xl bg-slate-800/80 p-4 border border-slate-700/80 flex items-start gap-3.5">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gold-600/20 text-gold-400 border border-gold-500/30">
-                <Phone className="h-5 w-5" />
-              </div>
-              <div>
-                <span className="text-xs text-slate-400 block">
-                  24/7 Phone Helpline (Direct Dial)
-                </span>
-                <a
-                  href={CONTACT_PHONE_TEL}
-                  className="text-base font-bold text-white hover:text-gold-400 transition-colors block mt-0.5"
-                >
-                  {CONTACT_PHONE_DISPLAY}
-                </a>
-                <span className="text-[11px] text-brand-400 mt-0.5 block">
-                  Toll-free routing &amp; live ticketing officer
-                </span>
-              </div>
-            </div>
-
-            {/* Email Card */}
-            <div className="rounded-xl bg-slate-800/80 p-4 border border-slate-700/80 flex items-start gap-3.5">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-700/20 text-brand-400 border border-brand-500/30">
-                <Mail className="h-5 w-5" />
-              </div>
-              <div>
-                <span className="text-xs text-slate-400 block">
-                  Official Booking Email
-                </span>
-                <a
-                  href={`mailto:${CONTACT_EMAIL}`}
-                  className="text-sm font-semibold text-white hover:text-brand-300 transition-colors block mt-0.5 break-all"
-                >
-                  {CONTACT_EMAIL}
-                </a>
-                <span className="text-[11px] text-slate-400 mt-0.5 block">
-                  Written quotations &amp; official invoices
-                </span>
-              </div>
-            </div>
-
-            {/* Address */}
-            <div className="rounded-xl bg-slate-800/80 p-4 border border-slate-700/80 flex items-start gap-3.5">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-700 text-slate-300">
-                <MapPin className="h-5 w-5" />
-              </div>
-              <div>
-                <span className="text-xs text-slate-400 block">Corporate Office</span>
-                <p className="text-xs text-slate-300 leading-relaxed mt-0.5">
-                  {CONTACT_ADDRESS}
-                </p>
-              </div>
-            </div>
-
-            {/* Support Hours */}
-            <div className="rounded-xl bg-slate-800/80 p-4 border border-slate-700/80 flex items-start gap-3.5">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-700 text-slate-300">
-                <Clock className="h-5 w-5" />
-              </div>
-              <div>
-                <span className="text-xs text-slate-400 block">Operating Desk</span>
-                <p className="text-xs text-brand-300 font-medium mt-0.5">
-                  {SUPPORT_HOURS}
-                </p>
-              </div>
-            </div>
+          {/* Verified Badge */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-card text-xs text-slate-600 flex items-center gap-3">
+            <ShieldCheck className="h-8 w-8 text-brand-700 shrink-0" />
+            <p>
+              All air tickets issued by Xeetrix come with genuine PNR records
+              verifiable on the official website of the operating airline.
+            </p>
           </div>
         </div>
-
-        {/* Verified Badge */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-card text-xs text-slate-600 flex items-center gap-3">
-          <ShieldCheck className="h-8 w-8 text-brand-700 shrink-0" />
-          <p>
-            All air tickets issued by Xeetrix come with genuine PNR records
-            verifiable on the official website of the operating airline.
-          </p>
-        </div>
-      </div>
+      )}
 
       {/* Right side: Interactive Quote Request Form */}
-      <div className="lg:col-span-7">
-        <div className="rounded-2xl bg-white border border-slate-200 p-6 sm:p-8 shadow-elevated">
+      <div className={hideSidebar ? "w-full" : "lg:col-span-7"}>
+        <div className="rounded-3xl bg-white border border-slate-200/90 p-4 sm:p-8 shadow-elevated">
           {successReference ? (
             <div className="text-center py-10 space-y-4">
               <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-50 text-brand-700 border border-brand-200">
@@ -267,7 +278,7 @@ export function BookingInquiryForm({
               <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
                 <a
                   href={CONTACT_PHONE_TEL}
-                  className="inline-flex items-center gap-2 rounded-xl bg-gold-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-gold-700 transition-colors shadow-sm"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-gold-600 px-5 py-3 text-sm font-bold text-white hover:bg-gold-700 transition-colors shadow-sm w-full sm:w-auto"
                 >
                   <Phone className="h-4 w-4" />
                   Call Now for Priority Processing
@@ -275,7 +286,7 @@ export function BookingInquiryForm({
                 <button
                   type="button"
                   onClick={() => setSuccessReference(null)}
-                  className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                  className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-100 w-full sm:w-auto"
                 >
                   Submit Another Inquiry
                 </button>
@@ -283,7 +294,7 @@ export function BookingInquiryForm({
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-5">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
                 <div>
                   <h3 className="font-display text-xl font-bold text-slate-900">
                     Request a Customized Flight Quote
@@ -294,13 +305,13 @@ export function BookingInquiryForm({
                 </div>
 
                 {/* Trip Type Selector */}
-                <div className="flex items-center p-1 rounded-xl bg-slate-100 border border-slate-200">
+                <div className="inline-flex self-start sm:self-auto items-center p-1 rounded-xl bg-slate-100 border border-slate-200">
                   <button
                     type="button"
                     onClick={() => setTripType("oneway")}
-                    className={`px-3 py-1 rounded-lg text-xs font-semibold ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold min-h-[32px] ${
                       tripType === "oneway"
-                        ? "bg-brand-700 text-white shadow-sm"
+                        ? "bg-brand-700 text-white shadow-xs"
                         : "text-slate-600 hover:text-slate-900"
                     }`}
                   >
@@ -309,15 +320,39 @@ export function BookingInquiryForm({
                   <button
                     type="button"
                     onClick={() => setTripType("roundtrip")}
-                    className={`px-3 py-1 rounded-lg text-xs font-semibold ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold min-h-[32px] ${
                       tripType === "roundtrip"
-                        ? "bg-brand-700 text-white shadow-sm"
+                        ? "bg-brand-700 text-white shadow-xs"
                         : "text-slate-600 hover:text-slate-900"
                     }`}
                   >
                     Round Trip
                   </button>
                 </div>
+              </div>
+
+              {/* Quick Fill Suggestions */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none text-[11px] text-slate-500">
+                <span className="shrink-0 font-medium text-slate-400">Quick Route:</span>
+                {[
+                  { from: "DAC", to: "JED", label: "DAC → Jeddah" },
+                  { from: "DAC", to: "DXB", label: "DAC → Dubai" },
+                  { from: "DAC", to: "RUH", label: "DAC → Riyadh" },
+                  { from: "DAC", to: "KUL", label: "DAC → Kuala Lumpur" },
+                  { from: "DAC", to: "LHR", label: "DAC → London" },
+                ].map((item) => (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={() => {
+                      setFromCity(item.from);
+                      setToCity(item.to);
+                    }}
+                    className="shrink-0 px-2.5 py-1 rounded-md border border-slate-200 bg-slate-50 text-slate-600 hover:bg-white hover:text-brand-800 transition-colors"
+                  >
+                    {item.label}
+                  </button>
+                ))}
               </div>
 
               {errorMessage && (
