@@ -14,7 +14,9 @@ import {
   Sparkles,
   User,
   Ticket,
-  LogOut,
+  ChevronRight,
+  ArrowRight,
+  Globe,
 } from "lucide-react";
 import { Container } from "@/components/ui/Container";
 import { BrandLogo } from "@/components/ui/BrandLogo";
@@ -24,11 +26,10 @@ import { useAuth } from "@/lib/auth-context";
 
 const NAV_LINKS = [
   { href: "/flights", label: "Flights" },
+  { href: "/routes", label: "Popular Routes" },
   { href: "/services", label: "Services" },
-  { href: "/routes", label: "Routes" },
-  { href: "/dashboard", label: "My Bookings" },
-  { href: "/how-it-works", label: "How It Works" },
-  { href: "/contact", label: "Contact" },
+  { href: "/how-it-works", label: "Baggage & Visa" },
+  { href: "/contact", label: "Contact Desk" },
 ];
 
 export function Navbar({
@@ -42,185 +43,207 @@ export function Navbar({
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
 
   return (
-    <header className="sticky top-0 z-50 w-full bg-white/95 backdrop-blur-md border-b border-slate-200/80 transition-all">
-      {/* Top micro bar with helpline and trust info */}
-      <div className="hidden lg:block bg-slate-900 text-slate-300 text-xs py-1.5 border-b border-slate-800">
-        <Container className="flex items-center justify-between">
+    <header className="sticky top-0 z-50 w-full transition-all">
+      {/* 1. Top Utility Micro-bar (Desktop & Wide Displays) */}
+      <div className="hidden lg:block bg-[#062417] text-slate-200 text-xs py-2 border-b border-emerald-950/70">
+        <Container size="wide" className="flex items-center justify-between">
+          {/* Trust Guarantees */}
           <div className="flex items-center gap-6">
-            <span className="flex items-center gap-1.5 text-slate-300">
-              <ShieldCheck className="h-3.5 w-3.5 text-brand-400" />
-              100% IATA &amp; GDS Verified Airline Tickets
+            <span className="flex items-center gap-1.5 text-slate-200 font-medium">
+              <ShieldCheck className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+              100% Verified IATA &amp; Airline GDS Direct Ticketing
             </span>
-            <span className="flex items-center gap-1.5 text-slate-400">
-              <Clock className="h-3.5 w-3.5 text-gold-400" />
-              24/7 Ticketing &amp; Date Change Desk
+            <span className="flex items-center gap-1.5 text-slate-300">
+              <Clock className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+              24/7 Ticketing Desk &amp; Instant Re-issuance
             </span>
           </div>
-          <div className="flex items-center gap-4">
-            <span className="text-slate-400">Direct Helpline:</span>
-            <a
-              href={CONTACT_PHONE_TEL}
-              className="flex items-center gap-1.5 font-semibold text-white hover:text-gold-400 transition-colors"
-            >
-              <Phone className="h-3 w-3 text-gold-400" />
-              {CONTACT_PHONE_DISPLAY}
-            </a>
+
+          {/* Regional Support & Helpline */}
+          <div className="flex items-center gap-6 text-slate-300">
+            <span className="flex items-center gap-1.5 text-slate-300 text-[11px] font-medium">
+              <Globe className="h-3 w-3 text-emerald-400" />
+              Support in বাংলা &amp; English • BDT (৳)
+            </span>
+            <span className="h-3.5 w-px bg-emerald-900/80" />
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400">24/7 Helpline:</span>
+              <a
+                href={CONTACT_PHONE_TEL}
+                className="font-bold text-white hover:text-amber-400 transition-colors flex items-center gap-1.5 tracking-wide"
+                title={`Direct Call: ${CONTACT_PHONE_DISPLAY}`}
+              >
+                <Phone className="h-3 w-3 text-amber-400" />
+                {CONTACT_PHONE_DISPLAY}
+              </a>
+            </div>
           </div>
         </Container>
       </div>
 
-      {/* Main navigation */}
-      <Container className="flex h-16 sm:h-20 items-center justify-between">
-        {/* Brand Logo */}
-        <Link href="/" className="group inline-flex items-center shrink-0" aria-label="Xeetrix Home">
-          <BrandLogo size="md" variant="badge" />
-        </Link>
+      {/* 2. Main Executive Header Bar */}
+      <div className="w-full bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-[0_2px_15px_-3px_rgba(0,0,0,0.04)]">
+        <Container size="wide" className="flex h-[76px] items-center justify-between gap-4 xl:gap-8">
+          {/* Left: Brand Logo */}
+          <Link
+            href="/"
+            className="group inline-flex items-center shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B5D3A] rounded-xl transition-transform hover:scale-[1.01]"
+            aria-label="Xeetrix Home"
+          >
+            <BrandLogo size="md" variant="badge" />
+          </Link>
 
-        {/* Desktop Nav Links */}
-        <nav className="hidden lg:flex items-center gap-6 xl:gap-7">
-          {NAV_LINKS.map((link) => {
-            const active =
-              pathname === link.href ||
-              (link.href !== "/" && pathname.startsWith(link.href));
-            return (
-              <Link
-                key={link.href}
-                href={link.href}
-                className={cn(
-                  "text-sm font-semibold transition-colors hover:text-brand-700 py-1 relative",
-                  active ? "text-brand-700" : "text-slate-700"
-                )}
-              >
-                {link.label}
-                {active && (
-                  <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-brand-700 rounded-full" />
-                )}
-              </Link>
-            );
-          })}
-        </nav>
+          {/* Center: Luxury Airline Navigation Links */}
+          <nav
+            className="hidden lg:flex items-center gap-1 xl:gap-2"
+            aria-label="Main Navigation"
+          >
+            {NAV_LINKS.map((link) => {
+              const active =
+                pathname === link.href ||
+                (link.href !== "/" && pathname.startsWith(link.href));
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className={cn(
+                    "relative px-3.5 py-2 text-[13.5px] font-semibold tracking-tight rounded-lg transition-all duration-150",
+                    active
+                      ? "text-[#0B5D3A] bg-emerald-50/80 font-bold"
+                      : "text-slate-700 hover:text-[#0B5D3A] hover:bg-slate-100/70"
+                  )}
+                >
+                  <span>{link.label}</span>
+                  {active && (
+                    <span className="absolute bottom-1 left-3.5 right-3.5 h-0.5 bg-[#0B5D3A] rounded-full" />
+                  )}
+                </Link>
+              );
+            })}
+          </nav>
 
-        {/* Desktop Header CTAs */}
-        <div className="hidden lg:flex items-center gap-2.5">
-          {/* AI Concierge quick button */}
-          {onOpenAiConcierge && (
-            <button
-              type="button"
-              onClick={onOpenAiConcierge}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50/80 px-3 py-2 text-xs font-bold text-[#0B5D3A] hover:bg-emerald-100 transition-colors"
-            >
-              <Sparkles className="h-3.5 w-3.5 text-[#0B5D3A]" />
-              <span>AI Concierge</span>
-            </button>
-          )}
-
-          {/* User Profile / Google Sign-In */}
-          {user ? (
-            <Link
-              href="/dashboard"
-              className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-1.5 pr-3 hover:bg-slate-100 transition-colors"
-              title="My Account & Bookings"
-            >
-              {user.photoURL ? (
-                <Image
-                  src={user.photoURL}
-                  alt={user.displayName || "User"}
-                  width={28}
-                  height={28}
-                  className="h-7 w-7 rounded-lg object-cover"
-                  referrerPolicy="no-referrer"
-                />
-              ) : (
-                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-100 text-brand-700">
-                  <User className="h-4 w-4" />
-                </div>
-              )}
-              <span className="text-xs font-bold text-slate-800 max-w-[90px] truncate">
-                {user.displayName?.split(" ")[0] || "Account"}
-              </span>
-            </Link>
-          ) : (
-            onOpenAuth && (
+          {/* Right: Balanced, Uncluttered Executive Cluster */}
+          <div className="hidden lg:flex items-center gap-3">
+            {/* AI Concierge Trigger (Distinct interactive pill with pulsing dot) */}
+            {onOpenAiConcierge && (
               <button
                 type="button"
-                onClick={onOpenAuth}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-colors"
+                onClick={onOpenAiConcierge}
+                className="h-10 inline-flex items-center gap-2 rounded-full border border-emerald-300/80 bg-emerald-50/90 px-3.5 text-xs font-bold text-[#0B5D3A] hover:bg-emerald-100/80 hover:border-emerald-400 transition-all cursor-pointer group shadow-2xs"
+                title="Open AI Flight Concierge (Bangla & English)"
               >
-                <User className="h-3.5 w-3.5 text-slate-500" />
-                <span>Sign In</span>
+                <Sparkles className="h-3.5 w-3.5 text-[#0B5D3A] group-hover:rotate-12 transition-transform" />
+                <span>AI ফ্লাইট সহকারী</span>
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600" />
+                </span>
               </button>
-            )
-          )}
+            )}
 
-          {/* Direct Phone Dial */}
-          <a
-            href={CONTACT_PHONE_TEL}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-100 hover:text-slate-900 transition-colors"
-          >
-            <Phone className="h-3.5 w-3.5 text-brand-700" />
-            <span className="hidden xl:inline">{CONTACT_PHONE_DISPLAY}</span>
-            <span className="xl:hidden">Hotline</span>
-          </a>
+            {/* Subtle Divider */}
+            <div className="h-5 w-px bg-slate-200 mx-0.5" />
 
-          {/* Request Quote Button */}
-          {onRequestQuote ? (
-            <button
-              onClick={onRequestQuote}
-              className="inline-flex items-center gap-2 rounded-xl bg-gold-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-gold-700 transition-all"
+            {/* User Account / Sign In */}
+            {user ? (
+              <Link
+                href="/dashboard"
+                className="h-10 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-bold text-slate-800 hover:bg-slate-100 transition-colors shadow-2xs"
+                title="My Account & Bookings"
+              >
+                {user.photoURL ? (
+                  <Image
+                    src={user.photoURL}
+                    alt={user.displayName || "User"}
+                    width={26}
+                    height={26}
+                    className="h-6.5 w-6.5 rounded-lg object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <div className="flex h-6.5 w-6.5 items-center justify-center rounded-lg bg-emerald-100 text-[#0B5D3A]">
+                    <User className="h-3.5 w-3.5" />
+                  </div>
+                )}
+                <span className="max-w-[90px] truncate">
+                  {user.displayName?.split(" ")[0] || "Account"}
+                </span>
+              </Link>
+            ) : (
+              onOpenAuth && (
+                <button
+                  type="button"
+                  onClick={onOpenAuth}
+                  className="h-10 inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors shadow-2xs cursor-pointer"
+                >
+                  <User className="h-3.5 w-3.5 text-slate-400" />
+                  <span>Sign In</span>
+                </button>
+              )
+            )}
+
+            {/* Primary Action Button: Request Quote (Vibrant Amber/Gold CTA) */}
+            {onRequestQuote ? (
+              <button
+                onClick={onRequestQuote}
+                className="h-10 px-5 inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-xs font-bold text-white shadow-sm hover:shadow transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer shrink-0"
+              >
+                <span>Request Quote</span>
+                <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            ) : (
+              <Link
+                href="/contact#quote"
+                className="h-10 px-5 inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-xs font-bold text-white shadow-sm hover:shadow transition-all hover:scale-[1.02] active:scale-[0.98] shrink-0"
+              >
+                <span>Request Quote</span>
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            )}
+          </div>
+
+          {/* Mobile / Tablet Controls */}
+          <div className="flex items-center gap-2 lg:hidden">
+            {onOpenAiConcierge && (
+              <button
+                type="button"
+                onClick={onOpenAiConcierge}
+                className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-[#0B5D3A] border border-emerald-200"
+                aria-label="Open AI Flight Concierge"
+              >
+                <Sparkles className="h-4 w-4" />
+              </button>
+            )}
+            <a
+              href={CONTACT_PHONE_TEL}
+              className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-[#0B5D3A] border border-emerald-200"
+              aria-label="Call Helpline"
             >
-              Request Quote
-            </button>
-          ) : (
-            <Link
-              href="/contact#quote"
-              className="inline-flex items-center gap-2 rounded-xl bg-gold-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-gold-700 transition-all"
-            >
-              Request Quote
-            </Link>
-          )}
-        </div>
-
-        {/* Mobile menu trigger */}
-        <div className="flex items-center gap-2 lg:hidden">
-          {onOpenAiConcierge && (
+              <Phone className="h-4 w-4" />
+            </a>
             <button
               type="button"
-              onClick={onOpenAiConcierge}
-              className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-[#0B5D3A] border border-emerald-200"
-              aria-label="Open AI Flight Concierge"
+              aria-label={open ? "Close menu" : "Open menu"}
+              onClick={() => setOpen((v) => !v)}
+              className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-800 hover:bg-slate-100"
             >
-              <Sparkles className="h-4 w-4" />
+              {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
-          )}
-          <a
-            href={CONTACT_PHONE_TEL}
-            className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-700 border border-brand-200"
-            aria-label="Call Helpline"
-          >
-            <Phone className="h-4 w-4" />
-          </a>
-          <button
-            type="button"
-            aria-label={open ? "Close menu" : "Open menu"}
-            onClick={() => setOpen((v) => !v)}
-            className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-800 hover:bg-slate-100"
-          >
-            {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </button>
-        </div>
-      </Container>
+          </div>
+        </Container>
+      </div>
 
-      {/* Mobile drawer */}
+      {/* Mobile Drawer Navigation */}
       <AnimatePresence>
         {open && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            className="border-t border-slate-200 bg-white lg:hidden overflow-hidden"
+            className="border-t border-slate-200 bg-white lg:hidden overflow-hidden shadow-lg"
           >
             <Container className="py-5 space-y-4">
               <nav className="flex flex-col space-y-1">
@@ -230,13 +253,14 @@ export function Navbar({
                     href={link.href}
                     onClick={() => setOpen(false)}
                     className={cn(
-                      "px-3 py-2.5 rounded-lg text-sm font-semibold transition-colors",
+                      "px-3 py-2.5 rounded-lg text-sm font-semibold transition-colors flex items-center justify-between",
                       pathname === link.href
                         ? "bg-brand-50 text-brand-700"
                         : "text-slate-800 hover:bg-slate-50"
                     )}
                   >
-                    {link.label}
+                    <span>{link.label}</span>
+                    <ChevronRight className="h-4 w-4 text-slate-400" />
                   </Link>
                 ))}
               </nav>
@@ -262,7 +286,7 @@ export function Navbar({
                         setOpen(false);
                         onOpenAuth();
                       }}
-                      className="flex items-center justify-center gap-2 w-full rounded-xl border border-slate-300 py-2.5 text-sm font-semibold text-slate-800 bg-white"
+                      className="flex items-center justify-center gap-2 w-full rounded-xl border border-slate-300 py-2.5 text-sm font-semibold text-slate-800 bg-white cursor-pointer"
                     >
                       <User className="h-4 w-4" />
                       Sign In with Google
@@ -277,10 +301,10 @@ export function Navbar({
                       setOpen(false);
                       onOpenAiConcierge();
                     }}
-                    className="flex items-center justify-center gap-2 w-full rounded-xl bg-emerald-700 py-3 text-sm font-bold text-white shadow-sm"
+                    className="flex items-center justify-center gap-2 w-full rounded-xl bg-[#0B5D3A] py-3 text-sm font-bold text-white shadow-sm cursor-pointer"
                   >
-                    <Sparkles className="h-4 w-4" />
-                    Launch AI Flight Concierge
+                    <Sparkles className="h-4 w-4 text-emerald-200" />
+                    AI ফ্লাইট সহকারী চালু করুন
                   </button>
                 )}
 
@@ -288,7 +312,7 @@ export function Navbar({
                   href={CONTACT_PHONE_TEL}
                   className="flex items-center justify-center gap-2 w-full rounded-xl border border-slate-200 py-3 text-sm font-semibold text-slate-900 bg-slate-50"
                 >
-                  <Phone className="h-4 w-4 text-brand-700" />
+                  <Phone className="h-4 w-4 text-[#0B5D3A]" />
                   Call Helpline: {CONTACT_PHONE_DISPLAY}
                 </a>
 
