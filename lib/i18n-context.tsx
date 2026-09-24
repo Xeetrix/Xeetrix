@@ -158,6 +158,32 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     "search.adult": "Adult",
     "search.economy": "Economy",
     "search.business": "Business",
+    "search.category": "Category:",
+    "search.popular": "Popular:",
+    "search.cabinClass": "Cabin Class",
+    "search.aiIntel": "AI Live Intel",
+    "search.findingFares": "Finding Best Net-Fares...",
+    "search.iataGuaranteed": "Verified IATA & Airline GDS direct ticketing",
+    "search.studentLuggage": "Extra luggage assistance for Students & Migrant Workers",
+    "search.needUrgent": "Need Urgent Booking?",
+    "search.requestReceived": "Flight Search Request Received!",
+    "search.requestReceivedDesc": "Our ticketing desk is checking real-time GDS net-fares for",
+    "search.inquiryRef": "Inquiry Reference",
+    "search.searchAnother": "Search Another Route",
+    "search.askConcierge": "Ask AI Flight Concierge",
+    "search.callHotline": "Call Hotline:",
+    "search.catStandard": "Standard",
+    "search.catWorker": "Worker Net Fare",
+    "search.catStudent": "Student 46kg",
+    "search.catUmrah": "Umrah Group",
+    "search.cabinPremiumEconomy": "Premium Economy",
+    "search.cabinFirst": "First Class",
+    "search.traveler1": "1 Traveler (Adult)",
+    "search.traveler2": "2 Travelers",
+    "search.traveler3": "3 Travelers",
+    "search.traveler4": "4 Travelers",
+    "search.traveler5": "5 Travelers",
+    "search.travelerGroup": "6+ Group Booking",
 
     // Popular Routes
     "routes.tag": "Live GDS Inventory",
@@ -171,6 +197,17 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     "routes.from": "From",
     "routes.book": "Book Route",
     "routes.askAi": "Ask AI about this route",
+    "routes.pageBadge": "Global Connections",
+    "routes.pageTitle": "Popular Routes & Lowest Net-Fares",
+    "routes.pageDesc":
+      "Direct airline seat quotas with guaranteed baggage allowances for Middle East migrant workers, Umrah pilgrims, university students, and business travelers.",
+    "routes.otherDestTitle": "Traveling to a different destination?",
+    "routes.otherDestDesc":
+      "We issue tickets for over 250+ global airport hubs across North America, Europe, Africa, Middle East, and Asia.",
+    "routes.viewAllBtn": "View All 250+ Routes",
+    "routes.specialNetFare": "Special Net-Fare",
+    "routes.baggage": "Baggage:",
+    "routes.airlines": "Airlines:",
 
     // Airline Partners Section
     "partners.badge": "Official Airline Partnerships",
@@ -187,6 +224,12 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     "services.desk": "Ticketing Desk:",
     "services.explore": "View Service Details",
     "services.viewAll": "Explore All Services",
+    "services.pageBadge": "Official Agency Services",
+    "services.pageTitle": "Specialized Air Ticketing & Travel Solutions",
+    "services.pageDesc":
+      "Xeetrix bridges travelers, migrant professionals, and students with verified airline net-fares, generous baggage allowances, and direct 24/7 re-issuance assistance.",
+    "services.bookThis": "Book This Service",
+    "services.instantQuoteNotice": "Get an instant quote with baggage & date breakdown.",
 
     // How It Works
     "how.badge": "Simple 3-Step Process",
@@ -205,6 +248,19 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     "how.step3Sub": "Instant PNR & Official E-Ticket",
     "how.step3Desc":
       "Make secure payment via mobile banking, bank transfer, or card. Receive an authentic e-ticket verifiable on the official airline website immediately.",
+    "how.pageBadge": "Booking Guide & Process",
+    "how.pageTitle": "Reliable, Transparent Air Ticketing in 3 Steps",
+    "how.pageDesc":
+      "From initial fare comparison to ticket delivery and airport check-in, we keep the entire process transparent, fast, and verified.",
+    "how.paymentChannels": "Accepted Payment Channels",
+    "how.paymentTitle": "Convenient & Secure Payment Methods",
+    "how.paymentDesc":
+      "Once you confirm your flight quotation, you can complete payment through any of our authorized channels for instantaneous PNR ticket release.",
+    "how.pnrGuaranteeBadge": "100% Genuine Airline PNR Guarantee",
+    "how.verifyTitle": "How to Verify Your Ticket on the Airline Website",
+    "how.verifyDesc":
+      "Every confirmed reservation comes with a 6-character PNR code and an official 13-digit e-ticket number. You can check it immediately on Saudia, Emirates, Biman, Qatar Airways, or any operating airline's website under 'Manage Booking'.",
+    "how.startBooking": "Start Your Booking",
 
     // Booking Inquiry Form
     "inquiry.badge": "Custom Fare Quotations",
@@ -236,6 +292,31 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     "cta.pnrGuaranteed": "Official Airline PNR Guaranteed",
     "cta.zeroFees": "Zero Hidden Card Fees",
     "cta.rerouting": "Emergency Flight Rerouting",
+
+    // Contact Page
+    "contact.pageBadge": "24/7 Ticketing Helpdesk",
+    "contact.pageTitle": "Contact Xeetrix Ticketing Desk",
+    "contact.pageDesc":
+      "Need live fare comparison, immediate seat reservation, or emergency date changes? Our licensed ticketing team is available 24/7.",
+
+    // About Page
+    "about.pageBadge": "About Xeetrix",
+    "about.pageTitle": "Authorized Global Air Ticketing Agency",
+    "about.pageDesc":
+      "Dedicated to empowering migrant workers, students, and travelers with direct airline net-fares, genuine PNR issuance, and 24/7 customer care.",
+
+    // Dashboard & Auth
+    "dashboard.title": "My Bookings & Inquiries",
+    "dashboard.subtitle": "Track your flight quotation requests, active PNRs, and e-tickets",
+    "dashboard.noBookings": "No bookings found yet",
+    "dashboard.bookNew": "Search Flights & Request Quote",
+    "dashboard.pnrStatus": "Status",
+    "dashboard.pnrCode": "PNR Code",
+    "auth.signIn": "Sign In",
+    "auth.googleSignIn": "Continue with Google",
+    "auth.signOut": "Sign Out",
+    "auth.welcomeBack": "Welcome Back",
+    "auth.signInDesc": "Sign in to track your air ticket bookings, PNR status, and custom quotations.",
 
     // Footer
     "footer.desc":
@@ -302,6 +383,32 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     "search.adult": "প্রাপ্তবয়স্ক",
     "search.economy": "ইকোনমি",
     "search.business": "বিজনেস",
+    "search.category": "ক্যাটাগরি:",
+    "search.popular": "জনপ্রিয়:",
+    "search.cabinClass": "কেবিন ক্লাস",
+    "search.aiIntel": "AI লাইভ তথ্য",
+    "search.findingFares": "সেরা নেট-ফেয়ার খোঁজা হচ্ছে...",
+    "search.iataGuaranteed": "ভেরিফাইড আইএটিএ ও সরাসরি এয়ারলাইন জিডিএস টিকিটিং",
+    "search.studentLuggage": "প্রবাসী কর্মী ও শিক্ষার্থীদের জন্য অতিরিক্ত ব্যাগেজ সুবিধা",
+    "search.needUrgent": "জরুরি বুকিং প্রয়োজন?",
+    "search.requestReceived": "ফ্লাইট অনুসন্ধানের অনুরোধ গৃহীত হয়েছে!",
+    "search.requestReceivedDesc": "আমাদের টিকেটিং ডেস্ক লাইভ জিডিএস নেট-ফেয়ার যাচাই করছে",
+    "search.inquiryRef": "অনুসন্ধান রেফারেন্স",
+    "search.searchAnother": "অন্য রুট খুঁজুন",
+    "search.askConcierge": "AI ফ্লাইট সহকারীকে জিজ্ঞাসা করুন",
+    "search.callHotline": "হটলাইনে কল করুন:",
+    "search.catStandard": "স্ট্যান্ডার্ড",
+    "search.catWorker": "কর্মী নেট-ফেয়ার",
+    "search.catStudent": "শিক্ষার্থী ৪৬ কেজি",
+    "search.catUmrah": "উমরাহ গ্রুপ",
+    "search.cabinPremiumEconomy": "প্রিমিয়াম ইকোনমি",
+    "search.cabinFirst": "ফার্স্ট ক্লাস",
+    "search.traveler1": "১ জন যাত্রী (প্রাপ্তবয়স্ক)",
+    "search.traveler2": "২ জন যাত্রী",
+    "search.traveler3": "৩ জন যাত্রী",
+    "search.traveler4": "৪ জন যাত্রী",
+    "search.traveler5": "৫ জন যাত্রী",
+    "search.travelerGroup": "৬+ গ্রুপ বুকিং",
 
     // Popular Routes
     "routes.tag": "লাইভ জিডিএস ইনভেন্টরি",
@@ -315,6 +422,17 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     "routes.from": "শুরু মাত্র",
     "routes.book": "বুক করুন",
     "routes.askAi": "এই রুটের তথ্য AI সহকারীর কাছে জানুন",
+    "routes.pageBadge": "গ্লোবাল কানেকশন",
+    "routes.pageTitle": "জনপ্রিয় রুটসমূহ ও সর্বনিম্ন নেট-ফেয়ার",
+    "routes.pageDesc":
+      "প্রবাসী শ্রমিক, উমরাহ যাত্রী, শিক্ষার্থী ও ব্যবসায়ীদের জন্য গ্যারান্টিযুক্ত সর্বোচ্চ লাগেজ ও সরাসরি এয়ারলাইন সিট কোটা।",
+    "routes.otherDestTitle": "অন্য কোনো গন্তব্যে যেতে চান?",
+    "routes.otherDestDesc":
+      "আমরা উত্তর আমেরিকা, ইউরোপ, আফ্রিকা, মধ্যপ্রাচ্য এবং এশিয়ার ২৫০টিরও বেশি আন্তর্জাতিক বিমানবন্দরে সরাসরি টিকিট ইস্যু করি।",
+    "routes.viewAllBtn": "সকল ২৫০+ রুট দেখুন",
+    "routes.specialNetFare": "স্পেশাল নেট-ফেয়ার",
+    "routes.baggage": "লাগেজ:",
+    "routes.airlines": "এয়ারলাইন্স:",
 
     // Airline Partners Section
     "partners.badge": "অফিসিয়াল এয়ারলাইন পার্টনারশিপ",
@@ -331,6 +449,12 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     "services.desk": "টিকেটিং ডেস্ক:",
     "services.explore": "বিস্তারিত দেখুন",
     "services.viewAll": "সকল সেবা দেখুন",
+    "services.pageBadge": "অফিসিয়াল এজেন্সি সার্ভিসেস",
+    "services.pageTitle": "বিশেষায়িত এয়ার টিকেটিং ও ট্রাভেল সমাধান",
+    "services.pageDesc":
+      "জিতরিক্স ভ্রমণকারী, প্রবাসী ভাই ও শিক্ষার্থীদের জন্য সরাসরি এয়ারলাইন নেট-ফেয়ার, অতিরিক্ত লাগেজ সুবিধা এবং ২৪/৭ রি-ইস্যু সহায়তা প্রদান করে।",
+    "services.bookThis": "এই সেবাটি গ্রহণ করুন",
+    "services.instantQuoteNotice": "লাগেজ ও বিস্তারিত শিডিউলসহ দ্রুত কোটেশন পান।",
 
     // How It Works
     "how.badge": "সহজ ৩-ধাপে বুকিং",
@@ -349,6 +473,19 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     "how.step3Sub": "ইনস্ট্যান্ট পিএনআর ও ভেরিফাইড টিকিট",
     "how.step3Desc":
       "বিকাশ/নগদ, ব্যাংক বা কার্ডে নিরাপদ পেমেন্ট করুন। সাথে সাথে পেয়ে যান এয়ারলাইনের ওয়েবসাইটে ভেরিফাইযোগ্য অফিসিয়াল টিকিট।",
+    "how.pageBadge": "বুকিং নির্দেশিকা ও প্রক্রিয়া",
+    "how.pageTitle": "সহজ ও নির্ভরযোগ্য ৩ ধাপে এয়ার টিকিট বুকিং",
+    "how.pageDesc":
+      "ভাড়া যাচাই থেকে শুরু করে ই-টিকিট প্রাপ্তি ও ওয়েব চেক-ইন পর্যন্ত পুরো প্রক্রিয়াটি স্বচ্ছ ও দ্রুত।",
+    "how.paymentChannels": "অনুমোদিত পেমেন্ট মাধ্যম",
+    "how.paymentTitle": "নিরাপদ ও সহজ পেমেন্ট সুবিধা",
+    "how.paymentDesc":
+      "কোটেশন পছন্দ হলে যেকোনো মাধ্যমে সহজে পেমেন্ট সম্পন্ন করে তাৎক্ষণিক পিএনআর টিকিট বুঝে নিন।",
+    "how.pnrGuaranteeBadge": "১০০% আসল এয়ারলাইন পিএনআর নিশ্চয়তা",
+    "how.verifyTitle": "যেভাবে এয়ারলাইন্সের ওয়েবসাইটে আপনার টিকিট যাচাই করবেন",
+    "how.verifyDesc":
+      "প্রতিটি কনফার্মড টিকিটে একটি ৬ অক্ষরের পিএনআর কোড ও ১৩ ডিজিটের ই-টিকিট নম্বর থাকে। যেকোনো এয়ারলাইন্সের অফিশিয়াল সাইটে 'Manage Booking' এ গিয়ে সাথে সাথে আপনার টিকিট চেক করতে পারেন।",
+    "how.startBooking": "বুকিং শুরু করুন",
 
     // Booking Inquiry Form
     "inquiry.badge": "কাস্টম ফেয়ার কোটেশন",
@@ -380,6 +517,31 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     "cta.pnrGuaranteed": "অফিসিয়াল এয়ারলাইন পিএনআর গ্যারান্টিড",
     "cta.zeroFees": "লুকানো কোনো অতিরিক্ত চার্জ নেই",
     "cta.rerouting": "জরুরি ফ্লাইট রিরুটিং সুবিধা",
+
+    // Contact Page
+    "contact.pageBadge": "২৪/৭ টিকেটিং হেল্পডেস্ক",
+    "contact.pageTitle": "জিতরিক্স টিকেটিং ডেস্কে যোগাযোগ করুন",
+    "contact.pageDesc":
+      "লাইভ টিকিটের দাম, জরুরি সিট বুকিং বা ডেট চেঞ্জের জন্য আমাদের অভিজ্ঞ টিকেটিং টিমের সাথে ২৪/৭ যোগাযোগ করুন।",
+
+    // About Page
+    "about.pageBadge": "জিতরিক্স পরিচিতি",
+    "about.pageTitle": "অনুমোদিত গ্লোবাল এয়ার টিকেটিং এজেন্সি",
+    "about.pageDesc":
+      "প্রবাসী কর্মী, শিক্ষার্থী এবং সকল ভ্রমণকারীদের জন্য সেরা হোলসেল ভাড়া, শতভাগ জেনুইন টিকিট এবং সার্বক্ষণিক গ্রাহক সেবা নিশ্চিত করা আমাদের লক্ষ্য।",
+
+    // Dashboard & Auth
+    "dashboard.title": "আমার বুকিং ও অনুসন্ধান",
+    "dashboard.subtitle": "আপনার ফ্লাইট কোটেশন, অ্যাক্টিভ পিএনআর ও ই-টিকিট ট্র্যাক করুন",
+    "dashboard.noBookings": "কোনো বুকিং পাওয়া যায়নি",
+    "dashboard.bookNew": "ফ্লাইট খুঁজুন ও কোটেশন চান",
+    "dashboard.pnrStatus": "স্ট্যাটাস",
+    "dashboard.pnrCode": "পিএনআর কোড",
+    "auth.signIn": "সাইন ইন",
+    "auth.googleSignIn": "গুগল দিয়ে সাইন ইন করুন",
+    "auth.signOut": "সাইন আউট",
+    "auth.welcomeBack": "পুনরায় স্বাগতম",
+    "auth.signInDesc": "আপনার এয়ার টিকিট বুকিং, পিএনআর স্ট্যাটাস ও কোটেশন ট্র্যাক করতে সাইন ইন করুন।",
 
     // Footer
     "footer.desc":
@@ -446,6 +608,32 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     "search.adult": "بالغ",
     "search.economy": "الدرجة السياحية",
     "search.business": "درجة الأعمال",
+    "search.category": "الفئة:",
+    "search.popular": "الأكثر طلباً:",
+    "search.cabinClass": "درجة السفر",
+    "search.aiIntel": "معلومات الذكاء الاصطناعي",
+    "search.findingFares": "جاري البحث عن أفضل الأسعار...",
+    "search.iataGuaranteed": "حجز مباشر ومعتمد من IATA وأنظمة الطيران العالمية",
+    "search.studentLuggage": "تسهيلات أمتعة إضافية للطلاب وعمالة الشرق الأوسط",
+    "search.needUrgent": "هل تحتاج حجز عاجل؟",
+    "search.requestReceived": "تم استلام طلب البحث عن الرحلة بنجاح!",
+    "search.requestReceivedDesc": "يقوم مكتب الحجز لدينا بالتحقق من أسعار المقاعد المباشرة لرحلة",
+    "search.inquiryRef": "رقم مرجع الاستفسار",
+    "search.searchAnother": "ابحث عن مسار آخر",
+    "search.askConcierge": "اسأل المساعد الذكي",
+    "search.callHotline": "اتصل بالخط الساخن:",
+    "search.catStandard": "عادي",
+    "search.catWorker": "سعر العمال المخفض",
+    "search.catStudent": "طلاب 46 كجم",
+    "search.catUmrah": "مجموعات العمرة",
+    "search.cabinPremiumEconomy": "الدرجة السياحية الممتازة",
+    "search.cabinFirst": "الدرجة الأولى",
+    "search.traveler1": "مسافر واحد (بالغ)",
+    "search.traveler2": "مسافران",
+    "search.traveler3": "3 مسافرين",
+    "search.traveler4": "4 مسافرين",
+    "search.traveler5": "5 مسافرين",
+    "search.travelerGroup": "+6 حجز جماعي",
 
     // Popular Routes
     "routes.tag": "مخزون تذاكر مباشر",
@@ -459,6 +647,17 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     "routes.from": "ابتداءً من",
     "routes.book": "احجز الآن",
     "routes.askAi": "اسأل المساعد الذكي عن هذا المسار",
+    "routes.pageBadge": "رحلات حول العالم",
+    "routes.pageTitle": "أشهر الوجهات وأقل الأسعار المعتمدة",
+    "routes.pageDesc":
+      "حصص مقاعد طيران مباشرة مع أوزان أمتعة مضمونة لعمال الشرق الأوسط ومعتمري بيت الله الحرام والطلاب ورجال الأعمال.",
+    "routes.otherDestTitle": "هل تسافر إلى وجهة أخرى؟",
+    "routes.otherDestDesc":
+      "نقوم بإصدار التذاكر لأكثر من 250 مطاراً دولياً في أمريكا الشمالية وأوروبا وأفريقيا والشرق الأوسط وآسيا.",
+    "routes.viewAllBtn": "عرض جميع الوجهات (250+)",
+    "routes.specialNetFare": "سعر خاص",
+    "routes.baggage": "الأمتعة:",
+    "routes.airlines": "شركات الطيران:",
 
     // Airline Partners Section
     "partners.badge": "شراكات الطيران الرسمية",
@@ -475,6 +674,12 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     "services.desk": "مكتب التذاكر:",
     "services.explore": "تفاصيل الخدمة",
     "services.viewAll": "عرض جميع الخدمات",
+    "services.pageBadge": "خدمات الوكالة الرسمية",
+    "services.pageTitle": "حلول متخصصة لحجز تذاكر الطيران والسفر",
+    "services.pageDesc":
+      "تربط زیتريكس المسافرين والعمال والطلاب بأسعار طيران الجملة المعتمدة وأوزان أمتعة استثنائية مع دعم فوري لإعادة إصدار التذاكر 24/7.",
+    "services.bookThis": "طلب هذه الخدمة",
+    "services.instantQuoteNotice": "احصل على عرض سعر فوري مع تفاصيل الأمتعة والمواعيد.",
 
     // How It Works
     "how.badge": "خطوات حجز بسيطة وسريعة",
@@ -493,6 +698,19 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     "how.step3Sub": "رمز PNR فوري وتذكرة رسمية",
     "how.step3Desc":
       "ادفع بأمان عبر وسائل الدفع المعتمدة واستلم تذكرتك الإلكترونية المؤكدة على الفور.",
+    "how.pageBadge": "دليل وخطوات الحجز",
+    "how.pageTitle": "حجز تذاكر طيران موثوق وشفاف في 3 خطوات",
+    "how.pageDesc":
+      "من مقارنة الأسعار وحتى استلام التذكرة وتسجيل الوصول في المطار، نوفر لك تجربة سلسة وسريعة وموثوقة.",
+    "how.paymentChannels": "وسائل الدفع المقبولة",
+    "how.paymentTitle": "طرق دفع مريحة وآمنة",
+    "how.paymentDesc":
+      "بمجرد تأكيد عرض السعر، يمكنك الدفع عبر أي من قنواتنا المعتمدة لإصدار التذكرة فورياً.",
+    "how.pnrGuaranteeBadge": "ضمان 100% لرمز PNR معتمد",
+    "how.verifyTitle": "كيفية التحقق من تذكرتك على موقع شركة الطيران",
+    "how.verifyDesc":
+      "كل حجز مؤكد يتضمن رمز PNR مكون من 6 خانات ورقم تذكرة إلكترونية من 13 رقماً. يمكنك التحقق منها مباشرة عبر موقع شركة الطيران المشغلة عبر 'إدارة الحجز'.",
+    "how.startBooking": "ابدأ حجزك الآن",
 
     // Booking Inquiry Form
     "inquiry.badge": "عروض أسعار مخصصة",
@@ -524,6 +742,31 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     "cta.pnrGuaranteed": "رمز حجز (PNR) رسمي ومؤكد",
     "cta.zeroFees": "بدون رسوم خفية",
     "cta.rerouting": "تعديل مسارات الطيران العاجلة",
+
+    // Contact Page
+    "contact.pageBadge": "مكتب المساعدة 24/7",
+    "contact.pageTitle": "اتصل بمكتب حجز زیتريكس",
+    "contact.pageDesc":
+      "هل تحتاج لمعرفة الأسعار الفورية، أو حجز مقعد عاجل، أو تعديل موعد الرحلة؟ فريقنا المعتمد في خدمتك على مدار الساعة.",
+
+    // About Page
+    "about.pageBadge": "عن زیتريكس",
+    "about.pageTitle": "وكالة سفر وتذاكر طيران دولية معتمدة",
+    "about.pageDesc":
+      "ملتزمون بتقديم أفضل أسعار الجملة لتذاكر الطيران، وإصدار التذاكر المعتمدة لعمال الشرق الأوسط والطلاب وجميع المسافرين.",
+
+    // Dashboard & Auth
+    "dashboard.title": "حجوزاتي واستفساراتي",
+    "dashboard.subtitle": "تتبع طلبات عروض الأسعار والرمز المرجعي PNR وتذاكرك الإلكترونية",
+    "dashboard.noBookings": "لا توجد حجوزات حتى الآن",
+    "dashboard.bookNew": "ابحث عن رحلات واطلب عرض سعر",
+    "dashboard.pnrStatus": "الحالة",
+    "dashboard.pnrCode": "رمز PNR",
+    "auth.signIn": "تسجيل الدخول",
+    "auth.googleSignIn": "المتابعة باستخدام Google",
+    "auth.signOut": "تسجيل الخروج",
+    "auth.welcomeBack": "مرحباً بعودتك",
+    "auth.signInDesc": "سجل دخولك لتتبع حجوزاتك وحالة الرمز PNR وعروض الأسعار المخصصة.",
 
     // Footer
     "footer.desc":
@@ -568,7 +811,7 @@ const STORAGE_LANG_KEY = "xeetrix_language";
 const STORAGE_CURR_KEY = "xeetrix_currency";
 
 export function I18nProvider({ children }: { children: React.ReactNode }) {
-  // Default to English and USD
+  // Default to English and USD per user specifications
   const [language, setLanguageState] = useState<Language>("en");
   const [currency, setCurrencyState] = useState<CurrencyCode>("USD");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -619,11 +862,6 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
         minimumFractionDigits: 3,
         maximumFractionDigits: 3,
       }).format(converted);
-    } else if (config.code === "USD" || config.code === "GBP" || config.code === "EUR") {
-      formattedNumber = new Intl.NumberFormat("en-US", {
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0,
-      }).format(Math.round(converted));
     } else {
       formattedNumber = new Intl.NumberFormat("en-US", {
         minimumFractionDigits: 0,

@@ -7,6 +7,7 @@ import { X, ShieldCheck, CheckCircle2, User, LogOut, Ticket, Loader2 } from "luc
 import { useAuth } from "@/lib/auth-context";
 import { BrandLogo } from "@/components/ui/BrandLogo";
 import Link from "next/link";
+import { useI18n } from "@/lib/i18n-context";
 
 export function AuthModal({
   isOpen,
@@ -16,6 +17,7 @@ export function AuthModal({
   onClose: () => void;
 }) {
   const { user, signInWithGoogle, logout, loading } = useAuth();
+  const { t, language } = useI18n();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,7 +52,7 @@ export function AuthModal({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
+            animate={{ opacity: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             className="w-full max-w-md rounded-3xl bg-white p-6 sm:p-8 shadow-2xl border border-slate-200 overflow-hidden relative"
           >
@@ -80,17 +82,21 @@ export function AuthModal({
                 </div>
 
                 <h3 className="font-display text-xl font-bold text-slate-900">
-                  {user.displayName || "Xeetrix Passenger"}
+                  {user.displayName || (language === "bn" ? "সম্মানিত যাত্রী" : language === "ar" ? "مسافر زیتريكس" : "Xeetrix Passenger")}
                 </h3>
                 <p className="text-sm text-slate-500">{user.email}</p>
 
                 <div className="my-6 rounded-2xl bg-slate-50 p-4 border border-slate-200 text-left space-y-3">
                   <div className="flex items-center gap-2 text-xs font-semibold text-brand-700">
                     <ShieldCheck className="h-4 w-4" />
-                    Verified Passenger Account
+                    {language === "bn" ? "ভেরিফাইড প্যাসেঞ্জার একাউন্ট" : language === "ar" ? "حساب مسافر معتمد" : "Verified Passenger Account"}
                   </div>
                   <p className="text-xs text-slate-600 leading-relaxed">
-                    Your flight inquiries, PNR status requests, and e-ticket documents are synced across your devices.
+                    {language === "bn"
+                      ? "আপনার ফ্লাইট কোটেশন, পিএনআর স্ট্যাটাস ও ই-টিকিট সব ডিভাইসে সিঙ্ক করা থাকে।"
+                      : language === "ar"
+                      ? "يتم مزامنة استفسارات رحلاتك وحالة الرمز PNR وتذاكرك الإلكترونية عبر جميع أجهزتك."
+                      : "Your flight inquiries, PNR status requests, and e-ticket documents are synced across your devices."}
                   </p>
                 </div>
 
@@ -101,16 +107,16 @@ export function AuthModal({
                     className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#0B5D3A] py-3 text-sm font-bold text-white shadow-sm hover:bg-[#084A2E] transition-all"
                   >
                     <Ticket className="h-4 w-4" />
-                    My Inquiries &amp; Bookings
+                    {t("nav.myBookings")}
                   </Link>
 
                   <button
                     onClick={handleLogout}
                     disabled={submitting}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition-all"
+                    className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition-all cursor-pointer"
                   >
                     <LogOut className="h-4 w-4 text-slate-500" />
-                    Sign Out
+                    {t("auth.signOut")}
                   </button>
                 </div>
               </div>
@@ -123,10 +129,10 @@ export function AuthModal({
 
                 <div className="text-center mb-6">
                   <h3 className="font-display text-2xl font-bold text-slate-900">
-                    Sign in to Xeetrix
+                    {t("auth.signIn")}
                   </h3>
                   <p className="mt-1 text-sm text-slate-500">
-                    Access your flight quotes, manage PNR status, and track ticket issuance.
+                    {t("auth.signInDesc")}
                   </p>
                 </div>
 
@@ -140,7 +146,7 @@ export function AuthModal({
                   <button
                     onClick={handleGoogleLogin}
                     disabled={submitting}
-                    className="flex w-full items-center justify-center gap-3 rounded-2xl border border-slate-300 bg-white py-3.5 px-4 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 transition-all hover:border-slate-400"
+                    className="flex w-full items-center justify-center gap-3 rounded-2xl border border-slate-300 bg-white py-3.5 px-4 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 transition-all hover:border-slate-400 cursor-pointer"
                   >
                     {submitting ? (
                       <Loader2 className="h-5 w-5 animate-spin text-[#0B5D3A]" />
@@ -164,21 +170,39 @@ export function AuthModal({
                         />
                       </svg>
                     )}
-                    <span>Continue with Google</span>
+                    <span>{t("auth.googleSignIn")}</span>
                   </button>
 
                   <div className="rounded-2xl bg-slate-50 p-4 border border-slate-200/80 space-y-2 text-left">
                     <div className="flex items-center gap-2 text-xs font-semibold text-slate-800">
                       <CheckCircle2 className="h-4 w-4 text-[#0B5D3A]" />
-                      Direct GDS Inquiry Tracking
+                      <span>
+                        {language === "bn"
+                          ? "সরাসরি জিডিএস ইনকোয়ারি ট্র্যাকিং"
+                          : language === "ar"
+                          ? "تتبع مباشر لاستفسارات أنظمة الطيران"
+                          : "Direct GDS Inquiry Tracking"}
+                      </span>
                     </div>
                     <div className="flex items-center gap-2 text-xs font-semibold text-slate-800">
                       <CheckCircle2 className="h-4 w-4 text-[#0B5D3A]" />
-                      Personalized 40–46kg Baggage Quotas
+                      <span>
+                        {language === "bn"
+                          ? "প্রবাসী ও শিক্ষার্থীদের ৪৬ কেজি লাগেজ কোটা"
+                          : language === "ar"
+                          ? "أوزان أمتعة خاصة للعمال والطلاب حتى 46 كجم"
+                          : "Personalized 40–46kg Baggage Quotas"}
+                      </span>
                     </div>
                     <div className="flex items-center gap-2 text-xs font-semibold text-slate-800">
                       <CheckCircle2 className="h-4 w-4 text-[#0B5D3A]" />
-                      Real-Time Date-Change Request Desk
+                      <span>
+                        {language === "bn"
+                          ? "রিয়েল-টাইম ডেট-চেঞ্জ রিকোয়েস্ট ডেস্ক"
+                          : language === "ar"
+                          ? "مكتب فوري لتعديل مواعيد وتواريخ التذاكر"
+                          : "Real-Time Date-Change Request Desk"}
+                      </span>
                     </div>
                   </div>
                 </div>

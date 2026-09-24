@@ -269,18 +269,28 @@ export function BookingInquiryForm({
                 <CheckCircle2 className="h-10 w-10" />
               </div>
               <h3 className="text-2xl font-bold text-slate-900">
-                Flight Quotation Request Received!
+                {language === "bn"
+                  ? "ফ্লাইট কোটেশন অনুরোধ গৃহীত হয়েছে!"
+                  : language === "ar"
+                  ? "تم استلام طلب عرض الأسعار بنجاح!"
+                  : "Flight Quotation Request Received!"}
               </h3>
               <p className="text-sm text-slate-600 max-w-md mx-auto">
-                Your ticket inquiry has been assigned Reference Number:
+                {language === "bn"
+                  ? "আপনার টিকেট অনুসন্ধানের রেফারেন্স নম্বর:"
+                  : language === "ar"
+                  ? "تم تخصيص رقم المرجع التالي لاستفسارك:"
+                  : "Your ticket inquiry has been assigned Reference Number:"}
               </p>
               <div className="inline-block font-mono text-lg font-bold text-[#0B5D3A] bg-emerald-50 px-4 py-1.5 rounded-lg border border-emerald-200">
                 {successReference}
               </div>
               <p className="text-xs text-slate-500 max-w-md mx-auto pt-2">
-                Our ticketing desk is checking current seat availability and net
-                fare rules on live GDS. We will contact you at{" "}
-                <strong>{phone}</strong> / <strong>{email}</strong> within 15 minutes.
+                {language === "bn"
+                  ? `আমাদের টিকেটিং ডেস্ক লাইভ জিডিএস থেকে সিট ও সেরা ফেয়ার চেক করছে। আমরা ১৫ মিনিটের মধ্যে ${phone} নম্বরে যোগাযোগ করব।`
+                  : language === "ar"
+                  ? `يقوم مكتب الحجز بفحص المقاعد وأسعار الجملة المباشرة وسنتواصل معك على ${phone} خلال 15 دقيقة.`
+                  : `Our ticketing desk is checking current seat availability and net fare rules on live GDS. We will contact you at ${phone} within 15 minutes.`}
               </p>
 
               <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
@@ -289,14 +299,14 @@ export function BookingInquiryForm({
                   className="inline-flex items-center justify-center gap-2 rounded-xl bg-gold-600 px-5 py-3 text-sm font-bold text-white hover:bg-gold-700 transition-colors shadow-sm w-full sm:w-auto"
                 >
                   <Phone className="h-4 w-4" />
-                  Call Now for Priority Processing
+                  {language === "bn" ? "জরুরি প্রসেসিংয়ের জন্য কল করুন" : language === "ar" ? "اتصل الآن لمعالجة عاجلة" : "Call Now for Priority Processing"}
                 </a>
                 <button
                   type="button"
                   onClick={() => setSuccessReference(null)}
                   className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-100 w-full sm:w-auto cursor-pointer"
                 >
-                  Submit Another Inquiry
+                  {language === "bn" ? "আরেকটি অনুসন্ধান পাঠান" : language === "ar" ? "إرسال طلب آخر" : "Submit Another Inquiry"}
                 </button>
               </div>
             </div>
@@ -308,7 +318,11 @@ export function BookingInquiryForm({
                     {t("inquiry.title")}
                   </h3>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Fast response within 15 minutes with verified baggage details
+                    {language === "bn"
+                      ? "১৫ মিনিটের মধ্যে দ্রুত কোটেশন ও পূর্ণাঙ্গ লাগেজ বিবরণী প্রদান"
+                      : language === "ar"
+                      ? "استجابة سريعة خلال 15 دقيقة مع تفاصيل الأمتعة"
+                      : "Fast response within 15 minutes with verified baggage details"}
                   </p>
                 </div>
 
@@ -341,7 +355,9 @@ export function BookingInquiryForm({
 
               {/* Quick Fill Suggestions */}
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none text-[11px] text-slate-500">
-                <span className="shrink-0 font-medium text-slate-400">Quick Route:</span>
+                <span className="shrink-0 font-medium text-slate-400">
+                  {language === "bn" ? "জনপ্রিয় রুট:" : language === "ar" ? "مسارات سريعة:" : "Quick Route:"}
+                </span>
                 {[
                   { from: "DAC", to: "JED", label: "DAC → Jeddah" },
                   { from: "DAC", to: "DXB", label: "DAC → Dubai" },
@@ -492,12 +508,34 @@ export function BookingInquiryForm({
                       onChange={(e) => setPassengerCategory(e.target.value)}
                       className="input"
                     >
-                      <option value="Standard">Standard Leisure / Business</option>
-                      <option value="Migrant Worker">
-                        Migrant Worker (Middle East / Malaysia Quota)
+                      <option value="Standard">
+                        {language === "bn"
+                          ? "স্ট্যান্ডার্ড ট্রাভেল / বিজনেস"
+                          : language === "ar"
+                          ? "عادي / ترفيهي وسياحي"
+                          : "Standard Leisure / Business"}
                       </option>
-                      <option value="Student">Student (Extra 46kg Luggage)</option>
-                      <option value="Umrah">Umrah Pilgrim Group</option>
+                      <option value="Migrant Worker">
+                        {language === "bn"
+                          ? "প্রবাসী কর্মী স্পেশাল (৪০-৪৬ কেজি লাগেজ)"
+                          : language === "ar"
+                          ? "تأشيرات عمل الشرق الأوسط (46 كجم أمتعة)"
+                          : "Migrant Worker (Middle East 46kg)"}
+                      </option>
+                      <option value="Student">
+                        {language === "bn"
+                          ? "শিক্ষার্থী ফেয়ার (অতিরিক্ত ৪৬ কেজি লাগেজ)"
+                          : language === "ar"
+                          ? "تذاكر الطلاب (أمتعة إضافية 46 كجم)"
+                          : "Student (Extra 46kg Luggage)"}
+                      </option>
+                      <option value="Umrah">
+                        {language === "bn"
+                          ? "উমরাহ ও হজ্জ গ্রুপ"
+                          : language === "ar"
+                          ? "مجموعات العمرة والحج"
+                          : "Umrah Pilgrim Group"}
+                      </option>
                     </select>
                   </div>
                 )}
@@ -507,17 +545,17 @@ export function BookingInquiryForm({
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Cabin Class
+                    {t("search.cabinClass")}
                   </label>
                   <select
                     value={cabinClass}
                     onChange={(e) => setCabinClass(e.target.value as CabinClass)}
                     className="input"
                   >
-                    <option value="Economy">Economy</option>
-                    <option value="Premium Economy">Premium Economy</option>
-                    <option value="Business">Business Class</option>
-                    <option value="First Class">First Class</option>
+                    <option value="Economy">{t("search.economy")}</option>
+                    <option value="Premium Economy">{t("search.cabinPremiumEconomy")}</option>
+                    <option value="Business">{t("search.business")}</option>
+                    <option value="First Class">{t("search.cabinFirst")}</option>
                   </select>
                 </div>
 
@@ -530,12 +568,12 @@ export function BookingInquiryForm({
                     onChange={(e) => setPassengers(Number(e.target.value))}
                     className="input"
                   >
-                    <option value={1}>1 Person</option>
-                    <option value={2}>2 Persons</option>
-                    <option value={3}>3 Persons</option>
-                    <option value={4}>4 Persons</option>
-                    <option value={5}>5 Persons</option>
-                    <option value={10}>Group (10+)</option>
+                    <option value={1}>{t("search.traveler1")}</option>
+                    <option value={2}>{t("search.traveler2")}</option>
+                    <option value={3}>{t("search.traveler3")}</option>
+                    <option value={4}>{t("search.traveler4")}</option>
+                    <option value={5}>{t("search.traveler5")}</option>
+                    <option value={10}>{t("search.travelerGroup")}</option>
                   </select>
                 </div>
 

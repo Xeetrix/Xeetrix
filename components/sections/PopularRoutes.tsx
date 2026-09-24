@@ -23,14 +23,43 @@ export function PopularRoutes({
 }: PopularRoutesProps) {
   const [activeCategory, setActiveCategory] = useState<string>("All");
   const { openConcierge } = useAiConcierge();
-  const { formatPrice, t } = useI18n();
+  const { formatPrice, t, language } = useI18n();
 
-  const categories = ["All", "Middle East", "Southeast Asia", "Europe & UK"];
+  const categories = [
+    { id: "All", label: t("routes.all") },
+    { id: "Middle East", label: t("routes.middleEast") },
+    { id: "Southeast Asia", label: t("routes.asia") },
+    { id: "Europe & UK", label: t("routes.europe") },
+  ];
 
   const filteredRoutes =
     activeCategory === "All"
       ? POPULAR_ROUTES
       : POPULAR_ROUTES.filter((r) => r.category === activeCategory);
+
+  const getLocalizedTag = (tag?: string) => {
+    if (!tag) return t("routes.specialNetFare");
+    if (language === "bn") {
+      if (tag.includes("Umrah")) return "উমরাহ ও কর্মী স্পেশাল";
+      if (tag.includes("Top Selling")) return "টপ সেলিং ফেয়ার";
+      if (tag.includes("Migrant")) return "প্রবাসী নেট-ফেয়ার";
+      if (tag.includes("Student")) return "স্টুডেন্ট স্পেশাল";
+      if (tag.includes("Direct")) return "সরাসরি ফ্লাইট";
+      if (tag.includes("Ex-Chittagong")) return "চট্টগ্রাম ফ্লাইট";
+      if (tag.includes("Holiday")) return "হলিডে ও বিজনেস";
+      if (tag.includes("Worker")) return "স্পেশাল কর্মী ফেয়ার";
+    } else if (language === "ar") {
+      if (tag.includes("Umrah")) return "خاص بالعمرة والعمال";
+      if (tag.includes("Top Selling")) return "الأكثر طلباً ومبيعاً";
+      if (tag.includes("Migrant")) return "سعر خاص للعمالة";
+      if (tag.includes("Student")) return "عروض الطلاب";
+      if (tag.includes("Direct")) return "رحلة مباشرة";
+      if (tag.includes("Ex-Chittagong")) return "رحلات من تشيتاغونغ";
+      if (tag.includes("Holiday")) return "عطلات ورجال أعمال";
+      if (tag.includes("Worker")) return "سعر عمال مخفض";
+    }
+    return tag;
+  };
 
   const content = (
     <>
@@ -48,15 +77,15 @@ export function PopularRoutes({
       <div className="flex flex-wrap items-center justify-center gap-2 mb-8 sm:mb-10">
         {categories.map((cat) => (
           <button
-            key={cat}
-            onClick={() => setActiveCategory(cat)}
+            key={cat.id}
+            onClick={() => setActiveCategory(cat.id)}
             className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
-              activeCategory === cat
+              activeCategory === cat.id
                 ? "bg-[#0B5D3A] text-white shadow-xs"
                 : "bg-slate-100 text-slate-700 hover:bg-slate-200"
             }`}
           >
-            {cat === "All" ? t("routes.all") : cat}
+            {cat.label}
           </button>
         ))}
       </div>
@@ -73,9 +102,17 @@ export function PopularRoutes({
               <div className="flex items-center justify-between gap-2 mb-3">
                 <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-brand-800">
                   <Tag className="h-3 w-3 text-brand-600" />
-                  {route.featuredTag || "Special Net-Fare"}
+                  {getLocalizedTag(route.featuredTag)}
                 </span>
-                <span className="text-[11px] text-slate-400 font-medium">{route.category}</span>
+                <span className="text-[11px] text-slate-400 font-medium">
+                  {route.category === "Middle East"
+                    ? t("routes.middleEast")
+                    : route.category === "Southeast Asia"
+                    ? t("routes.asia")
+                    : route.category === "Europe & UK"
+                    ? t("routes.europe")
+                    : route.category}
+                </span>
               </div>
 
               {/* Origin -> Destination Banner */}
@@ -89,7 +126,11 @@ export function PopularRoutes({
 
                 <div className="flex flex-col items-center flex-1 px-3">
                   <span className="text-[10px] text-slate-400 font-medium mb-1">
-                    {route.flightType}
+                    {language === "bn"
+                      ? route.flightType === "Direct" ? "সরাসরি" : "১ স্টপ"
+                      : language === "ar"
+                      ? route.flightType === "Direct" ? "مباشرة" : "توقف واحد"
+                      : route.flightType}
                   </span>
                   <div className="relative w-full flex items-center">
                     <div className="h-0.5 w-full bg-slate-200" />
@@ -114,13 +155,13 @@ export function PopularRoutes({
                 <div className="flex items-center gap-2">
                   <Luggage className="h-4 w-4 text-brand-700 shrink-0" />
                   <span>
-                    Baggage: <strong>{route.baggage}</strong>
+                    {t("routes.baggage")} <strong>{route.baggage}</strong>
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Check className="h-4 w-4 text-brand-600 shrink-0" />
                   <span className="truncate">
-                    Airlines: {route.airlines.join(", ")}
+                    {t("routes.airlines")} {route.airlines.join(", ")}
                   </span>
                 </div>
               </div>
@@ -142,7 +183,11 @@ export function PopularRoutes({
                   type="button"
                   onClick={() =>
                     openConcierge(
-                      `Tell me about flights from ${route.fromCity} (${route.fromCode}) to ${route.toCity} (${route.toCode}), including current live airfares, airline luggage rules, and visa advice.`
+                      language === "bn"
+                        ? `${route.fromCity} (${route.fromCode}) থেকে ${route.toCity} (${route.toCode}) ফ্লাইটের বর্তমান ভাড়া, লাগেজ সুবিধা ও সিট অ্যাভেইলেবিলিটি সম্পর্কে জানতে চাই`
+                        : language === "ar"
+                        ? `أريد تفاصيل رحلات ${route.fromCity} (${route.fromCode}) إلى ${route.toCity} (${route.toCode}) بما في ذلك الأسعار وسعة الأمتعة`
+                        : `Tell me about flights from ${route.fromCity} (${route.fromCode}) to ${route.toCity} (${route.toCode}), including current live airfares, airline luggage rules, and visa advice.`
                     )
                   }
                   title={t("routes.askAi")}
@@ -178,16 +223,16 @@ export function PopularRoutes({
       {/* View all routes banner */}
       <div className="mt-8 sm:mt-10 rounded-2xl bg-slate-900 text-white p-6 sm:p-8 flex flex-col sm:flex-row items-center justify-between gap-6 shadow-md">
         <div>
-          <h4 className="text-base sm:text-lg font-bold">Traveling to a different destination?</h4>
+          <h4 className="text-base sm:text-lg font-bold">{t("routes.otherDestTitle")}</h4>
           <p className="text-xs sm:text-sm text-slate-300 mt-1 max-w-xl">
-            We issue tickets for over 250+ global airport hubs across North America, Europe, Africa, Middle East, and Asia.
+            {t("routes.otherDestDesc")}
           </p>
         </div>
         <Link
           href="/routes"
           className="inline-flex items-center gap-2 rounded-xl bg-[#0B5D3A] px-5 py-3 text-xs sm:text-sm font-bold text-white hover:bg-[#08482d] transition-colors shrink-0"
         >
-          <span>View All 250+ Routes</span>
+          <span>{t("routes.viewAllBtn")}</span>
           <ArrowRight className="h-4 w-4" />
         </Link>
       </div>

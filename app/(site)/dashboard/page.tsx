@@ -28,6 +28,7 @@ import {
 import Link from "next/link";
 import { CONTACT_PHONE_DISPLAY, CONTACT_PHONE_TEL } from "@/lib/constants";
 import { AuthModal } from "@/components/AuthModal";
+import { useI18n } from "@/lib/i18n-context";
 
 interface InquiryRecord {
   id: string;
@@ -48,6 +49,7 @@ interface InquiryRecord {
 
 export default function DashboardPage() {
   const { user, loading, signInWithGoogle } = useAuth();
+  const { t, language } = useI18n();
   const [inquiries, setInquiries] = useState<InquiryRecord[]>([]);
   const [fetchingInquiries, setFetchingInquiries] = useState(true);
   const [pnrSearch, setPnrSearch] = useState("");
@@ -156,10 +158,10 @@ export default function DashboardPage() {
               Xeetrix Passenger Portal &amp; PNR Tracker
             </div>
             <h1 className="font-display text-2xl sm:text-3xl lg:text-4xl font-extrabold text-slate-900">
-              My Bookings &amp; Inquiries
+              {t("dashboard.title")}
             </h1>
             <p className="mt-1 text-xs sm:text-sm text-slate-600">
-              Track quotation status, download verified e-tickets, and manage date change requests.
+              {t("dashboard.subtitle")}
             </p>
           </div>
 
@@ -193,10 +195,10 @@ export default function DashboardPage() {
               <button
                 type="button"
                 onClick={() => setAuthModalOpen(true)}
-                className="inline-flex items-center gap-2 rounded-xl bg-[#0B5D3A] px-4 py-2.5 text-xs sm:text-sm font-bold text-white shadow-xs hover:bg-[#084A2E] transition-all min-h-[40px]"
+                className="inline-flex items-center gap-2 rounded-xl bg-[#0B5D3A] px-4 py-2.5 text-xs sm:text-sm font-bold text-white shadow-xs hover:bg-[#084A2E] transition-all min-h-[40px] cursor-pointer"
               >
                 <User className="h-4 w-4" />
-                Sign In with Google
+                {t("auth.googleSignIn")}
               </button>
             )}
           </div>
@@ -344,7 +346,13 @@ export default function DashboardPage() {
               href="/flights"
               className="inline-flex items-center gap-1.5 text-xs font-bold text-[#0B5D3A] hover:underline"
             >
-              <span>+ New Flight Inquiry</span>
+              <span>
+                {language === "bn"
+                  ? "+ নতুন ফ্লাইট অনুসন্ধান"
+                  : language === "ar"
+                  ? "+ استفسار رحلة جديد"
+                  : "+ New Flight Inquiry"}
+              </span>
               <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </div>
@@ -355,24 +363,38 @@ export default function DashboardPage() {
                 <Ticket className="h-7 w-7" />
               </div>
               <h3 className="font-display text-base sm:text-lg font-bold text-slate-900">
-                Sign in to view your flight bookings
+                {language === "bn"
+                  ? "আপনার বুকিং দেখতে সাইন ইন করুন"
+                  : language === "ar"
+                  ? "سجل الدخول لعرض حجوزاتك"
+                  : "Sign in to view your flight bookings"}
               </h3>
               <p className="mt-2 text-xs sm:text-sm text-slate-500 max-w-md mx-auto leading-relaxed">
-                Connect your Google account with Firebase to automatically link all your ticket requests, quote comparisons, and e-ticket downloads.
+                {language === "bn"
+                  ? "আপনার সব টিকেট রিকোয়েস্ট, কোটেশন ও ই-টিকিট অটো সিঙ্ক করতে গুগল একাউন্ট দিয়ে লগইন করুন।"
+                  : language === "ar"
+                  ? "قم بربط حساب Google لحفظ جميع طلبات التذاكر وعروض الأسعار والرمز PNR تلقائياً."
+                  : "Connect your Google account with Firebase to automatically link all your ticket requests, quote comparisons, and e-ticket downloads."}
               </p>
               <button
                 type="button"
                 onClick={() => setAuthModalOpen(true)}
-                className="mt-5 inline-flex items-center gap-2 rounded-xl bg-[#0B5D3A] px-6 py-3 text-sm font-bold text-white shadow-xs hover:bg-[#084A2E] transition-all"
+                className="mt-5 inline-flex items-center gap-2 rounded-xl bg-[#0B5D3A] px-6 py-3 text-sm font-bold text-white shadow-xs hover:bg-[#084A2E] transition-all cursor-pointer"
               >
                 <User className="h-4 w-4" />
-                Sign In with Google
+                {t("auth.googleSignIn")}
               </button>
             </div>
           ) : fetchingInquiries ? (
             <div className="rounded-3xl bg-white p-12 text-center border border-slate-200">
               <div className="inline-block animate-spin h-6 w-6 border-2 border-[#0B5D3A] border-t-transparent rounded-full mb-2"></div>
-              <p className="text-xs text-slate-500">Loading your synced inquiries...</p>
+              <p className="text-xs text-slate-500">
+                {language === "bn"
+                  ? "তথ্য লোড হচ্ছে..."
+                  : language === "ar"
+                  ? "جاري تحميل بياناتك..."
+                  : "Loading your synced inquiries..."}
+              </p>
             </div>
           ) : inquiries.length === 0 ? (
             <div className="rounded-3xl bg-white p-8 sm:p-10 text-center border border-slate-200 shadow-sm">
@@ -380,23 +402,27 @@ export default function DashboardPage() {
                 <Plane className="h-6 w-6" />
               </div>
               <h3 className="text-base font-bold text-slate-800">
-                No flight inquiries submitted yet
+                {t("dashboard.noBookings")}
               </h3>
               <p className="mt-1 text-xs text-slate-500 max-w-sm mx-auto">
-                Request a flight quotation or search for international routes to get live GDS net-fares.
+                {language === "bn"
+                  ? "লাইভ জিডিএস নেট-ফেয়ার জানতে ফ্লাইট খুঁজুন অথবা সরাসরি কোটেশন রিকোয়েস্ট পাঠান।"
+                  : language === "ar"
+                  ? "اطلب عرض سعر أو ابحث عن رحلات دولية للحصول على أسعار فورية."
+                  : "Request a flight quotation or search for international routes to get live GDS net-fares."}
               </p>
               <div className="mt-5 flex flex-wrap justify-center gap-3">
                 <Link
                   href="/flights"
                   className="inline-flex items-center gap-2 rounded-xl bg-[#0B5D3A] px-4 py-2.5 text-xs font-bold text-white hover:bg-[#084A2E]"
                 >
-                  Search Flight Routes
+                  {t("nav.flights")}
                 </Link>
                 <Link
                   href="/contact#quote"
                   className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
                 >
-                  Request Direct Quote
+                  {t("nav.requestQuote")}
                 </Link>
               </div>
             </div>

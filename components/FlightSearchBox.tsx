@@ -45,7 +45,7 @@ export function FlightSearchBox({
 }: FlightSearchBoxProps) {
   const router = useRouter();
   const { openConcierge } = useAiConcierge();
-  const { t } = useI18n();
+  const { t, language } = useI18n();
 
   const [tripType, setTripType] = useState<TripType>("oneway");
   const [fromCode, setFromCode] = useState(defaultOrigin);
@@ -80,7 +80,14 @@ export function FlightSearchBox({
   };
 
   const handleAiAsk = () => {
-    const q = `${fromAirport.city} (${fromCode}) থেকে ${toAirport.city} (${toCode}) বিমান টিকেটের সেরা অফার, লাগেজ সুবিধা ও ফ্লাইট শিডিউল সম্পর্কে জানতে চাই`;
+    let q = "";
+    if (language === "bn") {
+      q = `${fromAirport.city} (${fromCode}) থেকে ${toAirport.city} (${toCode}) বিমান টিকেটের সেরা অফার, লাগেজ সুবিধা ও ফ্লাইট শিডিউল সম্পর্কে জানতে চাই`;
+    } else if (language === "ar") {
+      q = `أريد معرفة أفضل عروض تذاكر الطيران وأوزان الأمتعة المسموحة والرحلات من ${fromAirport.city} (${fromCode}) إلى ${toAirport.city} (${toCode})`;
+    } else {
+      q = `Tell me about live lowest airfares, airline luggage rules, and flight schedules from ${fromAirport.city} (${fromCode}) to ${toAirport.city} (${toCode})`;
+    }
     openConcierge(q);
   };
 
@@ -89,7 +96,13 @@ export function FlightSearchBox({
     setErrorMessage(null);
 
     if (fromCode === toCode) {
-      setErrorMessage("Departure and destination cannot be the same airport.");
+      setErrorMessage(
+        language === "bn"
+          ? "যাত্রা ও গন্তব্য বিমানবন্দর একই হতে পারে না।"
+          : language === "ar"
+          ? "لا يمكن أن يكون مطار المغادرة والوصول متطابقين."
+          : "Departure and destination cannot be the same airport."
+      );
       return;
     }
 
@@ -154,6 +167,13 @@ export function FlightSearchBox({
     }
   };
 
+  const categories = [
+    { id: "Standard", label: t("search.catStandard") },
+    { id: "Migrant Worker", label: t("search.catWorker") },
+    { id: "Student", label: t("search.catStudent") },
+    { id: "Umrah", label: t("search.catUmrah") },
+  ];
+
   return (
     <div
       className={`rounded-2xl sm:rounded-3xl bg-white p-4 sm:p-6 lg:p-8 shadow-elevated border border-slate-200/80 transition-all ${className}`}
@@ -165,10 +185,10 @@ export function FlightSearchBox({
           </div>
           <div>
             <h3 className="font-display text-xl font-bold text-slate-900">
-              Flight Search Request Received!
+              {t("search.requestReceived")}
             </h3>
             <p className="mt-1 text-sm text-slate-600 max-w-md mx-auto">
-              Our ticketing desk is checking real-time GDS net-fares for{" "}
+              {t("search.requestReceivedDesc")}{" "}
               <strong>
                 {fromAirport.city} ({fromCode}) → {toAirport.city} ({toCode})
               </strong>
@@ -176,7 +196,7 @@ export function FlightSearchBox({
             </p>
           </div>
           <div className="inline-block rounded-xl bg-slate-50 border border-slate-200 px-4 py-2.5">
-            <span className="text-xs text-slate-500 block">Inquiry Reference</span>
+            <span className="text-xs text-slate-500 block">{t("search.inquiryRef")}</span>
             <span className="font-mono text-base font-bold text-brand-800">
               {submittedReference}
             </span>
@@ -185,24 +205,24 @@ export function FlightSearchBox({
             <button
               type="button"
               onClick={() => setSubmittedReference(null)}
-              className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
             >
-              Search Another Route
+              {t("search.searchAnother")}
             </button>
             <button
               type="button"
               onClick={handleAiAsk}
-              className="rounded-xl bg-[#0B5D3A] px-4 py-2 text-xs font-bold text-white hover:bg-[#084A2E] flex items-center gap-1.5"
+              className="rounded-xl bg-[#0B5D3A] px-4 py-2 text-xs font-bold text-white hover:bg-[#084A2E] flex items-center gap-1.5 cursor-pointer"
             >
               <Sparkles className="h-3.5 w-3.5" />
-              Ask AI Flight Concierge
+              {t("search.askConcierge")}
             </button>
             <a
               href={CONTACT_PHONE_TEL}
-              className="rounded-xl bg-gold-600 px-4 py-2 text-xs font-bold text-white hover:bg-gold-700 flex items-center gap-1.5"
+              className="rounded-xl bg-gold-600 px-4 py-2 text-xs font-bold text-white hover:bg-gold-700 flex items-center gap-1.5 cursor-pointer"
             >
               <Phone className="h-3.5 w-3.5" />
-              Call Hotline: {CONTACT_PHONE_DISPLAY}
+              {t("search.callHotline")} {CONTACT_PHONE_DISPLAY}
             </a>
           </div>
         </div>
@@ -238,19 +258,16 @@ export function FlightSearchBox({
 
             {/* Special Fare Categories */}
             <div className="flex items-center gap-2 text-xs overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
-              <span className="text-slate-500 shrink-0 hidden md:inline font-medium">Category:</span>
+              <span className="text-slate-500 shrink-0 hidden md:inline font-medium">
+                {t("search.category")}
+              </span>
               <div className="flex items-center gap-1.5 shrink-0">
-                {[
-                  { id: "Standard", label: "Standard" },
-                  { id: "Migrant Worker", label: "Worker Net Fare" },
-                  { id: "Student", label: "Student 46kg" },
-                  { id: "Umrah", label: "Umrah Group" },
-                ].map((cat) => (
+                {categories.map((cat) => (
                   <button
                     key={cat.id}
                     type="button"
                     onClick={() => setPassengerCategory(cat.id)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors border whitespace-nowrap min-h-[32px] ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors border whitespace-nowrap min-h-[32px] cursor-pointer ${
                       passengerCategory === cat.id
                         ? "bg-brand-50 border-brand-600 text-brand-800"
                         : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900"
@@ -271,7 +288,7 @@ export function FlightSearchBox({
 
           {/* Quick Route Shortcuts for fast mobile selection */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none text-[11px] text-slate-500">
-            <span className="shrink-0 font-medium text-slate-400">Popular:</span>
+            <span className="shrink-0 font-medium text-slate-400">{t("search.popular")}</span>
             {POPULAR_SHORTCUTS.map((item) => (
               <button
                 key={`${item.from}-${item.to}`}
@@ -280,7 +297,7 @@ export function FlightSearchBox({
                   setFromCode(item.from);
                   setToCode(item.to);
                 }}
-                className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors border ${
+                className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors border cursor-pointer ${
                   fromCode === item.from && toCode === item.to
                     ? "bg-[#0B5D3A] text-white border-[#0B5D3A]"
                     : "bg-slate-50 text-slate-700 border-slate-200 hover:border-slate-300"
@@ -307,14 +324,14 @@ export function FlightSearchBox({
                   onChange={(e) => setFromCode(e.target.value)}
                   className="w-full pl-10 pr-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-900 focus:bg-white focus:border-brand-700 outline-none transition-colors min-h-[46px]"
                 >
-                  <optgroup label="Bangladesh (Domestic & International Hubs)">
+                  <optgroup label={language === "bn" ? "বাংলাদেশ (অভ্যন্তরীণ ও আন্তর্জাতিক)" : language === "ar" ? "بنغلاديش (محلي ودولي)" : "Bangladesh (Domestic & International Hubs)"}>
                     {AIRPORTS.filter((a) => a.country === "Bangladesh").map((a) => (
                       <option key={a.code} value={a.code}>
                         {a.city} ({a.code}) — {a.name}
                       </option>
                     ))}
                   </optgroup>
-                  <optgroup label="International Destinations">
+                  <optgroup label={language === "bn" ? "আন্তর্জাতিক বিমানবন্দর" : language === "ar" ? "وجهات دولية" : "International Destinations"}>
                     {AIRPORTS.filter((a) => a.country !== "Bangladesh").map((a) => (
                       <option key={a.code} value={a.code}>
                         {a.city} ({a.code}) — {a.country}
@@ -332,7 +349,7 @@ export function FlightSearchBox({
                 onClick={handleSwapAirports}
                 aria-label="Swap origin and destination"
                 title="Swap origin and destination"
-                className="flex items-center justify-center h-10 w-10 sm:h-9 sm:w-9 rounded-full bg-slate-100 border border-slate-200 text-slate-600 hover:text-brand-700 hover:bg-white hover:border-brand-300 transition-all hover:scale-105 active:scale-95 shadow-xs"
+                className="flex items-center justify-center h-10 w-10 sm:h-9 sm:w-9 rounded-full bg-slate-100 border border-slate-200 text-slate-600 hover:text-brand-700 hover:bg-white hover:border-brand-300 transition-all hover:scale-105 active:scale-95 shadow-xs cursor-pointer"
               >
                 <ArrowLeftRight className="h-4 w-4 hidden lg:block" />
                 <ArrowUpDown className="h-4 w-4 lg:hidden" />
@@ -353,28 +370,28 @@ export function FlightSearchBox({
                   onChange={(e) => setToCode(e.target.value)}
                   className="w-full pl-10 pr-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-900 focus:bg-white focus:border-brand-700 outline-none transition-colors min-h-[46px]"
                 >
-                  <optgroup label="Middle East (Direct & Worker Concessions)">
+                  <optgroup label={language === "bn" ? "মধ্যপ্রাচ্য (সরাসরি ও কর্মী ফেয়ার)" : language === "ar" ? "الشرق الأوسط" : "Middle East (Direct & Worker Concessions)"}>
                     {AIRPORTS.filter((a) => a.region === "Middle East").map((a) => (
                       <option key={a.code} value={a.code}>
                         {a.city} ({a.code}) — {a.country}
                       </option>
                     ))}
                   </optgroup>
-                  <optgroup label="Asia Pacific & Malaysia">
+                  <optgroup label={language === "bn" ? "এশিয়া প্যাসিফিক ও মালয়েশিয়া" : language === "ar" ? "آسيا والمحيط الهادئ" : "Asia Pacific & Malaysia"}>
                     {AIRPORTS.filter((a) => a.region === "Asia").map((a) => (
                       <option key={a.code} value={a.code}>
                         {a.city} ({a.code}) — {a.country}
                       </option>
                     ))}
                   </optgroup>
-                  <optgroup label="Europe, UK & North America">
+                  <optgroup label={language === "bn" ? "ইউরোপ, যুক্তরাজ্য ও উত্তর আমেরিকা" : language === "ar" ? "أوروبا وأمريكا الشمالية" : "Europe, UK & North America"}>
                     {AIRPORTS.filter((a) => a.region === "Europe & America").map((a) => (
                       <option key={a.code} value={a.code}>
                         {a.city} ({a.code}) — {a.country}
                       </option>
                     ))}
                   </optgroup>
-                  <optgroup label="Domestic (Bangladesh)">
+                  <optgroup label={language === "bn" ? "অভ্যন্তরীণ (বাংলাদেশ)" : language === "ar" ? "داخلي (بنغلاديش)" : "Domestic (Bangladesh)"}>
                     {AIRPORTS.filter((a) => a.region === "Domestic").map((a) => (
                       <option key={a.code} value={a.code}>
                         {a.city} ({a.code})
@@ -433,17 +450,17 @@ export function FlightSearchBox({
             {/* Cabin Class */}
             <div className="lg:col-span-3">
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Cabin Class
+                {t("search.cabinClass")}
               </label>
               <select
                 value={cabinClass}
                 onChange={(e) => setCabinClass(e.target.value as CabinClass)}
                 className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:bg-white focus:border-brand-700 outline-none min-h-[44px]"
               >
-                <option value="Economy">Economy</option>
-                <option value="Premium Economy">Premium Economy</option>
-                <option value="Business">Business Class</option>
-                <option value="First Class">First Class</option>
+                <option value="Economy">{t("search.economy")}</option>
+                <option value="Premium Economy">{t("search.cabinPremiumEconomy")}</option>
+                <option value="Business">{t("search.business")}</option>
+                <option value="First Class">{t("search.cabinFirst")}</option>
               </select>
             </div>
 
@@ -461,12 +478,12 @@ export function FlightSearchBox({
                   onChange={(e) => setPassengers(Number(e.target.value))}
                   className="w-full pl-10 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-900 focus:bg-white focus:border-brand-700 outline-none min-h-[44px]"
                 >
-                  <option value={1}>1 Traveler (Adult)</option>
-                  <option value={2}>2 Travelers</option>
-                  <option value={3}>3 Travelers</option>
-                  <option value={4}>4 Travelers</option>
-                  <option value={5}>5 Travelers</option>
-                  <option value={6}>6+ Group Booking</option>
+                  <option value={1}>{t("search.traveler1")}</option>
+                  <option value={2}>{t("search.traveler2")}</option>
+                  <option value={3}>{t("search.traveler3")}</option>
+                  <option value={4}>{t("search.traveler4")}</option>
+                  <option value={5}>{t("search.traveler5")}</option>
+                  <option value={6}>{t("search.travelerGroup")}</option>
                 </select>
               </div>
             </div>
@@ -479,7 +496,7 @@ export function FlightSearchBox({
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3 text-xs sm:text-sm font-bold text-[#0B5D3A] hover:bg-emerald-100 transition-colors min-h-[46px] cursor-pointer"
               >
                 <Sparkles className="h-4 w-4 text-[#0B5D3A]" />
-                <span>AI Live Intel</span>
+                <span>{t("search.aiIntel")}</span>
               </button>
 
               <button
@@ -488,7 +505,7 @@ export function FlightSearchBox({
                 className="w-full sm:flex-1 inline-flex items-center justify-center gap-2.5 rounded-xl bg-gold-600 px-5 py-3 text-sm sm:text-base font-bold text-white shadow-md hover:bg-gold-700 transition-all hover:shadow-lg active:scale-[0.99] disabled:opacity-75 cursor-pointer min-h-[46px]"
               >
                 <Search className="h-4 w-4 stroke-[2.5]" />
-                {isSubmitting ? "Finding Best Net-Fares..." : t("search.searchBtn")}
+                {isSubmitting ? t("search.findingFares") : t("search.searchBtn")}
               </button>
             </div>
           </div>
@@ -497,18 +514,18 @@ export function FlightSearchBox({
           <div className="flex flex-wrap items-center justify-between gap-2 pt-2 text-xs text-slate-500">
             <span className="flex items-center gap-1.5 text-slate-600">
               <ShieldCheck className="h-3.5 w-3.5 text-brand-700 shrink-0" />
-              Verified IATA &amp; Airline GDS direct ticketing
+              {t("search.iataGuaranteed")}
             </span>
             <span className="flex items-center gap-1.5 text-slate-600">
               <Luggage className="h-3.5 w-3.5 text-brand-700 shrink-0" />
-              Extra luggage assistance for Students &amp; Migrant Workers
+              {t("search.studentLuggage")}
             </span>
             <a
               href={CONTACT_PHONE_TEL}
               className="font-semibold text-brand-700 hover:text-brand-800 transition-colors flex items-center gap-1 shrink-0"
             >
               <Phone className="h-3 w-3" />
-              Need Urgent Booking? {CONTACT_PHONE_DISPLAY}
+              {t("search.needUrgent")} {CONTACT_PHONE_DISPLAY}
             </a>
           </div>
         </form>

@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { X } from "lucide-react";
 import { BookingInquiryForm } from "@/components/BookingInquiryForm";
+import { useI18n } from "@/lib/i18n-context";
 
 interface QuoteModalProps {
   isOpen: boolean;
@@ -17,6 +18,8 @@ export function QuoteModal({
   defaultOrigin = "DAC",
   defaultDestination = "JED",
 }: QuoteModalProps) {
+  const { t, language } = useI18n();
+
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = "hidden";
@@ -44,13 +47,13 @@ export function QuoteModal({
 
         <div className="mb-6">
           <span className="text-xs font-bold uppercase tracking-wider text-brand-700 bg-brand-50 px-3 py-1 rounded-full border border-brand-200">
-            Official Ticketing Desk
+            {t("inquiry.badge")}
           </span>
           <h2 className="mt-2 text-2xl font-bold text-slate-900">
-            Request Flight Quote &amp; Fare Verification
+            {t("inquiry.title")}
           </h2>
           <p className="text-sm text-slate-600">
-            Get net-fares from live GDS airline inventories in 15 minutes.
+            {t("inquiry.desc")}
           </p>
         </div>
 

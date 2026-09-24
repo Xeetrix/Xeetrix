@@ -118,7 +118,11 @@ export function AiFlightConcierge({
         id: `welcome_${Date.now()}`,
         role: "assistant",
         content:
-          "নতুন কনভারসেশন শুরু হয়েছে! আপনার গন্তব্য, বাজেট বা ফ্লাইট সংক্রান্ত যেকোনো প্রশ্ন বাংলায় বা ইংরেজিতে লিখুন।\n\nNew conversation started. Ask me any flight query in English or Bengali!",
+          language === "bn"
+            ? "নতুন কনভারসেশন শুরু হয়েছে! আপনার গন্তব্য, বাজেট বা ফ্লাইট সংক্রান্ত যেকোনো প্রশ্ন বাংলায় বা ইংরেজিতে লিখুন।"
+            : language === "ar"
+            ? "تم بدء محادثة جديدة! يمكنك كتابة استفسارك عن تذاكر الطيران، وأوزان الأمتعة، أو الوجهات بالعربية أو الإنجليزية."
+            : "New conversation started. Ask me any flight query in English, Bengali, or Arabic!",
         timestamp: new Date(),
       },
     ]);
@@ -434,7 +438,13 @@ export function AiFlightConcierge({
 
               {/* Support footnote */}
               <div className="flex items-center justify-between mt-2 pt-1.5 text-[10px] text-slate-400 px-1">
-                <span>২৪/৭ সরাসরি বুকিং হটলাইন:</span>
+                <span>
+                  {language === "bn"
+                    ? "২৪/৭ সরাসরি বুকিং হটলাইন:"
+                    : language === "ar"
+                    ? "خط المساعدة المباشر 24/7:"
+                    : "24/7 Direct Ticketing Helpline:"}
+                </span>
                 <a
                   href={CONTACT_PHONE_TEL}
                   className="font-bold text-[#0B5D3A] hover:underline flex items-center gap-1"
@@ -459,6 +469,8 @@ export function AiConciergeFloatingButton({
 }: {
   onClick: () => void;
 }) {
+  const { language } = useI18n();
+
   return (
     <button
       onClick={onClick}
@@ -470,7 +482,9 @@ export function AiConciergeFloatingButton({
       </div>
       <div className="flex flex-col text-left">
         <span className="text-xs font-bold leading-none">AI Flight Concierge</span>
-        <span className="text-[10px] text-emerald-200 font-medium">বাংলা ও English • Gemini 3.8</span>
+        <span className="text-[10px] text-emerald-200 font-medium">
+          {language === "bn" ? "বাংলা ও English" : language === "ar" ? "العربية & English" : "English, বাংলা & العربية"}
+        </span>
       </div>
     </button>
   );
