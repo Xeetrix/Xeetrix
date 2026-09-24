@@ -19,6 +19,7 @@ import {
 import { AIRPORTS, CONTACT_PHONE_TEL, CONTACT_PHONE_DISPLAY } from "@/lib/constants";
 import type { TripType, CabinClass } from "@/lib/types";
 import { useAiConcierge } from "@/lib/ai-concierge-context";
+import { useI18n } from "@/lib/i18n-context";
 
 interface FlightSearchBoxProps {
   onSearchSubmit?: (query: any) => void;
@@ -44,6 +45,7 @@ export function FlightSearchBox({
 }: FlightSearchBoxProps) {
   const router = useRouter();
   const { openConcierge } = useAiConcierge();
+  const { t } = useI18n();
 
   const [tripType, setTripType] = useState<TripType>("oneway");
   const [fromCode, setFromCode] = useState(defaultOrigin);
@@ -213,24 +215,24 @@ export function FlightSearchBox({
               <button
                 type="button"
                 onClick={() => setTripType("oneway")}
-                className={`px-4 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all min-h-[36px] ${
+                className={`px-4 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all min-h-[36px] cursor-pointer ${
                   tripType === "oneway"
                     ? "bg-brand-700 text-white shadow-xs"
                     : "text-slate-600 hover:text-slate-900"
                 }`}
               >
-                One Way
+                {t("search.oneWay")}
               </button>
               <button
                 type="button"
                 onClick={() => setTripType("roundtrip")}
-                className={`px-4 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all min-h-[36px] ${
+                className={`px-4 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition-all min-h-[36px] cursor-pointer ${
                   tripType === "roundtrip"
                     ? "bg-brand-700 text-white shadow-xs"
                     : "text-slate-600 hover:text-slate-900"
                 }`}
               >
-                Round Trip
+                {t("search.roundTrip")}
               </button>
             </div>
 
@@ -294,7 +296,7 @@ export function FlightSearchBox({
             {/* Origin Airport */}
             <div className="sm:col-span-1 lg:col-span-4">
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Departure (From)
+                {t("search.flyingFrom")}
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -340,7 +342,7 @@ export function FlightSearchBox({
             {/* Destination Airport */}
             <div className="sm:col-span-1 lg:col-span-4">
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Destination (To)
+                {t("search.flyingTo")}
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -386,7 +388,7 @@ export function FlightSearchBox({
             {/* Departure Date */}
             <div className={tripType === "roundtrip" ? "sm:col-span-1 lg:col-span-2" : "sm:col-span-1 lg:col-span-3"}>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Departure Date
+                {t("search.departure")}
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -407,7 +409,7 @@ export function FlightSearchBox({
             {tripType === "roundtrip" && (
               <div className="sm:col-span-1 lg:col-span-2">
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Return Date
+                  {t("search.return")}
                 </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -448,7 +450,7 @@ export function FlightSearchBox({
             {/* Passengers */}
             <div className="lg:col-span-3">
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Travelers
+                {t("search.travelers")}
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -474,10 +476,10 @@ export function FlightSearchBox({
               <button
                 type="button"
                 onClick={handleAiAsk}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3 text-xs sm:text-sm font-bold text-[#0B5D3A] hover:bg-emerald-100 transition-colors min-h-[46px]"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3 text-xs sm:text-sm font-bold text-[#0B5D3A] hover:bg-emerald-100 transition-colors min-h-[46px] cursor-pointer"
               >
                 <Sparkles className="h-4 w-4 text-[#0B5D3A]" />
-                <span>AI পরামর্শ (Live Intel)</span>
+                <span>AI Live Intel</span>
               </button>
 
               <button
@@ -486,7 +488,7 @@ export function FlightSearchBox({
                 className="w-full sm:flex-1 inline-flex items-center justify-center gap-2.5 rounded-xl bg-gold-600 px-5 py-3 text-sm sm:text-base font-bold text-white shadow-md hover:bg-gold-700 transition-all hover:shadow-lg active:scale-[0.99] disabled:opacity-75 cursor-pointer min-h-[46px]"
               >
                 <Search className="h-4 w-4 stroke-[2.5]" />
-                {isSubmitting ? "Finding Best Net-Fares..." : "Search Fares & Request Quote"}
+                {isSubmitting ? "Finding Best Net-Fares..." : t("search.searchBtn")}
               </button>
             </div>
           </div>

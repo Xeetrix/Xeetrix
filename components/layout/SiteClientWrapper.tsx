@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { AuthProvider } from "@/lib/auth-context";
 import { AiConciergeProvider, useAiConcierge } from "@/lib/ai-concierge-context";
+import { I18nProvider } from "@/lib/i18n-context";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
@@ -11,6 +12,7 @@ import {
   AiConciergeFloatingButton,
 } from "@/components/AiFlightConcierge";
 import { AuthModal } from "@/components/AuthModal";
+import { InternationalSettingsModal } from "@/components/InternationalSettingsModal";
 
 function SiteLayoutInner({ children }: { children: React.ReactNode }) {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
@@ -45,6 +47,9 @@ function SiteLayoutInner({ children }: { children: React.ReactNode }) {
         isOpen={isAuthOpen}
         onClose={() => setIsAuthOpen(false)}
       />
+
+      {/* Global International Language & Currency Settings Modal */}
+      <InternationalSettingsModal />
     </div>
   );
 }
@@ -52,9 +57,11 @@ function SiteLayoutInner({ children }: { children: React.ReactNode }) {
 export function SiteClientWrapper({ children }: { children: React.ReactNode }) {
   return (
     <AuthProvider>
-      <AiConciergeProvider>
-        <SiteLayoutInner>{children}</SiteLayoutInner>
-      </AiConciergeProvider>
+      <I18nProvider>
+        <AiConciergeProvider>
+          <SiteLayoutInner>{children}</SiteLayoutInner>
+        </AiConciergeProvider>
+      </I18nProvider>
     </AuthProvider>
   );
 }

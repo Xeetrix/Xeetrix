@@ -4,9 +4,7 @@ import { ServicesSection } from "@/components/sections/ServicesSection";
 import { PopularRoutes } from "@/components/sections/PopularRoutes";
 import { HowItWorks } from "@/components/sections/HowItWorks";
 import { CTASection } from "@/components/sections/CTASection";
-import { BookingInquiryForm } from "@/components/BookingInquiryForm";
-import { Container } from "@/components/ui/Container";
-import { SectionHeader } from "@/components/ui/SectionHeader";
+import { HomeInquirySection } from "@/components/sections/HomeInquirySection";
 
 export default function HomePage() {
   return (
@@ -27,19 +25,7 @@ export default function HomePage() {
       <HowItWorks />
 
       {/* 6. Booking Inquiry Form & Contact Info Cards */}
-      <section id="inquiry" className="py-20 bg-white">
-        <Container>
-          <div className="mb-12">
-            <SectionHeader
-              eyebrow="Custom Fare Quotations"
-              title="Request a Flight Quote or Speak to Ticketing Desk"
-              description="Fill out your route details below or call our 24/7 hotline directly. Our ticketing officers will provide live GDS availability, lowest net-fares, and baggage rules."
-            />
-          </div>
-
-          <BookingInquiryForm />
-        </Container>
-      </section>
+      <HomeInquirySection />
 
       {/* 7. Bottom Call to Action */}
       <CTASection />

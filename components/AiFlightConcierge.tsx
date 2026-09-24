@@ -17,6 +17,7 @@ import {
 import { BrandGlobeIcon } from "@/components/ui/BrandLogo";
 import { CONTACT_PHONE_DISPLAY, CONTACT_PHONE_TEL } from "@/lib/constants";
 import { useAuth } from "@/lib/auth-context";
+import { useI18n } from "@/lib/i18n-context";
 
 interface Message {
   id: string;
@@ -47,12 +48,43 @@ export function AiFlightConcierge({
   initialQuery?: string;
 }) {
   const { user } = useAuth();
+  const { language, currency } = useI18n();
+
+  const presets =
+    language === "bn"
+      ? [
+          "সৌদি আরবে প্রবাসী ভাইদের লাগেজ সুবিধা (৪০-৪৬ কেজি) কত?",
+          "ঢাকা থেকে দুবাই ও রিয়াদ টিকেটের বর্তমান লাইভ ভাড়া কত?",
+          "দুবাই ও দোহা ট্রানজিট ভিসার প্রয়োজনীয় নিয়মাবলী",
+          "ইউকে ও কানাডায় স্টুডেন্টদের অতিরিক্ত লাগেজ পাওয়ার উপায়",
+          "শাহজালাল বিমানবন্দর (DAC) টার্মিনাল ৩ আপডেট ও সহায়িকা",
+        ]
+      : language === "ar"
+      ? [
+          "ما هي أوزان الأمتعة المسموحة لرحلات السعودية (40-46 كجم)؟",
+          "أفضل أسعار الرحلات المباشرة من دكا إلى جدة والرياض",
+          "متطلبات تأشيرة العبور (ترانزيت) في مطار دبي والدوحة",
+          "خيارات التذاكر المخفضة للطلاب مع أوزان إضافية",
+          "كيفية تعديل موعد الرحلة أو إعادة إصدار التذكرة فورياً",
+        ]
+      : [
+          "Baggage allowance for migrant workers to Saudi Arabia (40-46kg)",
+          "Best lowest airfares from Dhaka (DAC) to Dubai and Riyadh",
+          "Transit visa requirements for Dubai DXB & Doha DOH airports",
+          "Student discount & extra luggage options to UK / Europe / USA",
+          "Dhaka Airport (DAC) Terminal 3 flight guidelines and services",
+        ];
+
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "welcome",
       role: "assistant",
       content:
-        "স্বাগতম! আমি Xeetrix AI Flight Concierge।\nআমি আপনাকে লাইভ এয়ার টিকেট ফেয়ার, রেমিট্যান্স যোদ্ধা স্পেশাল লাগেজ সুবিধা (৪০-৪৬ কেজি), ট্রানজিট ভিসা তথ্য ও এয়ারপোর্ট টার্মিনাল গাইড দিতে পারি।\n\nHello! I am your Xeetrix AI Flight Concierge powered by Gemini 3.8 Flash. How can I assist with your flight booking or travel inquiries today?",
+        language === "bn"
+          ? "স্বাগতম! আমি Xeetrix AI Flight Concierge।\nআমি আপনাকে লাইভ এয়ার টিকেট ফেয়ার, রেমিট্যান্স যোদ্ধা স্পেশাল লাগেজ সুবিধা (৪০-৪৬ কেজি), ট্রানজিট ভিসা তথ্য ও এয়ারপোর্ট টার্মিনাল গাইড দিতে পারি। কীভাবে সহায়তা করতে পারি?"
+          : language === "ar"
+          ? "مرحباً بك! أنا المساعد الذكي لرحلات زیتريكس (Xeetrix AI Flight Concierge).\nيمكنني مساعدتك في معرفة أسعار التذاكر الفورية، وأوزان الأمتعة الخاصة للعمال والطلاب، ومتطلبات التأشيرة. كيف يمكنني خدمتك اليوم؟"
+          : "Hello! I am your Xeetrix AI Flight Concierge powered by Gemini 3.8 Flash.\nI can assist you with live flight fares, migrant worker extra baggage rules (40–46kg), transit visa requirements, and direct booking guidance. How can I assist you today?",
       timestamp: new Date(),
     },
   ]);
@@ -119,6 +151,8 @@ export function AiFlightConcierge({
         body: JSON.stringify({
           messages: historyForApi,
           mode,
+          language,
+          currency,
         }),
       });
 
@@ -343,15 +377,19 @@ export function AiFlightConcierge({
             {messages.length < 3 && (
               <div className="px-4 py-2 border-t border-slate-100 bg-slate-50/50">
                 <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1.5">
-                  দ্রুত প্রশ্ন নির্বাচন করুন / Frequent Inquiries:
+                  {language === "bn"
+                    ? "দ্রুত প্রশ্ন নির্বাচন করুন:"
+                    : language === "ar"
+                    ? "الأسئلة الشائعة المقترحة:"
+                    : "Frequent Inquiries:"}
                 </span>
                 <div className="flex flex-wrap gap-1.5">
-                  {PRESET_PROMPTS.slice(0, 3).map((prompt, i) => (
+                  {presets.slice(0, 3).map((prompt, i) => (
                     <button
                       key={i}
                       type="button"
                       onClick={() => handleSend(prompt)}
-                      className="text-left rounded-lg bg-white px-2.5 py-1 text-[11px] text-slate-700 border border-slate-200 hover:border-[#0B5D3A] hover:text-[#0B5D3A] transition-colors"
+                      className="text-left rounded-lg bg-white px-2.5 py-1 text-[11px] text-slate-700 border border-slate-200 hover:border-[#0B5D3A] hover:text-[#0B5D3A] transition-colors cursor-pointer"
                     >
                       {prompt}
                     </button>
@@ -369,7 +407,13 @@ export function AiFlightConcierge({
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="প্রশ্ন লিখুন (যেমন: ঢাকা থেকে দুবাই টিকেটের ভাড়া কত?)..."
+                  placeholder={
+                    language === "bn"
+                      ? "ফ্লাইটের প্রশ্ন লিখুন (যেমন: ঢাকা থেকে দুবাই টিকিটের ভাড়া কত?)..."
+                      : language === "ar"
+                      ? "اكتب استفسارك هنا (مثال: ما هو سعر الرحلة من دكا إلى جدة؟)..."
+                      : "Ask any flight question (e.g., flight fares to Riyadh, baggage rules)..."
+                  }
                   disabled={isLoading}
                   className="flex-1 rounded-xl bg-slate-100 px-3.5 py-2.5 text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0B5D3A] focus:bg-white transition-all disabled:opacity-50"
                 />

@@ -75,6 +75,7 @@ export interface PopularRoute {
   flightType: "Direct" | "1 Stop";
   duration: string;
   startingPrice: number;
+  priceUSD: number;
   featuredTag?: string;
   airlines: string[];
   baggage: string;
@@ -92,6 +93,7 @@ export const POPULAR_ROUTES: PopularRoute[] = [
     flightType: "Direct",
     duration: "6h 45m",
     startingPrice: 58500,
+    priceUSD: 480,
     featuredTag: "Umrah & Worker Special",
     airlines: ["Biman", "Saudia", "Flyadeal"],
     baggage: "2 x 23kg + 7kg Hand Baggage",
@@ -107,6 +109,7 @@ export const POPULAR_ROUTES: PopularRoute[] = [
     flightType: "Direct",
     duration: "5h 15m",
     startingPrice: 42000,
+    priceUSD: 345,
     featuredTag: "Top Selling Fare",
     airlines: ["Emirates", "Biman", "flydubai", "US-Bangla"],
     baggage: "30kg + 7kg Hand Baggage",
@@ -122,6 +125,7 @@ export const POPULAR_ROUTES: PopularRoute[] = [
     flightType: "Direct",
     duration: "6h 10m",
     startingPrice: 56000,
+    priceUSD: 460,
     featuredTag: "Migrant Net Fare",
     airlines: ["Saudia", "Biman"],
     baggage: "2 x 23kg + 7kg Hand Baggage",
@@ -137,6 +141,7 @@ export const POPULAR_ROUTES: PopularRoute[] = [
     flightType: "Direct",
     duration: "3h 50m",
     startingPrice: 31500,
+    priceUSD: 260,
     featuredTag: "Student & Work Special",
     airlines: ["Malaysia Airlines", "AirAsia", "Biman", "Batik Air"],
     baggage: "25kg–35kg Allowance Options",
@@ -152,6 +157,7 @@ export const POPULAR_ROUTES: PopularRoute[] = [
     flightType: "Direct",
     duration: "11h 20m",
     startingPrice: 84000,
+    priceUSD: 690,
     featuredTag: "Direct Non-Stop",
     airlines: ["Biman Bangladesh Airlines", "Qatar Airways", "Emirates"],
     baggage: "2 x 23kg Checked Bags",
@@ -167,6 +173,7 @@ export const POPULAR_ROUTES: PopularRoute[] = [
     flightType: "Direct",
     duration: "5h 30m",
     startingPrice: 48900,
+    priceUSD: 400,
     featuredTag: "Ex-Chittagong Flight",
     airlines: ["Qatar Airways", "Biman"],
     baggage: "30kg + 7kg Hand Baggage",
@@ -182,6 +189,7 @@ export const POPULAR_ROUTES: PopularRoute[] = [
     flightType: "Direct",
     duration: "4h 05m",
     startingPrice: 38500,
+    priceUSD: 315,
     featuredTag: "Holiday & Business",
     airlines: ["Singapore Airlines", "Biman", "US-Bangla"],
     baggage: "30kg Allowance Included",
@@ -197,6 +205,7 @@ export const POPULAR_ROUTES: PopularRoute[] = [
     flightType: "Direct",
     duration: "5h 25m",
     startingPrice: 44500,
+    priceUSD: 365,
     featuredTag: "Special Worker Rate",
     airlines: ["Oman Air", "SalamAir", "Biman"],
     baggage: "30kg + 7kg Cabin",

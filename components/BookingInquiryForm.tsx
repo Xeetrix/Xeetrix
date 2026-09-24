@@ -11,7 +11,6 @@ import {
   ShieldCheck,
   Plane,
   AlertCircle,
-  UserCheck,
 } from "lucide-react";
 import {
   CONTACT_PHONE_DISPLAY,
@@ -25,6 +24,7 @@ import type { TripType, CabinClass } from "@/lib/types";
 import { useAuth } from "@/lib/auth-context";
 import { db } from "@/lib/firebase";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { useI18n } from "@/lib/i18n-context";
 
 export function BookingInquiryForm({
   defaultFrom = "DAC",
@@ -40,6 +40,8 @@ export function BookingInquiryForm({
   hideSidebar?: boolean;
 }) {
   const { user } = useAuth();
+  const { t, language } = useI18n();
+
   const [tripType, setTripType] = useState<TripType>(defaultTrip);
   const [fullName, setFullName] = useState(user?.displayName || "");
   const [phone, setPhone] = useState("");
@@ -156,37 +158,43 @@ export function BookingInquiryForm({
       {!hideSidebar && (
         <div className="lg:col-span-5 space-y-5">
           <div className="rounded-2xl bg-slate-900 text-white p-6 sm:p-7 border border-slate-800 shadow-elevated">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-900/80 border border-brand-500/40 text-xs font-semibold text-brand-300 mb-4">
-              <ShieldCheck className="h-3.5 w-3.5 text-brand-400" />
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-xs font-semibold text-emerald-300 mb-4">
+              <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
               Direct Ticketing Desk
             </div>
 
             <h3 className="font-display text-2xl font-bold tracking-tight text-white mb-2">
-              Speak Directly With a Ticketing Agent
+              {language === "bn"
+                ? "সরাসরি টিকেটিং কর্মকর্তার সাথে কথা বলুন"
+                : language === "ar"
+                ? "تحدث مباشرة مع مسؤول الحجز"
+                : "Speak Directly With a Ticketing Agent"}
             </h3>
             <p className="text-sm text-slate-300 leading-relaxed mb-6">
-              For urgent departures within 24 hours, emergency date changes, or
-              bulk manpower worker quotes, our phone hotline provides instant
-              assistance.
+              {language === "bn"
+                ? "২৪ ঘণ্টার মধ্যে ফ্লাইট, জরুরি তারিখ পরিবর্তন বা প্রবাসী কর্মী কোটার টিকিটের জন্য আমাদের হটলাইনে যোগাযোগ করুন।"
+                : language === "ar"
+                ? "للحجوزات العاجلة خلال 24 ساعة، أو تعديل المواعيد، أو أسعار المجموعات والعمال، اتصل بخطنا الساخن مباشرة."
+                : "For urgent departures within 24 hours, emergency date changes, or bulk manpower worker quotes, our phone hotline provides instant assistance."}
             </p>
 
             <div className="space-y-4">
               {/* Helpline Card */}
               <div className="rounded-xl bg-slate-800/80 p-4 border border-slate-700/80 flex items-start gap-3.5">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gold-600/20 text-gold-400 border border-gold-500/30">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gold-600/20 text-amber-400 border border-gold-500/30">
                   <Phone className="h-5 w-5" />
                 </div>
                 <div>
                   <span className="text-xs text-slate-400 block">
-                    24/7 Phone Helpline (Direct Dial)
+                    {t("topbar.helpline")}
                   </span>
                   <a
                     href={CONTACT_PHONE_TEL}
-                    className="text-base font-bold text-white hover:text-gold-400 transition-colors block mt-0.5"
+                    className="text-base font-bold text-white hover:text-amber-400 transition-colors block mt-0.5"
                   >
                     {CONTACT_PHONE_DISPLAY}
                   </a>
-                  <span className="text-[11px] text-brand-400 mt-0.5 block">
+                  <span className="text-[11px] text-emerald-400 mt-0.5 block">
                     Toll-free routing &amp; live ticketing officer
                   </span>
                 </div>
@@ -194,7 +202,7 @@ export function BookingInquiryForm({
 
               {/* Email Card */}
               <div className="rounded-xl bg-slate-800/80 p-4 border border-slate-700/80 flex items-start gap-3.5">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-700/20 text-brand-400 border border-brand-500/30">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-700/20 text-emerald-400 border border-emerald-500/30">
                   <Mail className="h-5 w-5" />
                 </div>
                 <div>
@@ -203,7 +211,7 @@ export function BookingInquiryForm({
                   </span>
                   <a
                     href={`mailto:${CONTACT_EMAIL}`}
-                    className="text-sm font-semibold text-white hover:text-brand-300 transition-colors block mt-0.5 break-all"
+                    className="text-sm font-semibold text-white hover:text-emerald-300 transition-colors block mt-0.5 break-all"
                   >
                     {CONTACT_EMAIL}
                   </a>
@@ -233,7 +241,7 @@ export function BookingInquiryForm({
                 </div>
                 <div>
                   <span className="text-xs text-slate-400 block">Operating Desk</span>
-                  <p className="text-xs text-brand-300 font-medium mt-0.5">
+                  <p className="text-xs text-emerald-300 font-medium mt-0.5">
                     {SUPPORT_HOURS}
                   </p>
                 </div>
@@ -243,7 +251,7 @@ export function BookingInquiryForm({
 
           {/* Verified Badge */}
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-card text-xs text-slate-600 flex items-center gap-3">
-            <ShieldCheck className="h-8 w-8 text-brand-700 shrink-0" />
+            <ShieldCheck className="h-8 w-8 text-[#0B5D3A] shrink-0" />
             <p>
               All air tickets issued by Xeetrix come with genuine PNR records
               verifiable on the official website of the operating airline.
@@ -257,7 +265,7 @@ export function BookingInquiryForm({
         <div className="rounded-3xl bg-white border border-slate-200/90 p-4 sm:p-8 shadow-elevated">
           {successReference ? (
             <div className="text-center py-10 space-y-4">
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-50 text-brand-700 border border-brand-200">
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-50 text-[#0B5D3A] border border-emerald-200">
                 <CheckCircle2 className="h-10 w-10" />
               </div>
               <h3 className="text-2xl font-bold text-slate-900">
@@ -266,7 +274,7 @@ export function BookingInquiryForm({
               <p className="text-sm text-slate-600 max-w-md mx-auto">
                 Your ticket inquiry has been assigned Reference Number:
               </p>
-              <div className="inline-block font-mono text-lg font-bold text-brand-800 bg-brand-50 px-4 py-1.5 rounded-lg border border-brand-200">
+              <div className="inline-block font-mono text-lg font-bold text-[#0B5D3A] bg-emerald-50 px-4 py-1.5 rounded-lg border border-emerald-200">
                 {successReference}
               </div>
               <p className="text-xs text-slate-500 max-w-md mx-auto pt-2">
@@ -286,7 +294,7 @@ export function BookingInquiryForm({
                 <button
                   type="button"
                   onClick={() => setSuccessReference(null)}
-                  className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-100 w-full sm:w-auto"
+                  className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-100 w-full sm:w-auto cursor-pointer"
                 >
                   Submit Another Inquiry
                 </button>
@@ -297,7 +305,7 @@ export function BookingInquiryForm({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
                 <div>
                   <h3 className="font-display text-xl font-bold text-slate-900">
-                    Request a Customized Flight Quote
+                    {t("inquiry.title")}
                   </h3>
                   <p className="text-xs text-slate-500 mt-0.5">
                     Fast response within 15 minutes with verified baggage details
@@ -309,24 +317,24 @@ export function BookingInquiryForm({
                   <button
                     type="button"
                     onClick={() => setTripType("oneway")}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold min-h-[32px] ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold min-h-[32px] cursor-pointer ${
                       tripType === "oneway"
-                        ? "bg-brand-700 text-white shadow-xs"
+                        ? "bg-[#0B5D3A] text-white shadow-xs"
                         : "text-slate-600 hover:text-slate-900"
                     }`}
                   >
-                    One Way
+                    {t("search.oneWay")}
                   </button>
                   <button
                     type="button"
                     onClick={() => setTripType("roundtrip")}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold min-h-[32px] ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold min-h-[32px] cursor-pointer ${
                       tripType === "roundtrip"
-                        ? "bg-brand-700 text-white shadow-xs"
+                        ? "bg-[#0B5D3A] text-white shadow-xs"
                         : "text-slate-600 hover:text-slate-900"
                     }`}
                   >
-                    Round Trip
+                    {t("search.roundTrip")}
                   </button>
                 </div>
               </div>
@@ -348,7 +356,7 @@ export function BookingInquiryForm({
                       setFromCity(item.from);
                       setToCity(item.to);
                     }}
-                    className="shrink-0 px-2.5 py-1 rounded-md border border-slate-200 bg-slate-50 text-slate-600 hover:bg-white hover:text-brand-800 transition-colors"
+                    className="shrink-0 px-2.5 py-1 rounded-md border border-slate-200 bg-slate-50 text-slate-600 hover:bg-white hover:text-brand-800 transition-colors cursor-pointer"
                   >
                     {item.label}
                   </button>
@@ -366,7 +374,7 @@ export function BookingInquiryForm({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Passenger / Contact Name *
+                    {t("inquiry.name")} *
                   </label>
                   <input
                     type="text"
@@ -380,7 +388,7 @@ export function BookingInquiryForm({
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Contact Phone Number *
+                    {t("inquiry.phone")} *
                   </label>
                   <input
                     type="tel"
@@ -395,7 +403,7 @@ export function BookingInquiryForm({
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Email Address (for E-Ticket Quotation) *
+                  {t("inquiry.email")} *
                 </label>
                 <input
                   type="email"
@@ -411,7 +419,7 @@ export function BookingInquiryForm({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Departure Airport / City *
+                    {t("inquiry.origin")} *
                   </label>
                   <select
                     value={fromCity}
@@ -428,7 +436,7 @@ export function BookingInquiryForm({
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Destination Airport / City *
+                    {t("inquiry.destination")} *
                   </label>
                   <select
                     value={toCity}
@@ -448,7 +456,7 @@ export function BookingInquiryForm({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Departure Date *
+                    {t("inquiry.departure")} *
                   </label>
                   <input
                     type="date"
@@ -463,7 +471,7 @@ export function BookingInquiryForm({
                 {tripType === "roundtrip" ? (
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Return Date *
+                      {t("inquiry.return")} *
                     </label>
                     <input
                       type="date"
@@ -477,7 +485,7 @@ export function BookingInquiryForm({
                 ) : (
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Fare Category
+                      {t("inquiry.category")}
                     </label>
                     <select
                       value={passengerCategory}
@@ -515,7 +523,7 @@ export function BookingInquiryForm({
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Travelers
+                    {t("inquiry.travelers")}
                   </label>
                   <select
                     value={passengers}
@@ -533,7 +541,7 @@ export function BookingInquiryForm({
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Preferred Airline (Optional)
+                    {t("inquiry.airline")}
                   </label>
                   <input
                     type="text"
@@ -548,7 +556,7 @@ export function BookingInquiryForm({
               {/* Special Requests */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Additional Notes / Visa / Extra Luggage Requests
+                  {t("inquiry.special")}
                 </label>
                 <textarea
                   rows={2}
@@ -566,12 +574,12 @@ export function BookingInquiryForm({
                 className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-gold-600 px-6 py-3.5 text-base font-bold text-white shadow-md hover:bg-gold-700 transition-all hover:shadow-lg active:scale-[0.99] disabled:opacity-75 cursor-pointer"
               >
                 <Send className="h-4 w-4" />
-                {loading ? "Submitting Inquiry..." : "Submit Flight Quote Request"}
+                {loading ? t("inquiry.submitting") : t("inquiry.submitBtn")}
               </button>
 
               <div className="flex items-center justify-between text-xs text-slate-500 pt-1">
                 <span>Free cancellation review &amp; transparent quotation</span>
-                <span className="text-brand-700 font-semibold">
+                <span className="text-[#0B5D3A] font-semibold">
                   Zero hidden card charges
                 </span>
               </div>

@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Plane, Phone, Ticket, Sparkles, MessageSquareQuote } from "lucide-react";
+import { Plane, Phone, Ticket, Sparkles, Globe2 } from "lucide-react";
 import { CONTACT_PHONE_DISPLAY, CONTACT_PHONE_TEL } from "@/lib/constants";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n-context";
 
 interface MobileBottomNavProps {
   onOpenAiConcierge?: () => void;
@@ -16,6 +17,7 @@ export function MobileBottomNav({
   onRequestQuote,
 }: MobileBottomNavProps) {
   const pathname = usePathname();
+  const { language, currency, openSettings, t } = useI18n();
 
   return (
     <nav
@@ -27,28 +29,28 @@ export function MobileBottomNav({
         <Link
           href="/flights"
           className={cn(
-            "flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-colors min-w-[56px]",
+            "flex flex-col items-center justify-center py-1 px-2 rounded-xl transition-colors min-w-[52px]",
             pathname === "/flights"
-              ? "text-brand-700 font-bold"
+              ? "text-[#0B5D3A] font-bold"
               : "text-slate-600 hover:text-slate-900"
           )}
         >
           <div
             className={cn(
               "flex h-7 w-7 items-center justify-center rounded-lg transition-transform",
-              pathname === "/flights" ? "bg-brand-50" : ""
+              pathname === "/flights" ? "bg-emerald-50 text-[#0B5D3A]" : ""
             )}
           >
             <Plane className="h-4 w-4" />
           </div>
-          <span className="text-[10px] tracking-tight mt-0.5">Flights</span>
+          <span className="text-[10px] tracking-tight mt-0.5">{t("nav.flights")}</span>
         </Link>
 
         {/* AI Concierge */}
         <button
           type="button"
           onClick={onOpenAiConcierge}
-          className="flex flex-col items-center justify-center py-1 px-2.5 rounded-xl text-[#0B5D3A] hover:text-emerald-800 transition-colors min-w-[56px]"
+          className="flex flex-col items-center justify-center py-1 px-2 rounded-xl text-[#0B5D3A] hover:text-emerald-800 transition-colors min-w-[52px]"
         >
           <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50 text-[#0B5D3A]">
             <Sparkles className="h-4 w-4" />
@@ -72,51 +74,35 @@ export function MobileBottomNav({
         <Link
           href="/dashboard"
           className={cn(
-            "flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-colors min-w-[56px]",
+            "flex flex-col items-center justify-center py-1 px-2 rounded-xl transition-colors min-w-[52px]",
             pathname === "/dashboard"
-              ? "text-brand-700 font-bold"
+              ? "text-[#0B5D3A] font-bold"
               : "text-slate-600 hover:text-slate-900"
           )}
         >
           <div
             className={cn(
               "flex h-7 w-7 items-center justify-center rounded-lg transition-transform",
-              pathname === "/dashboard" ? "bg-brand-50" : ""
+              pathname === "/dashboard" ? "bg-emerald-50 text-[#0B5D3A]" : ""
             )}
           >
             <Ticket className="h-4 w-4" />
           </div>
-          <span className="text-[10px] tracking-tight mt-0.5">Bookings</span>
+          <span className="text-[10px] tracking-tight mt-0.5">{t("nav.myBookings")}</span>
         </Link>
 
-        {/* Quote / Inquiry */}
-        {onRequestQuote ? (
-          <button
-            type="button"
-            onClick={onRequestQuote}
-            className="flex flex-col items-center justify-center py-1 px-2.5 rounded-xl text-slate-600 hover:text-brand-700 transition-colors min-w-[56px]"
-          >
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg">
-              <MessageSquareQuote className="h-4 w-4" />
-            </div>
-            <span className="text-[10px] tracking-tight mt-0.5">Quote</span>
-          </button>
-        ) : (
-          <Link
-            href="/contact#quote"
-            className={cn(
-              "flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-colors min-w-[56px]",
-              pathname === "/contact"
-                ? "text-brand-700 font-bold"
-                : "text-slate-600 hover:text-slate-900"
-            )}
-          >
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg">
-              <MessageSquareQuote className="h-4 w-4" />
-            </div>
-            <span className="text-[10px] tracking-tight mt-0.5">Quote</span>
-          </Link>
-        )}
+        {/* Language & Currency Quick Switcher */}
+        <button
+          type="button"
+          onClick={openSettings}
+          className="flex flex-col items-center justify-center py-1 px-2 rounded-xl text-slate-600 hover:text-[#0B5D3A] transition-colors min-w-[52px]"
+          title="Change Language & Currency"
+        >
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
+            <Globe2 className="h-4 w-4 text-[#0B5D3A]" />
+          </div>
+          <span className="text-[10px] font-bold tracking-tight mt-0.5">{language.toUpperCase()}|{currency}</span>
+        </button>
       </div>
     </nav>
   );

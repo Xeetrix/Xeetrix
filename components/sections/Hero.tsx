@@ -1,14 +1,16 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { ShieldCheck, Phone, CheckCircle2, Luggage, Sparkles } from "lucide-react";
+import { ShieldCheck, CheckCircle2, Luggage, Sparkles } from "lucide-react";
 import { Container } from "@/components/ui/Container";
 import { FlightSearchBox } from "@/components/FlightSearchBox";
-import { CONTACT_PHONE_DISPLAY, CONTACT_PHONE_TEL, TRUST_STATS } from "@/lib/constants";
+import { TRUST_STATS } from "@/lib/constants";
 import { useAiConcierge } from "@/lib/ai-concierge-context";
+import { useI18n } from "@/lib/i18n-context";
 
 export function Hero({ onRequestQuote }: { onRequestQuote?: () => void }) {
   const { openConcierge } = useAiConcierge();
+  const { t } = useI18n();
 
   return (
     <section className="relative overflow-hidden bg-slate-950 pt-10 pb-16 sm:pt-14 sm:pb-20 lg:pt-16 lg:pb-24 border-b border-slate-900">
@@ -32,7 +34,7 @@ export function Hero({ onRequestQuote }: { onRequestQuote?: () => void }) {
             className="inline-flex items-center gap-2 rounded-full border border-emerald-500/25 bg-emerald-950/70 backdrop-blur-md px-3.5 py-1 text-xs font-semibold text-emerald-300 mb-4 shadow-sm"
           >
             <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-            <span>Authorized Global Air Ticketing &amp; Travel Agency</span>
+            <span>{t("hero.badge")}</span>
           </motion.div>
 
           <motion.h1
@@ -41,9 +43,9 @@ export function Hero({ onRequestQuote }: { onRequestQuote?: () => void }) {
             transition={{ duration: 0.5, delay: 0.1 }}
             className="font-display text-2xl xs:text-3xl sm:text-4xl md:text-5xl lg:text-[3.25rem] xl:text-[3.5rem] font-black tracking-tight text-white leading-[1.15] max-w-3xl"
           >
-            Seamless Air Ticket Booking &amp;{" "}
+            {t("hero.title1")}{" "}
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-300 via-emerald-100 to-amber-300">
-              Global Travel Solutions
+              {t("hero.title2")}
             </span>
           </motion.h1>
 
@@ -53,8 +55,7 @@ export function Hero({ onRequestQuote }: { onRequestQuote?: () => void }) {
             transition={{ duration: 0.5, delay: 0.2 }}
             className="mt-3.5 text-sm sm:text-base lg:text-lg text-slate-300 max-w-2xl leading-relaxed"
           >
-            Best fares for domestic &amp; international flights across 120+ airlines.
-            Special migrant worker (40–46kg) &amp; student luggage net-fares with 24/7 ticketing support.
+            {t("hero.desc")}
           </motion.p>
 
           {/* Quick Value Assurances & AI Concierge Bar */}
@@ -70,22 +71,22 @@ export function Hero({ onRequestQuote }: { onRequestQuote?: () => void }) {
               className="inline-flex items-center gap-2 font-bold text-white bg-[#0B5D3A] hover:bg-[#094d30] border border-emerald-400/40 px-4 py-1.5 rounded-full transition-all shadow-sm hover:scale-105 active:scale-95 cursor-pointer"
             >
               <Sparkles className="h-3.5 w-3.5 text-emerald-300" />
-              <span>AI ফ্লাইট সহকারী</span>
+              <span>{t("hero.aiBtn")}</span>
             </button>
 
             <span className="hidden sm:inline text-slate-700 font-bold">•</span>
 
             <span className="flex items-center gap-1.5 text-slate-300 font-medium">
               <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-              Direct GDS Net-Fares
+              {t("hero.gdsNetFares")}
             </span>
             <span className="flex items-center gap-1.5 text-slate-300 font-medium">
               <Luggage className="h-4 w-4 text-amber-400" />
-              Up to 46kg Luggage
+              {t("hero.luggage")}
             </span>
             <span className="flex items-center gap-1.5 text-emerald-300 font-semibold bg-emerald-950/60 border border-emerald-800/60 px-3.5 py-1.5 rounded-full shadow-2xs">
               <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-              IATA Verified Agency
+              {t("hero.iataAgency")}
             </span>
           </motion.div>
         </div>

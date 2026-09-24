@@ -1,5 +1,8 @@
-import { Plane, CheckCircle2, ShieldCheck } from "lucide-react";
+"use client";
+
+import { ShieldCheck } from "lucide-react";
 import { Container } from "@/components/ui/Container";
+import { useI18n } from "@/lib/i18n-context";
 
 const PARTNER_DATA = [
   { name: "Biman Bangladesh", code: "BG", hub: "Dhaka (DAC)", flag: "🇧🇩" },
@@ -17,25 +20,27 @@ const PARTNER_DATA = [
 ];
 
 export function AirlinePartners() {
+  const { t } = useI18n();
+
   return (
     <section className="py-12 sm:py-16 bg-white border-b border-slate-200/80">
-      <Container>
+      <Container size="wide">
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
           <div>
             <span className="text-xs font-bold uppercase tracking-wider text-brand-700 bg-brand-50 px-3 py-1 rounded-full border border-brand-200 inline-block mb-2">
-              Official Airline Partnerships
+              {t("partners.badge")}
             </span>
             <h2 className="font-display text-xl sm:text-2xl font-bold text-slate-900">
-              Direct GDS Inventories on 120+ Scheduled Airlines
+              {t("partners.title")}
             </h2>
             <p className="text-xs sm:text-sm text-slate-600 mt-1 max-w-xl">
-              Authentic airline booking system net-fares with immediate PNR generation and official web check-in.
+              {t("partners.desc")}
             </p>
           </div>
 
           <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 shrink-0">
             <ShieldCheck className="h-4 w-4 text-brand-700" />
-            <span>IATA Direct Wholesale Fares</span>
+            <span>{t("partners.wholesale")}</span>
           </div>
         </div>
 

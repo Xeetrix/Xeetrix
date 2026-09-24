@@ -184,7 +184,7 @@ function generateExpertTicketingResponse(lastMessage: string): {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { messages, mode = "general" } = body;
+    const { messages, mode = "general", language = "en", currency = "USD" } = body;
 
     if (!Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json(
@@ -228,8 +228,15 @@ export async function POST(req: NextRequest) {
         tools = [{ googleSearch: {} }];
       }
 
+      const langDirective =
+        language === "bn"
+          ? `Respond in fluent, polite Bengali (বাংলা). Mention flight prices in ${currency}.`
+          : language === "ar"
+          ? `Respond in clear, professional Arabic (العربية). Mention flight prices in ${currency}.`
+          : `Respond in professional English. Mention flight prices in ${currency}.`;
+
       const config: any = {
-        systemInstruction: SYSTEM_INSTRUCTION,
+        systemInstruction: `${SYSTEM_INSTRUCTION}\n\n[Active Session Settings]:\n${langDirective}`,
       };
 
       if (tools) {
