@@ -27,7 +27,7 @@ export function AirlinePartners() {
       <Container size="wide">
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
           <div>
-            <span className="text-xs font-bold uppercase tracking-wider text-brand-700 bg-brand-50 px-3 py-1 rounded-full border border-brand-200 inline-block mb-2">
+            <span className="text-xs font-bold uppercase tracking-widest text-[#0B5D3A] block mb-1.5">
               {t("partners.badge")}
             </span>
             <h2 className="font-display text-xl sm:text-2xl font-bold text-slate-900">
@@ -39,7 +39,7 @@ export function AirlinePartners() {
           </div>
 
           <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 shrink-0">
-            <ShieldCheck className="h-4 w-4 text-brand-700" />
+            <ShieldCheck className="h-4 w-4 text-[#0B5D3A]" />
             <span>{t("partners.wholesale")}</span>
           </div>
         </div>

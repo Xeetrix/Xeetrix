@@ -9,10 +9,10 @@ export function FlightsHeroHeader() {
   return (
     <>
       <div className="text-center max-w-3xl mx-auto">
-        <span className="text-xs font-bold uppercase tracking-wider text-emerald-800 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
+        <span className="text-xs font-bold uppercase tracking-widest text-[#0B5D3A] block mb-2">
           {t("routes.tag")}
         </span>
-        <h1 className="mt-3 font-display text-2xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-slate-900">
+        <h1 className="font-display text-2xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-slate-900">
           {language === "bn"
             ? "ফ্লাইটের দাম তুলনা করুন ও বুক করুন"
             : language === "ar"

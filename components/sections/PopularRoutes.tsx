@@ -9,6 +9,7 @@ import { POPULAR_ROUTES } from "@/lib/constants";
 import type { PopularRoute } from "@/lib/constants";
 import { useAiConcierge } from "@/lib/ai-concierge-context";
 import { useI18n } from "@/lib/i18n-context";
+import { QuickBookingModal, FlightBookingDetails } from "@/components/QuickBookingModal";
 
 interface PopularRoutesProps {
   onSelectRoute?: (route: PopularRoute) => void;
@@ -24,6 +25,10 @@ export function PopularRoutes({
   const [activeCategory, setActiveCategory] = useState<string>("All");
   const { openConcierge } = useAiConcierge();
   const { formatPrice, t, language } = useI18n();
+
+  // Booking modal state
+  const [selectedFlight, setSelectedFlight] = useState<FlightBookingDetails | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const categories = [
     { id: "All", label: t("routes.all") },
@@ -61,11 +66,32 @@ export function PopularRoutes({
     return tag;
   };
 
+  const handleRouteBook = (route: PopularRoute) => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 3);
+    const dateStr = tomorrow.toISOString().split("T")[0];
+
+    setSelectedFlight({
+      fromCity: route.fromCity,
+      fromCode: route.fromCode,
+      toCity: route.toCity,
+      toCode: route.toCode,
+      airline: route.airlines[0],
+      departureDate: dateStr,
+      priceUSD: route.priceUSD || Math.round(route.startingPrice / 121.74),
+      cabinClass: "Economy",
+      baggage: route.baggage,
+      tripType: "oneway",
+    });
+    setIsModalOpen(true);
+  };
+
   const content = (
     <>
       {!hideHeader && (
-        <div className="mb-10 text-center">
+        <div className="mb-8 text-center">
           <SectionHeader
+            align="center"
             eyebrow={t("routes.tag")}
             title={t("routes.title")}
             description={t("routes.subtitle")}
@@ -74,7 +100,7 @@ export function PopularRoutes({
       )}
 
       {/* Filter Category Tabs */}
-      <div className="flex flex-wrap items-center justify-center gap-2 mb-8 sm:mb-10">
+      <div className="flex flex-wrap items-center justify-center gap-2 mb-8">
         {categories.map((cat) => (
           <button
             key={cat.id}
@@ -91,20 +117,19 @@ export function PopularRoutes({
       </div>
 
       {/* Route Cards Grid */}
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {filteredRoutes.map((route) => (
           <div
             key={route.id}
-            className="group relative flex flex-col justify-between rounded-2xl bg-white p-5 sm:p-6 border border-slate-200 shadow-card hover:shadow-elevated transition-all duration-300 hover:-translate-y-1"
+            className="group relative flex flex-col justify-between rounded-2xl bg-white p-5 sm:p-6 border border-slate-200 shadow-sm hover:shadow-md hover:border-emerald-300 transition-all duration-200 hover:-translate-y-0.5"
           >
-            {/* Top row: badge & category */}
+            {/* Top row: clean metadata without pills */}
             <div>
-              <div className="flex items-center justify-between gap-2 mb-3">
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-brand-800">
-                  <Tag className="h-3 w-3 text-brand-600" />
+              <div className="flex items-center justify-between gap-2 mb-3 text-xs">
+                <span className="font-bold text-[#0B5D3A] tracking-wider uppercase">
                   {getLocalizedTag(route.featuredTag)}
                 </span>
-                <span className="text-[11px] text-slate-400 font-medium">
+                <span className="text-slate-400 font-medium">
                   {route.category === "Middle East"
                     ? t("routes.middleEast")
                     : route.category === "Southeast Asia"
@@ -115,10 +140,10 @@ export function PopularRoutes({
                 </span>
               </div>
 
-              {/* Origin -> Destination Banner */}
+              {/* Origin -> Destination Route Display */}
               <div className="flex items-center justify-between gap-3 mb-4">
                 <div className="flex flex-col">
-                  <span className="font-display text-xl sm:text-2xl font-black text-slate-900">
+                  <span className="font-display text-2xl font-black text-slate-900">
                     {route.fromCode}
                   </span>
                   <span className="text-xs text-slate-500 font-medium">{route.fromCity}</span>
@@ -143,23 +168,23 @@ export function PopularRoutes({
                 </div>
 
                 <div className="flex flex-col text-right">
-                  <span className="font-display text-xl sm:text-2xl font-black text-slate-900">
+                  <span className="font-display text-2xl font-black text-slate-900">
                     {route.toCode}
                   </span>
                   <span className="text-xs text-slate-500 font-medium">{route.toCity}</span>
                 </div>
               </div>
 
-              {/* Baggage & Airlines */}
-              <div className="space-y-1.5 mb-5 text-xs text-slate-600">
+              {/* Baggage & Airlines Info */}
+              <div className="space-y-1.5 mb-5 text-xs text-slate-600 bg-slate-50/70 p-3 rounded-xl border border-slate-100">
                 <div className="flex items-center gap-2">
-                  <Luggage className="h-4 w-4 text-brand-700 shrink-0" />
+                  <Luggage className="h-3.5 w-3.5 text-amber-600 shrink-0" />
                   <span>
-                    {t("routes.baggage")} <strong>{route.baggage}</strong>
+                    {t("routes.baggage")} <strong className="text-slate-900">{route.baggage}</strong>
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-brand-600 shrink-0" />
+                  <Check className="h-3.5 w-3.5 text-[#0B5D3A] shrink-0" />
                   <span className="truncate">
                     {t("routes.airlines")} {route.airlines.join(", ")}
                   </span>
@@ -167,7 +192,7 @@ export function PopularRoutes({
               </div>
             </div>
 
-            {/* Price & Booking Trigger */}
+            {/* Price & 1-Click Booking Trigger */}
             <div className="pt-3.5 border-t border-slate-100 flex items-center justify-between gap-2">
               <div>
                 <span className="text-[10px] text-slate-400 block uppercase font-medium">
@@ -184,14 +209,14 @@ export function PopularRoutes({
                   onClick={() =>
                     openConcierge(
                       language === "bn"
-                        ? `${route.fromCity} (${route.fromCode}) থেকে ${route.toCity} (${route.toCode}) ফ্লাইটের বর্তমান ভাড়া, লাগেজ সুবিধা ও সিট অ্যাভেইলেবিলিটি সম্পর্কে জানতে চাই`
+                        ? `${route.fromCity} (${route.fromCode}) থেকে ${route.toCity} (${route.toCode}) ফ্লাইটের লাইভ ভাড়া, লাগেজ সুবিধা ও সিট অ্যাভেইলেবিলিটি জানতে চাই`
                         : language === "ar"
                         ? `أريد تفاصيل رحلات ${route.fromCity} (${route.fromCode}) إلى ${route.toCity} (${route.toCode}) بما في ذلك الأسعار وسعة الأمتعة`
                         : `Tell me about flights from ${route.fromCity} (${route.fromCode}) to ${route.toCity} (${route.toCode}), including current live airfares, airline luggage rules, and visa advice.`
                     )
                   }
                   title={t("routes.askAi")}
-                  className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-[#0B5D3A] border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer"
+                  className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-600 hover:text-[#0B5D3A] hover:bg-emerald-50 transition-colors cursor-pointer"
                 >
                   <Sparkles className="h-4 w-4" />
                 </button>
@@ -200,19 +225,20 @@ export function PopularRoutes({
                   <button
                     type="button"
                     onClick={() => onSelectRoute(route)}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-gold-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-gold-700 transition-colors min-h-[36px] cursor-pointer"
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-[#0B5D3A] hover:bg-[#08482d] text-white px-3.5 py-2 text-xs font-bold shadow-xs transition-colors cursor-pointer"
                   >
                     <span>{t("routes.book")}</span>
                     <ArrowRight className="h-3.5 w-3.5" />
                   </button>
                 ) : (
-                  <Link
-                    href={`/contact?from=${route.fromCode}&to=${route.toCode}&price=${route.priceUSD || 400}#quote`}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-gold-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-gold-700 transition-colors min-h-[36px]"
+                  <button
+                    type="button"
+                    onClick={() => handleRouteBook(route)}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white px-3.5 py-2 text-xs font-bold shadow-xs transition-colors cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
                   >
                     <span>{t("routes.book")}</span>
                     <ArrowRight className="h-3.5 w-3.5" />
-                  </Link>
+                  </button>
                 )}
               </div>
             </div>
@@ -220,22 +246,12 @@ export function PopularRoutes({
         ))}
       </div>
 
-      {/* View all routes banner */}
-      <div className="mt-8 sm:mt-10 rounded-2xl bg-slate-900 text-white p-6 sm:p-8 flex flex-col sm:flex-row items-center justify-between gap-6 shadow-md">
-        <div>
-          <h4 className="text-base sm:text-lg font-bold">{t("routes.otherDestTitle")}</h4>
-          <p className="text-xs sm:text-sm text-slate-300 mt-1 max-w-xl">
-            {t("routes.otherDestDesc")}
-          </p>
-        </div>
-        <Link
-          href="/routes"
-          className="inline-flex items-center gap-2 rounded-xl bg-[#0B5D3A] px-5 py-3 text-xs sm:text-sm font-bold text-white hover:bg-[#08482d] transition-colors shrink-0"
-        >
-          <span>{t("routes.viewAllBtn")}</span>
-          <ArrowRight className="h-4 w-4" />
-        </Link>
-      </div>
+      {/* Modal for 1-Click Route Booking */}
+      <QuickBookingModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        flight={selectedFlight}
+      />
     </>
   );
 
@@ -244,7 +260,7 @@ export function PopularRoutes({
   }
 
   return (
-    <section className="py-16 sm:py-20 bg-slate-50 border-t border-slate-200/80">
+    <section id="routes" className="py-14 sm:py-18 bg-white">
       <Container size="wide">{content}</Container>
     </section>
   );

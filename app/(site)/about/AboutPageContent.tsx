@@ -82,10 +82,10 @@ export function AboutPageContent() {
     <>
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-8">
         <div className="max-w-3xl">
-          <span className="text-xs font-bold uppercase tracking-wider text-brand-700 bg-brand-50 px-3 py-1 rounded-full border border-brand-200">
+          <span className="text-xs font-bold uppercase tracking-widest text-[#0B5D3A] block mb-2">
             {t("about.pageBadge")}
           </span>
-          <h1 className="mt-3 font-display text-2xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-slate-900">
+          <h1 className="font-display text-2xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-slate-900">
             {t("about.pageTitle")}
           </h1>
           <p className="mt-4 text-sm sm:text-lg text-slate-600 leading-relaxed">

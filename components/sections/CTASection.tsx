@@ -19,10 +19,9 @@ export function CTASection() {
           />
 
           <div className="relative max-w-3xl mx-auto">
-            <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-900/60 px-4 py-1.5 text-xs font-semibold text-emerald-300 mb-5">
-              <Clock className="h-3.5 w-3.5 text-amber-400" />
-              <span>{t("cta.badge")}</span>
-            </div>
+            <span className="text-xs font-bold uppercase tracking-widest text-emerald-400 block mb-3">
+              {t("cta.badge")}
+            </span>
 
             <h2 className="font-display text-2xl font-bold text-white sm:text-4xl leading-tight">
               {t("cta.title")}

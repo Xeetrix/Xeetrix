@@ -9,55 +9,62 @@
         "email": { "type": "string" },
         "displayName": { "type": "string" },
         "photoURL": { "type": "string" },
-        "phone": { "type": "string" },
-        "passportNumber": { "type": "string" },
-        "preferredClass": { "type": "string" },
+        "role": { "type": "string" },
+        "agentId": { "type": "string" },
         "createdAt": { "type": "string" },
         "updatedAt": { "type": "string" }
       },
       "required": ["id", "email"]
     },
-    "inquiries": {
-      "title": "Flight Booking Inquiry",
-      "description": "Customer flight quotation and reservation inquiries",
+    "agents": {
+      "title": "B2B Travel Agent",
+      "description": "Travel sub-agents and franchise partners",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
-        "referenceCode": { "type": "string" },
-        "userId": { "type": "string" },
+        "agentCode": { "type": "string" },
+        "agencyName": { "type": "string" },
+        "ownerName": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "status": { "type": "string" },
+        "creditEnabled": { "type": "boolean" },
+        "creditLimit": { "type": "number" },
+        "commissionValue": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["agentCode", "agencyName", "phone", "email"]
+    },
+    "bookings": {
+      "title": "Flight Booking",
+      "description": "B2C customer and B2B agent flight reservations",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "bookingReference": { "type": "string" },
+        "channel": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerEmail": { "type": "string" },
+        "customerPhone": { "type": "string" },
         "origin": { "type": "string" },
         "destination": { "type": "string" },
-        "tripType": { "type": "string" },
-        "departureDate": { "type": "string" },
-        "returnDate": { "type": "string" },
-        "passengers": { "type": "number" },
-        "cabinClass": { "type": "string" },
-        "fareType": { "type": "string" },
-        "contactName": { "type": "string" },
-        "contactEmail": { "type": "string" },
-        "contactPhone": { "type": "string" },
-        "notes": { "type": "string" },
         "status": { "type": "string" },
-        "pnr": { "type": "string" },
-        "quotedFare": { "type": "string" },
         "createdAt": { "type": "string" }
       },
-      "required": ["referenceCode", "origin", "destination", "contactName", "contactPhone"]
+      "required": ["bookingReference", "channel", "customerName", "origin", "destination"]
     },
-    "saved_flights": {
-      "title": "Saved Flight Watchlist",
-      "description": "Monitored routes and saved flight net-fares",
+    "audit_logs": {
+      "title": "Administrative Audit Trail",
+      "description": "Immutable ledger of all sensitive booking, payment and agent status actions",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
-        "userId": { "type": "string" },
-        "route": { "type": "string" },
-        "airline": { "type": "string" },
-        "fare": { "type": "string" },
-        "baggage": { "type": "string" },
-        "createdAt": { "type": "string" }
+        "actor": { "type": "string" },
+        "action": { "type": "string" },
+        "entity": { "type": "string" },
+        "timestamp": { "type": "string" }
       },
-      "required": ["userId", "route"]
+      "required": ["actor", "action", "timestamp"]
     }
   }
 }

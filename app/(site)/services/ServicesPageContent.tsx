@@ -98,10 +98,10 @@ export function ServicesPageContent() {
     <>
       {/* Header */}
       <div className="max-w-3xl">
-        <span className="text-xs font-bold uppercase tracking-wider text-brand-700 bg-brand-50 px-3 py-1 rounded-full border border-brand-200">
+        <span className="text-xs font-bold uppercase tracking-widest text-[#0B5D3A] block mb-2">
           {t("services.pageBadge")}
         </span>
-        <h1 className="mt-3 font-display text-3xl font-extrabold tracking-tight text-slate-900 sm:text-5xl">
+        <h1 className="font-display text-3xl font-extrabold tracking-tight text-slate-900 sm:text-5xl">
           {t("services.pageTitle")}
         </h1>
         <p className="mt-3 text-base text-slate-600 leading-relaxed">

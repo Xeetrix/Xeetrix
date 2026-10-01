@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Mail, MapPin, Phone, ShieldCheck, Clock, Award, CheckCircle2 } from "lucide-react";
+import { Mail, MapPin, Phone, ShieldCheck, Clock, Award, CheckCircle2, Building2, Ticket } from "lucide-react";
 import { Container } from "@/components/ui/Container";
 import { BrandLogo } from "@/components/ui/BrandLogo";
 import {
@@ -15,7 +15,7 @@ import { useI18n } from "@/lib/i18n-context";
 
 export function Footer() {
   const currentYear = new Date().getFullYear();
-  const { t, language } = useI18n();
+  const { t } = useI18n();
 
   return (
     <footer className="border-t border-slate-800 bg-slate-950 text-slate-300">
@@ -24,32 +24,32 @@ export function Footer() {
         <Container size="wide">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="flex items-center gap-3.5">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-700/20 text-brand-400 border border-brand-500/30">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                 <ShieldCheck className="h-6 w-6" />
               </div>
               <div>
-                <h4 className="text-sm font-semibold text-white">{t("footer.verifiedE")}</h4>
-                <p className="text-xs text-slate-400 mt-0.5">{t("footer.verifiedEDesc")}</p>
+                <h4 className="text-sm font-semibold text-white">Verified GDS E-Tickets</h4>
+                <p className="text-xs text-slate-400 mt-0.5">Direct PNR confirmed on official airline systems</p>
               </div>
             </div>
 
             <div className="flex items-center gap-3.5">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gold-600/20 text-gold-400 border border-gold-500/30">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
                 <Clock className="h-6 w-6" />
               </div>
               <div>
-                <h4 className="text-sm font-semibold text-white">{t("footer.support247")}</h4>
-                <p className="text-xs text-slate-400 mt-0.5">{t("footer.support247Desc")}</p>
+                <h4 className="text-sm font-semibold text-white">24/7 Ticketing Desk</h4>
+                <p className="text-xs text-slate-400 mt-0.5">Emergency date modifications & instant support</p>
               </div>
             </div>
 
             <div className="flex items-center gap-3.5">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-700/20 text-brand-400 border border-brand-500/30">
-                <Award className="h-6 w-6" />
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                <Building2 className="h-6 w-6" />
               </div>
               <div>
-                <h4 className="text-sm font-semibold text-white">{t("footer.bestFare")}</h4>
-                <p className="text-xs text-slate-400 mt-0.5">{t("footer.bestFareDesc")}</p>
+                <h4 className="text-sm font-semibold text-white">B2B Sub-Agent Network</h4>
+                <p className="text-xs text-slate-400 mt-0.5">Zero investment ticketing workstation for agents</p>
               </div>
             </div>
           </div>
@@ -64,28 +64,28 @@ export function Footer() {
             <BrandLogo size="md" variant="badge" inverted />
           </Link>
           <p className="mt-3 max-w-sm text-sm leading-relaxed text-slate-400">
-            {t("footer.desc")}
+            Xeetrix is a premier air ticketing and travel distribution platform headquartered in Dhaka, Bangladesh. We provide wholesale GDS airfares for international travelers and empower local travel entrepreneurs through our B2B sub-agent network.
           </p>
 
           <div className="mt-5 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-300">
             <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-            <span>Authorized Global Air Ticketing Agency</span>
+            <span>Authorized Global Air Ticketing Platform</span>
           </div>
         </div>
 
-        {/* Quick Links */}
+        {/* Passenger Services */}
         <div>
           <h3 className="text-xs font-bold uppercase tracking-wider text-white">
-            {t("footer.quickLinks")}
+            Passenger Services
           </h3>
           <ul className="mt-4 space-y-2.5">
             {[
-              { href: "/flights", label: t("nav.flights") },
-              { href: "/services", label: t("nav.services") },
-              { href: "/routes", label: t("nav.routes") },
-              { href: "/how-it-works", label: t("nav.baggageVisa") },
-              { href: "/contact", label: t("nav.contact") },
-              { href: "/contact#quote", label: t("nav.requestQuote") },
+              { href: "/flights", label: "Flight Search" },
+              { href: "/flights/request", label: "Booking Request" },
+              { href: "/track-booking", label: "Track Booking Status" },
+              { href: "/routes", label: "Popular Flight Routes" },
+              { href: "/services", label: "Worker & Student Fares" },
+              { href: "/contact", label: "Contact Us" },
             ].map((link) => (
               <li key={link.href}>
                 <Link
@@ -99,58 +99,18 @@ export function Footer() {
           </ul>
         </div>
 
-        {/* Specialized Fares */}
+        {/* B2B Agent & Operations */}
         <div>
           <h3 className="text-xs font-bold uppercase tracking-wider text-white">
-            {t("footer.servicesTitle")}
+            B2B Agents & Portals
           </h3>
           <ul className="mt-4 space-y-2.5">
             {[
-              {
-                href: "/services#middle-east-workers",
-                label:
-                  language === "bn"
-                    ? "প্রবাসী কর্মী স্পেশাল ফেয়ার"
-                    : language === "ar"
-                    ? "أسعار عمالة الشرق الأوسط"
-                    : "Middle East Worker Fares",
-              },
-              {
-                href: "/services#student-flights",
-                label:
-                  language === "bn"
-                    ? "শিক্ষার্থীদের ৪৬ কেজি লাগেজ"
-                    : language === "ar"
-                    ? "أمتعة الطلاب 46 كجم"
-                    : "Student Extra Luggage (46kg)",
-              },
-              {
-                href: "/services#umrah-holidays",
-                label:
-                  language === "bn"
-                    ? "উমরাহ ও হজ্জ ফ্লাইট টিকিট"
-                    : language === "ar"
-                    ? "تذاكر رحلات العمرة"
-                    : "Umrah Air Tickets",
-              },
-              {
-                href: "/services#date-change-reissue",
-                label:
-                  language === "bn"
-                    ? "জরুরি টিকিট রি-ইস্যু ও ডেট চেঞ্জ"
-                    : language === "ar"
-                    ? "إعادة إصدار فوري للتذاكر"
-                    : "Instant Ticket Re-issue",
-              },
-              {
-                href: "/routes#middle-east",
-                label:
-                  language === "bn"
-                    ? "কেএসএ ও ইউএই রুট"
-                    : language === "ar"
-                    ? "رحلات السعودية والإمارات"
-                    : "KSA & UAE Routes",
-              },
+              { href: "/agents", label: "Become an Agent" },
+              { href: "/agent/login", label: "Agent Portal Login" },
+              { href: "/agent/register", label: "Agent Registration" },
+              { href: "/agent/dashboard", label: "Agent Workstation" },
+              { href: "/admin", label: "Admin Operations Desk" },
             ].map((link) => (
               <li key={link.href}>
                 <Link
@@ -164,14 +124,14 @@ export function Footer() {
           </ul>
         </div>
 
-        {/* Helpline & Contact Info */}
+        {/* Helpline & Office */}
         <div>
           <h3 className="text-xs font-bold uppercase tracking-wider text-white">
-            {t("footer.contactTitle")}
+            24/7 Ticketing Desk
           </h3>
           <ul className="mt-4 space-y-3.5 text-sm text-slate-400">
             <li>
-              <span className="text-xs text-slate-500 block">{t("topbar.helpline")}</span>
+              <span className="text-xs text-slate-500 block">Dedicated Hotline:</span>
               <a
                 href={CONTACT_PHONE_TEL}
                 className="inline-flex items-center gap-2 text-white font-semibold hover:text-amber-400 transition-colors mt-0.5 text-base"
@@ -210,16 +170,21 @@ export function Footer() {
       <div className="border-t border-slate-900 bg-slate-950 py-6">
         <Container size="wide" className="flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
           <p>
-            © {currentYear} Xeetrix (xeetrix.com). {t("footer.rights")}
+            © {currentYear} Xeetrix (xeetrix.com). All rights reserved.
           </p>
 
-          <div className="flex items-center gap-6">
-            <span className="text-slate-400 font-medium">Domain: xeetrix.com</span>
-            <Link href="/contact" className="hover:text-slate-300 transition-colors">
-              Support Desk
+          <div className="flex flex-wrap items-center gap-6">
+            <Link href="/terms" className="hover:text-slate-300 transition-colors">
+              Terms &amp; Conditions
             </Link>
-            <Link href="/services" className="hover:text-slate-300 transition-colors">
-              Terms &amp; Fares
+            <Link href="/privacy" className="hover:text-slate-300 transition-colors">
+              Privacy Policy
+            </Link>
+            <Link href="/refund-policy" className="hover:text-slate-300 transition-colors">
+              Refund Policy
+            </Link>
+            <Link href="/track-booking" className="hover:text-slate-300 transition-colors font-semibold text-emerald-400">
+              Track Booking
             </Link>
           </div>
         </Container>

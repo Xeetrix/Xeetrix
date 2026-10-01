@@ -18,6 +18,7 @@ import {
   ArrowRight,
   Globe2,
   ChevronDown,
+  Building2,
 } from "lucide-react";
 import { Container } from "@/components/ui/Container";
 import { BrandLogo } from "@/components/ui/BrandLogo";
@@ -37,17 +38,18 @@ export function Navbar({
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const { user } = useAuth();
+  const { user, isAdmin, isAgent } = useAuth();
   const { language, currency, openSettings, t } = useI18n();
 
   const currentLang = LANGUAGES.find((l) => l.code === language) || LANGUAGES[0];
   const currentCurr = CURRENCIES[currency] || CURRENCIES.USD;
 
   const navLinks = [
-    { href: "/flights", label: t("nav.flights") },
+    { href: "/flights", label: "Flight Search" },
+    { href: "/track-booking", label: "Track Booking" },
     { href: "/routes", label: t("nav.routes") },
+    { href: "/agents", label: "B2B Agents" },
     { href: "/services", label: t("nav.services") },
-    { href: "/how-it-works", label: t("nav.baggageVisa") },
     { href: "/contact", label: t("nav.contact") },
   ];
 
@@ -148,34 +150,39 @@ export function Navbar({
 
           {/* Right: Balanced, Uncluttered Executive Cluster */}
           <div className="hidden lg:flex items-center gap-2.5 xl:gap-3">
-            {/* Quick Currency & Language Selector Pill */}
-            <button
-              type="button"
-              onClick={openSettings}
-              className="h-10 inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50/80 px-2.5 xl:px-3 text-xs font-bold text-slate-700 hover:bg-slate-100 hover:border-slate-300 transition-colors shadow-2xs cursor-pointer group"
-              title="Change Language & Currency"
-            >
-              <Globe2 className="h-3.5 w-3.5 text-slate-500 group-hover:text-[#0B5D3A] transition-colors" />
-              <span>{language.toUpperCase()}</span>
-              <span className="text-slate-300">|</span>
-              <span className="text-[#0B5D3A] font-extrabold">{currency}</span>
-              <ChevronDown className="h-3 w-3 text-slate-400 group-hover:text-slate-700 transition-colors" />
-            </button>
+            {/* Admin or Agent Portal Shortcut */}
+            {isAdmin && (
+              <Link
+                href="/admin"
+                className="h-10 inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 text-xs font-bold text-emerald-400 hover:bg-slate-800 transition-colors shadow-2xs"
+                title="Admin Control Center"
+              >
+                <ShieldCheck className="h-4 w-4 text-emerald-400" />
+                <span>Admin Desk</span>
+              </Link>
+            )}
+
+            {isAgent && (
+              <Link
+                href="/agent/dashboard"
+                className="h-10 inline-flex items-center gap-1.5 rounded-xl bg-sky-950 px-3.5 text-xs font-bold text-sky-300 hover:bg-sky-900 transition-colors shadow-2xs"
+                title="Agent Portal"
+              >
+                <Building2 className="h-4 w-4 text-sky-400" />
+                <span>Agent Portal</span>
+              </Link>
+            )}
 
             {/* AI Concierge Trigger */}
             {onOpenAiConcierge && (
               <button
                 type="button"
                 onClick={onOpenAiConcierge}
-                className="h-10 inline-flex items-center gap-2 rounded-full border border-emerald-300/80 bg-emerald-50/90 px-3.5 text-xs font-bold text-[#0B5D3A] hover:bg-emerald-100/80 hover:border-emerald-400 transition-all cursor-pointer group shadow-2xs"
+                className="h-10 inline-flex items-center gap-2 rounded-xl border border-emerald-300/80 bg-emerald-50/80 px-3.5 text-xs font-bold text-[#0B5D3A] hover:bg-emerald-100 hover:border-emerald-400 transition-all cursor-pointer group shadow-2xs"
                 title="Open AI Flight Concierge"
               >
                 <Sparkles className="h-3.5 w-3.5 text-[#0B5D3A] group-hover:rotate-12 transition-transform" />
                 <span>{t("nav.aiConcierge")}</span>
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600" />
-                </span>
               </button>
             )}
 
@@ -220,7 +227,7 @@ export function Navbar({
               )
             )}
 
-            {/* Primary Action Button: Request Quote (Vibrant Amber/Gold CTA with px-5) */}
+            {/* Primary Action Button: Request Quote */}
             {onRequestQuote ? (
               <button
                 onClick={onRequestQuote}

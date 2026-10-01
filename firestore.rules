@@ -12,25 +12,61 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    // User profile documents
-    match /users/{userId} {
-      allow read: if isOwner(userId);
-      allow create: if isOwner(userId);
-      allow update: if isOwner(userId);
-      allow delete: if false;
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.email == 'contact.knltc@gmail.com' ||
+        request.auth.token.email == 'admin@xeetrix.com' ||
+        request.auth.token.role == 'SUPER_ADMIN' ||
+        request.auth.token.role == 'ADMIN'
+      );
     }
 
-    // Flight inquiries and quote requests
-    // Public creation allowed so unauthenticated travelers can request quotations
-    // Authenticated users can read their own submissions
+    // Users collection
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(userId) || isAdmin();
+    }
+
+    // Agents collection
+    // Public creation allowed for agent registration (/agent/register)
+    match /agents/{agentId} {
+      allow create: if true;
+      allow read: if true;
+      allow update, delete: if isAdmin() || (isAuthenticated() && resource.data.email == request.auth.token.email);
+    }
+
+    // Bookings collection
+    // Public creation allowed for B2C travelers without account
+    // Read allowed for reference lookup in tracking portal
+    match /bookings/{bookingId} {
+      allow create: if true;
+      allow read: if true;
+      allow update: if true;
+      allow delete: if isAdmin();
+    }
+
+    // Legacy inquiries collection for backwards compatibility
     match /inquiries/{inquiryId} {
       allow create: if true;
-      allow read: if true; // Allows lookup by reference code or user ID
-      allow update: if isAuthenticated() && (resource.data.userId == request.auth.uid || resource.data.userId == null);
-      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow read: if true;
+      allow update, delete: if true;
     }
 
-    // User saved flights and watchlist
+    // Audit logs collection
+    match /audit_logs/{logId} {
+      allow create: if true;
+      allow read: if isAdmin();
+      allow update, delete: if false; // Immutable audit trail
+    }
+
+    // Refund requests
+    match /refund_requests/{refundId} {
+      allow create: if true;
+      allow read: if true;
+      allow update, delete: if isAdmin();
+    }
+
+    // User saved flight watchlist
     match /saved_flights/{flightId} {
       allow read, write: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid);
     }

@@ -46,13 +46,13 @@ export function QuoteModal({
         </button>
 
         <div className="mb-6">
-          <span className="text-xs font-bold uppercase tracking-wider text-brand-700 bg-brand-50 px-3 py-1 rounded-full border border-brand-200">
+          <span className="text-xs font-bold uppercase tracking-widest text-[#0B5D3A] block mb-1">
             {t("inquiry.badge")}
           </span>
-          <h2 className="mt-2 text-2xl font-bold text-slate-900">
+          <h2 className="text-2xl font-bold text-slate-900">
             {t("inquiry.title")}
           </h2>
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-slate-600 mt-1">
             {t("inquiry.desc")}
           </p>
         </div>
