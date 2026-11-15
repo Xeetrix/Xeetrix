@@ -360,7 +360,7 @@ function mergeMartSettings(partial?: Partial<MartSettings>): MartSettings {
   };
 }
 
-function normalizeProductRecord(raw: Partial<MartProduct>): MartProduct {
+export function normalizeProductRecord(raw: Partial<MartProduct>): MartProduct {
   const legacyCat = (raw.category || "").trim();
   const cats =
     (raw.categories || "").trim() || (legacyCat ? slugifyTaxonomy(legacyCat) : "");
@@ -694,6 +694,99 @@ export function parseOrderItems(itemsJson?: string): MartOrderItem[] {
 
 export function slugifyCategory(text: string): string {
   return slugifyTaxonomy(text);
+}
+
+function cleanProductUrlToken(text?: string): string {
+  if (!text) return "";
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+/**
+ * Generates an SEO- and marketing-friendly slug combining SKU and product name:
+ * e.g. SKU "XM-KID-001" + Name "Kids Fleece Hoodie" -> "xm-kid-001-kids-fleece-hoodie"
+ */
+export function buildMartProductSlug(
+  product: Pick<MartProduct, "id" | "sku" | "nameEn" | "nameBn">
+): string {
+  const skuPart = cleanProductUrlToken(product.sku);
+  const namePart = cleanProductUrlToken(product.nameEn || product.nameBn);
+  const idPart = cleanProductUrlToken(product.id) || encodeURIComponent(product.id || "item");
+
+  if (skuPart && namePart) {
+    if (namePart === skuPart || namePart.startsWith(`${skuPart}-`)) {
+      return namePart;
+    }
+    return `${skuPart}-${namePart}`;
+  }
+  return skuPart || namePart || idPart;
+}
+
+export function buildMartProductUrl(
+  product: Pick<MartProduct, "id" | "sku" | "nameEn" | "nameBn">
+): string {
+  return `/mart/p/${buildMartProductSlug(product)}`;
+}
+
+/**
+ * Resolves a product from /mart/p/[slug] using a resilient 4-tier matching strategy:
+ * 1. Exact full slug match (SKU + Name slug)
+ * 2. Exact SKU or Product ID match
+ * 3. SKU prefix match (so renaming a product title later never breaks existing ad campaign links)
+ * 4. Exact Name slug match
+ */
+export function findMartProductBySlugOrSku(
+  products: MartProduct[],
+  rawSlug?: string
+): MartProduct | undefined {
+  if (!rawSlug || products.length === 0) return undefined;
+  let decoded = rawSlug;
+  try {
+    decoded = decodeURIComponent(rawSlug);
+  } catch {
+    decoded = rawSlug;
+  }
+  const target = decoded.trim().toLowerCase();
+  const targetToken = cleanProductUrlToken(decoded);
+  if (!target) return undefined;
+
+  // 1. Exact canonical slug match
+  const exactSlugMatch = products.find(
+    (p) => buildMartProductSlug(p).toLowerCase() === target || buildMartProductSlug(p) === targetToken
+  );
+  if (exactSlugMatch) return exactSlugMatch;
+
+  // 2. Exact raw SKU, tokenized SKU, or ID match
+  const exactSkuOrIdMatch = products.find((p) => {
+    const rawSku = (p.sku || "").trim().toLowerCase();
+    const tokenSku = cleanProductUrlToken(p.sku);
+    const rawId = (p.id || "").trim().toLowerCase();
+    return (
+      (rawSku && (rawSku === target || tokenSku === targetToken)) ||
+      (rawId && (rawId === target || cleanProductUrlToken(p.id) === targetToken))
+    );
+  });
+  if (exactSkuOrIdMatch) return exactSkuOrIdMatch;
+
+  // 3. SKU prefix match (e.g. /mart/p/xm-kid-001-any-title matches SKU "XM-KID-001")
+  const prefixMatches = products
+    .filter((p) => {
+      const tokenSku = cleanProductUrlToken(p.sku);
+      return Boolean(tokenSku && targetToken.startsWith(`${tokenSku}-`));
+    })
+    .sort((a, b) => cleanProductUrlToken(b.sku).length - cleanProductUrlToken(a.sku).length);
+  if (prefixMatches.length > 0) return prefixMatches[0];
+
+  // 4. Name slug match
+  return products.find((p) => {
+    const nameToken = cleanProductUrlToken(p.nameEn || p.nameBn);
+    return Boolean(nameToken && (nameToken === targetToken || nameToken === target));
+  });
 }
 
 const MART_PUBLIC_CACHE_KEY = "xeetrix_mart_public_snapshot_v4";

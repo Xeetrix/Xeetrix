@@ -38,6 +38,8 @@ import {
   QrCode,
   Layers,
   ImagePlus,
+  Link2,
+  Check,
 } from "lucide-react";
 import { MartLogo } from "./MartLogo";
 import { MartLanguageSwitcher } from "./MartLanguageSwitcher";
@@ -47,6 +49,7 @@ import { MartAccountingPanel } from "./admin/MartAccountingPanel";
 import { MartCrmPanel } from "./admin/MartCrmPanel";
 import { MartCouponsPanel } from "./admin/MartCouponsPanel";
 import {
+  buildMartProductUrl,
   clearStoredMartAdminPass,
   createMartRecord,
   DEFAULT_MART_SETTINGS,
@@ -265,6 +268,22 @@ export function MartAdminClient() {
   const [autoSquarePad, setAutoSquarePad] = useState(true);
   const [savingProduct, setSavingProduct] = useState(false);
   const [productSearch, setProductSearch] = useState("");
+  const [copiedAdminProdId, setCopiedAdminProdId] = useState<string | null>(null);
+
+  function handleCopyAdminProductLink(p: MartProduct) {
+    if (typeof window === "undefined") return;
+    const fullUrl = `${window.location.origin}${buildMartProductUrl(p)}`;
+    try {
+      navigator.clipboard.writeText(fullUrl);
+    } catch {
+      // Ignore clipboard permission errors
+    }
+    setCopiedAdminProdId(p.id);
+    setToast({ type: "success", text: t.admin.products.linkCopiedMsg });
+    setTimeout(() => {
+      setCopiedAdminProdId((prev) => (prev === p.id ? null : prev));
+    }, 2200);
+  }
 
   // Category Form (Mart_Categories)
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
@@ -4740,7 +4759,23 @@ export function MartAdminClient() {
                             </div>
                           </div>
 
-                          <div className="grid grid-cols-3 gap-2 pt-1">
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => handleCopyAdminProductLink(p)}
+                              className={`min-h-[38px] inline-flex items-center justify-center gap-1 rounded-lg border px-2 py-1.5 font-medium whitespace-nowrap ${
+                                copiedAdminProdId === p.id
+                                  ? "border-[#0B5336] bg-brand-50 text-[#0B5336]"
+                                  : "border-slate-200 text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336]"
+                              }`}
+                            >
+                              {copiedAdminProdId === p.id ? (
+                                <Check className="h-3.5 w-3.5 text-[#0B5336]" />
+                              ) : (
+                                <Link2 className="h-3.5 w-3.5" />
+                              )}
+                              <span>{t.admin.products.copyLinkBtn}</span>
+                            </button>
                             <button
                               type="button"
                               onClick={() => startEditProduct(p)}
@@ -5011,6 +5046,22 @@ export function MartAdminClient() {
                               </td>
                               <td className="px-4 py-3 text-right">
                                 <div className="inline-flex items-center gap-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyAdminProductLink(p)}
+                                    className={`inline-flex items-center gap-1 font-medium whitespace-nowrap ${
+                                      copiedAdminProdId === p.id
+                                        ? "text-[#0B5336]"
+                                        : "text-slate-600 hover:text-[#0B5336]"
+                                    }`}
+                                  >
+                                    {copiedAdminProdId === p.id ? (
+                                      <Check className="h-3.5 w-3.5 text-[#0B5336]" />
+                                    ) : (
+                                      <Link2 className="h-3.5 w-3.5" />
+                                    )}
+                                    <span>{t.admin.products.copyLinkBtn}</span>
+                                  </button>
                                   <button
                                     type="button"
                                     onClick={() => startEditProduct(p)}

@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Truck,
   Banknote,
@@ -29,14 +31,18 @@ import {
   Ticket,
   QrCode,
   Layers,
+  Link2,
+  ExternalLink,
 } from "lucide-react";
 import { MartHeader } from "./MartHeader";
 import { MartFooter } from "./MartFooter";
 import { useMartI18n } from "./MartI18nProvider";
 import { MART_ENTERPRISE_DICTIONARY } from "@/lib/martEnterpriseI18n";
 import {
+  buildMartProductUrl,
   DEFAULT_MART_SETTINGS,
   fetchMartPublicData,
+  findMartProductBySlugOrSku,
   findMatchingVariant,
   getCachedMartPublicSnapshot,
   MART_CONTACT_EMAIL,
@@ -194,7 +200,12 @@ const ORDER_STEPS: MartOrderStatus[] = [
   "Delivered",
 ];
 
-export function MartStorefront() {
+export function MartStorefront({
+  focusedProductSlug,
+}: {
+  focusedProductSlug?: string;
+} = {}) {
+  const router = useRouter();
   const { lang, t } = useMartI18n();
   const ent = MART_ENTERPRISE_DICTIONARY[lang];
   const tvar = ent.variations;
@@ -232,6 +243,14 @@ export function MartStorefront() {
   const [quickViewSelectedSize, setQuickViewSelectedSize] = useState("");
   const [quickViewVariant, setQuickViewVariant] = useState("");
   const [quickViewQty, setQuickViewQty] = useState(1);
+
+  // Dedicated Product Detail Page (PDP) State
+  const [pdpActiveImage, setPdpActiveImage] = useState("");
+  const [pdpSelectedColor, setPdpSelectedColor] = useState<MartProductColor | null>(null);
+  const [pdpSelectedSize, setPdpSelectedSize] = useState("");
+  const [pdpVariant, setPdpVariant] = useState("");
+  const [pdpQty, setPdpQty] = useState(1);
+  const [copiedLinkProdId, setCopiedLinkProdId] = useState<string | null>(null);
 
   // Coupon State
   const [couponInput, setCouponInput] = useState("");
@@ -552,6 +571,10 @@ export function MartStorefront() {
   }, [selectedCategories, visibleCategories]);
 
   function toggleCategoryFilter(slug: string) {
+    if (focusedProductSlug) {
+      router.push("/mart");
+      return;
+    }
     setSelectedCategories((prev) =>
       prev.includes(slug) ? prev.filter((s) => s !== slug) : [...prev, slug]
     );
@@ -567,6 +590,80 @@ export function MartStorefront() {
     setSelectedCategories([]);
     setSelectedLabels([]);
     setSearchQuery("");
+  }
+
+  const focusedProduct = useMemo(
+    () => findMartProductBySlugOrSku(products, focusedProductSlug),
+    [products, focusedProductSlug]
+  );
+
+  useEffect(() => {
+    if (!focusedProduct) return;
+    const colors = parseProductColors(focusedProduct.colorsJson);
+    const sizes = parseProductSizes(focusedProduct.sizesList);
+    const gallery = parseGalleryUrls(focusedProduct.galleryUrls, focusedProduct.imageUrl);
+    const legacyVariants = parseProductVariants(
+      pickLocalized(focusedProduct.variantsEn, focusedProduct.variantsBn, lang)
+    );
+    const firstColor = colors[0] || null;
+    setPdpSelectedColor(firstColor);
+    setPdpSelectedSize(sizes[0] || "");
+    setPdpActiveImage(firstColor?.imageUrl || gallery[0] || focusedProduct.imageUrl || "");
+    setPdpVariant(
+      colors.length === 0 && sizes.length === 0 && legacyVariants.length > 0
+        ? legacyVariants[0]
+        : ""
+    );
+    setPdpQty(1);
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusedProduct?.id, lang]);
+
+  const relatedProducts = useMemo(() => {
+    if (!focusedProduct) return [];
+    const targetCats = new Set(parseCsvSlugs(focusedProduct.categories));
+    const targetLabels = new Set(parseCsvSlugs(focusedProduct.labels));
+    const candidates = products.filter((p) => p.id !== focusedProduct.id);
+    const scored = candidates.map((p) => {
+      const pCats = parseCsvSlugs(p.categories);
+      const pLabels = parseCsvSlugs(p.labels);
+      let score = 0;
+      pCats.forEach((c) => {
+        if (targetCats.has(c)) score += 3;
+      });
+      pLabels.forEach((l) => {
+        if (targetLabels.has(l)) score += 2;
+      });
+      if (p.featured) score += 1;
+      return { product: p, score };
+    });
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, 6).map((s) => s.product);
+  }, [focusedProduct, products]);
+
+  function navigateToProductPage(product: MartProduct) {
+    router.push(buildMartProductUrl(product));
+  }
+
+  function handleCopyProductLink(product: MartProduct, e?: React.MouseEvent) {
+    if (e) e.stopPropagation();
+    if (typeof window === "undefined") return;
+    const fullUrl = `${window.location.origin}${buildMartProductUrl(product)}`;
+    try {
+      navigator.clipboard.writeText(fullUrl);
+    } catch {
+      // Ignore clipboard permission errors
+    }
+    setCopiedLinkProdId(product.id);
+    setAddedBanner(t.quickView.linkCopiedBtn);
+    setTimeout(() => {
+      setCopiedLinkProdId((prev) => (prev === product.id ? null : prev));
+    }, 2200);
+    setTimeout(() => {
+      setAddedBanner((prev) => (prev === t.quickView.linkCopiedBtn ? null : prev));
+    }, 2500);
   }
 
   const filteredProducts = useMemo(() => {
@@ -1211,6 +1308,223 @@ export function MartStorefront() {
   const hasActiveFilters =
     selectedCategories.length > 0 || selectedLabels.length > 0 || searchQuery.trim().length > 0;
 
+  function renderProductCard(product: MartProduct) {
+    const hasDiscount =
+      product.comparePrice > 0 && product.comparePrice > product.price;
+    const isDropship = product.fulfillmentType === "dropship";
+    const outOfStock = !isProductOrderable(product);
+    const effectiveStock = getEffectiveProductStock(product);
+    const colors = parseProductColors(product.colorsJson);
+    const sizes = parseProductSizes(product.sizesList);
+    const hasWholesale = product.wholesaleMinQty > 0 && product.wholesalePrice > 0;
+    const prodName = pickLocalized(
+      product.nameEn,
+      product.nameBn,
+      lang,
+      product.sku
+    );
+    const prodDesc = pickLocalized(product.descriptionEn, product.descriptionBn, lang);
+    const variants = parseProductVariants(
+      pickLocalized(product.variantsEn, product.variantsBn, lang)
+    );
+
+    const catNames = parseCsvSlugs(product.categories).map((slug) => {
+      const c = categoryMap.get(slug);
+      return c ? pickLocalized(c.nameEn, c.nameBn, lang, slug) : slug;
+    });
+    const labelNames = parseCsvSlugs(product.labels).map((slug) => {
+      const l = labelMap.get(slug);
+      return l ? pickLocalized(l.nameEn, l.nameBn, lang, slug) : slug;
+    });
+
+    const kickerParts = [
+      ...(catNames.length > 0 ? catNames : [t.catalog.generalFallback]),
+      ...labelNames.slice(0, 1),
+    ];
+
+    const selectedRawColor = cardSelectedColorByProdId[product.id];
+    const activeCardColor =
+      selectedRawColor && colors.some((c) => c.id === selectedRawColor.id)
+        ? selectedRawColor
+        : null;
+    const cardDisplayImage = activeCardColor?.imageUrl || product.imageUrl;
+
+    return (
+      <article
+        key={product.id}
+        role="link"
+        tabIndex={0}
+        onClick={() => navigateToProductPage(product)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            navigateToProductPage(product);
+          }
+        }}
+        className="group cursor-pointer flex flex-col justify-between rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-card hover:shadow-elevated hover:border-[#0B5336]/40 transition-all duration-200 hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-[#0B5336]"
+      >
+        <div>
+          <div className="block w-full aspect-square bg-white p-2.5 sm:p-3 overflow-hidden border-b border-slate-100 text-left">
+            <ProductMedia
+              src={cardDisplayImage}
+              alt={prodName}
+              className="transition-transform duration-200 group-hover:scale-[1.03]"
+            />
+          </div>
+
+          <div className="p-3 sm:p-5 lg:p-6 space-y-1.5 sm:space-y-2.5">
+            <div className="flex items-center justify-between gap-1.5 text-[10px] sm:text-xs text-slate-500">
+              <span className="font-semibold text-[#0B5336] truncate">
+                {kickerParts.join(" · ")}
+              </span>
+              <span className="font-mono tabular-nums whitespace-nowrap shrink-0">
+                {outOfStock
+                  ? t.catalog.outOfStock
+                  : isDropship
+                  ? t.catalog.availableToOrder
+                  : `${toLocalizedDigits(effectiveStock, lang)} ${t.catalog.inStockSuffix}`}
+              </span>
+            </div>
+
+            <h2 className="font-display text-sm sm:text-lg font-semibold text-slate-900 group-hover:text-[#0B5336] transition-colors leading-snug line-clamp-2">
+              {prodName}
+            </h2>
+
+            {colors.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                {colors.slice(0, 5).map((clr) => {
+                  const clrTitle = pickLocalized(clr.nameEn, clr.nameBn, lang);
+                  const isChosen = activeCardColor?.id === clr.id;
+                  return (
+                    <button
+                      key={clr.id}
+                      type="button"
+                      title={clrTitle}
+                      aria-label={clrTitle}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCardSelectedColorByProdId((prev) => ({
+                          ...prev,
+                          [product.id]: clr,
+                        }));
+                      }}
+                      className={`inline-flex h-6 w-6 items-center justify-center rounded-full transition-all ${
+                        isChosen
+                          ? "ring-2 ring-[#0B5336] bg-brand-50"
+                          : "hover:bg-slate-100"
+                      }`}
+                    >
+                      <span
+                        className="h-3.5 w-3.5 rounded-full border border-slate-300 shrink-0"
+                        style={{ backgroundColor: clr.hex || "#0B5336" }}
+                      />
+                    </button>
+                  );
+                })}
+                {colors.length > 5 && (
+                  <span className="font-mono text-[10px] text-slate-400 px-0.5">
+                    +{toLocalizedDigits(colors.length - 5, lang)}
+                  </span>
+                )}
+                {activeCardColor && (
+                  <span className="text-[11px] font-medium text-[#0B5336] truncate max-w-[110px]">
+                    {pickLocalized(
+                      activeCardColor.nameEn,
+                      activeCardColor.nameBn,
+                      lang
+                    )}
+                  </span>
+                )}
+                {!activeCardColor && sizes.length > 0 && (
+                  <span className="hidden sm:inline text-[11px] text-slate-500 ml-0.5 truncate">
+                    · {sizes.slice(0, 4).join(", ")}
+                  </span>
+                )}
+              </div>
+            )}
+
+            {colors.length === 0 && variants.length > 0 && (
+              <div className="text-[11px] sm:text-xs text-slate-500 truncate">
+                {t.catalog.optionsPrefix}: {variants.join(" · ")}
+              </div>
+            )}
+
+            {prodDesc && (
+              <p className="hidden sm:line-clamp-2 text-sm text-slate-600 leading-relaxed">
+                {prodDesc}
+              </p>
+            )}
+
+            {hasWholesale && (
+              <div className="text-[10px] sm:text-[11px] font-semibold text-[#0B5336] font-mono tabular-nums truncate">
+                {tvar.wholesaleCardHintPrefix}:{" "}
+                {formatMartPrice(product.wholesalePrice, lang)} (
+                {toLocalizedDigits(product.wholesaleMinQty, lang)}+)
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="px-3 pb-3 pt-2.5 sm:px-5 sm:pb-5 lg:px-6 lg:pb-6 sm:pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3">
+          <div>
+            <div className="flex flex-wrap items-baseline gap-1.5 sm:gap-2">
+              <span className="font-mono text-base sm:text-xl font-bold text-slate-900 tabular-nums">
+                {formatMartPrice(product.price, lang)}
+              </span>
+              {hasDiscount && (
+                <span className="font-mono text-[11px] sm:text-xs text-slate-400 line-through tabular-nums">
+                  {formatMartPrice(product.comparePrice, lang)}
+                </span>
+              )}
+            </div>
+            {product.sku && (
+              <div className="hidden sm:block font-mono text-[11px] text-slate-400">
+                {t.common.sku}: {product.sku}
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                openQuickView(product, activeCardColor);
+              }}
+              aria-label={`${t.catalog.quickViewAria} ${prodName}`}
+              className="inline-flex items-center justify-center rounded-xl border border-slate-200 p-2 text-slate-600 hover:border-[#0B5336] hover:text-[#0B5336] transition-colors min-h-[40px] min-w-[40px] sm:min-h-[44px] sm:min-w-[44px]"
+            >
+              <Eye className="h-4 w-4" />
+            </button>
+
+            <button
+              type="button"
+              disabled={outOfStock}
+              onClick={(e) => {
+                e.stopPropagation();
+                addToCart(product, {
+                  color: activeCardColor || colors[0] || null,
+                  qtyToAdd: 1,
+                  openDrawer: false,
+                  overrideImage:
+                    activeCardColor?.imageUrl ||
+                    colors[0]?.imageUrl ||
+                    product.imageUrl,
+                });
+              }}
+              className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#0B5336] px-2.5 sm:px-4 py-2 text-[11px] sm:text-xs font-semibold text-white hover:bg-[#08412A] disabled:opacity-50 transition-colors min-h-[40px] sm:min-h-[44px] whitespace-nowrap"
+            >
+              <ShoppingCart className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">
+                {outOfStock ? t.catalog.soldOut : t.catalog.addToCart}
+              </span>
+            </button>
+          </div>
+        </div>
+      </article>
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
       {/* Slim Top Promo Bar */}
@@ -1234,11 +1548,21 @@ export function MartStorefront() {
       {/* Standalone Mart Header */}
       <MartHeader
         searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
+        onSearchChange={(val) => {
+          setSearchQuery(val);
+          if (focusedProductSlug && val.trim().length > 0) {
+            router.push("/mart");
+          }
+        }}
         categories={visibleCategories}
         selectedCategories={selectedCategories}
         onToggleCategory={toggleCategoryFilter}
-        onClearCategories={() => setSelectedCategories([])}
+        onClearCategories={() => {
+          setSelectedCategories([]);
+          if (focusedProductSlug) {
+            router.push("/mart");
+          }
+        }}
         categoryThumbs={categoryThumbMap}
         categoryCounts={categoryCountsMap}
         cartCount={cartCount}
@@ -1273,6 +1597,627 @@ export function MartStorefront() {
       )}
 
       <main className="flex-1">
+        {focusedProductSlug ? (
+          /* DEDICATED FULL PRODUCT DETAIL PAGE (/mart/p/[slug]) */
+          <section className="py-6 sm:py-10 lg:py-12 pb-28 sm:pb-14">
+            <div className="mx-auto max-w-7xl px-3 sm:px-6 lg:px-8 space-y-8 sm:space-y-12">
+              {loading && !focusedProduct ? (
+                <div className="space-y-6">
+                  <div className="h-10 w-56 rounded-xl bg-white border border-slate-200 animate-pulse" />
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-10">
+                    <div className="lg:col-span-6 aspect-square rounded-2xl bg-white border border-slate-200 animate-pulse" />
+                    <div className="lg:col-span-6 h-[480px] rounded-2xl bg-white border border-slate-200 animate-pulse" />
+                  </div>
+                </div>
+              ) : !focusedProduct ? (
+                <div className="space-y-8">
+                  <div className="rounded-2xl border border-slate-200 bg-white p-8 sm:p-14 text-center max-w-2xl mx-auto space-y-4">
+                    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-[#0B5336]">
+                      <Package className="h-7 w-7" />
+                    </div>
+                    <h1 className="font-display text-xl sm:text-2xl font-bold text-slate-900">
+                      {t.quickView.productNotFoundTitle}
+                    </h1>
+                    <p className="text-sm text-slate-600 max-w-md mx-auto leading-relaxed">
+                      {t.quickView.productNotFoundDesc}
+                    </p>
+                    <div className="pt-2">
+                      <Link
+                        href="/mart"
+                        className="btn-primary inline-flex items-center gap-2 px-5 py-2.5 text-xs"
+                      >
+                        <ArrowLeft className="h-4 w-4" />
+                        <span>{t.quickView.backToStoreBtn}</span>
+                      </Link>
+                    </div>
+                  </div>
+
+                  {products.length > 0 && (
+                    <div className="space-y-4">
+                      <h2 className="font-display text-lg sm:text-xl font-bold text-slate-900">
+                        {t.quickView.relatedProductsTitle}
+                      </h2>
+                      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-5 lg:gap-6">
+                        {products.slice(0, 6).map((prod) => renderProductCard(prod))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                (() => {
+                  const pGallery = parseGalleryUrls(
+                    focusedProduct.galleryUrls,
+                    focusedProduct.imageUrl
+                  );
+                  const pColors = parseProductColors(focusedProduct.colorsJson);
+                  const pSizes = parseProductSizes(focusedProduct.sizesList);
+                  const pMatrix = parseVariationMatrix(focusedProduct.variationMatrixJson);
+                  const activeCell = findMatchingVariant(
+                    pMatrix,
+                    pdpSelectedColor?.nameEn,
+                    pdpSelectedSize
+                  );
+                  const pPricing = resolveProductPricing(focusedProduct, activeCell, pdpQty);
+                  const pMaxQty = Math.max(
+                    1,
+                    getProductOrderableMaxQty(focusedProduct, activeCell)
+                  );
+                  const pVariantOut =
+                    !isProductOrderable(focusedProduct) ||
+                    (activeCell
+                      ? !activeCell.active ||
+                        (focusedProduct.fulfillmentType !== "dropship" &&
+                          activeCell.stock <= 0)
+                      : false);
+                  const pMinWholesale = Number(focusedProduct.wholesaleMinQty) || 0;
+                  const pWholesalePrice = Number(focusedProduct.wholesalePrice) || 0;
+                  const legacyVars = parseProductVariants(
+                    pickLocalized(focusedProduct.variantsEn, focusedProduct.variantsBn, lang)
+                  );
+                  const activeDisplayStock = activeCell
+                    ? activeCell.stock
+                    : getEffectiveProductStock(focusedProduct);
+                  const pName = pickLocalized(
+                    focusedProduct.nameEn,
+                    focusedProduct.nameBn,
+                    lang,
+                    focusedProduct.sku
+                  );
+                  const pDesc = pickLocalized(
+                    focusedProduct.descriptionEn,
+                    focusedProduct.descriptionBn,
+                    lang,
+                    t.quickView.defaultDesc
+                  );
+                  const pCategories = parseCsvSlugs(focusedProduct.categories).map((slug) => {
+                    const c = categoryMap.get(slug);
+                    return {
+                      slug,
+                      title: c ? pickLocalized(c.nameEn, c.nameBn, lang, slug) : slug,
+                    };
+                  });
+                  const pLabels = parseCsvSlugs(focusedProduct.labels).map((slug) => {
+                    const l = labelMap.get(slug);
+                    return l ? pickLocalized(l.nameEn, l.nameBn, lang, slug) : slug;
+                  });
+                  const saveAmount =
+                    pPricing.comparePrice > pPricing.unitPrice
+                      ? pPricing.comparePrice - pPricing.unitPrice
+                      : 0;
+                  const isLinkCopied = copiedLinkProdId === focusedProduct.id;
+
+                  return (
+                    <>
+                      {/* Top Breadcrumb & Share Action Bar */}
+                      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 sm:px-5 sm:py-3.5">
+                        <div className="flex flex-wrap items-center gap-2 min-w-0">
+                          <Link
+                            href="/mart"
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] transition-colors min-h-[38px]"
+                          >
+                            <ArrowLeft className="h-3.5 w-3.5" />
+                            <span>{t.quickView.backToStoreBtn}</span>
+                          </Link>
+                          {pCategories.map((cat) => (
+                            <span
+                              key={cat.slug}
+                              className="hidden sm:inline-flex items-center rounded-lg bg-brand-50 border border-brand-200 px-2.5 py-1 text-xs font-semibold text-[#0B5336]"
+                            >
+                              {cat.title}
+                            </span>
+                          ))}
+                          {pLabels.map((lbl) => (
+                            <span
+                              key={lbl}
+                              className="hidden md:inline-flex items-center rounded-lg bg-slate-100 border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700"
+                            >
+                              {lbl}
+                            </span>
+                          ))}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={(e) => handleCopyProductLink(focusedProduct, e)}
+                          className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-semibold transition-colors min-h-[38px] ${
+                            isLinkCopied
+                              ? "border-[#0B5336] bg-brand-50 text-[#0B5336]"
+                              : "border-slate-200 bg-white text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336]"
+                          }`}
+                        >
+                          {isLinkCopied ? (
+                            <Check className="h-3.5 w-3.5 text-[#0B5336]" />
+                          ) : (
+                            <Link2 className="h-3.5 w-3.5" />
+                          )}
+                          <span>
+                            {isLinkCopied
+                              ? t.quickView.linkCopiedBtn
+                              : t.quickView.copyLinkBtn}
+                          </span>
+                        </button>
+                      </div>
+
+                      {/* 2-Column Contiguous Purchase Module */}
+                      <div className="rounded-3xl border border-slate-200 bg-white p-4 sm:p-6 lg:p-8 shadow-card">
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-10 items-start">
+                          {/* Left Column: 1:1 Uncropped White-Canvas Gallery */}
+                          <div className="lg:col-span-6 space-y-3.5">
+                            <div className="aspect-square rounded-2xl bg-white p-4 sm:p-6 overflow-hidden border border-slate-200">
+                              <ProductMedia
+                                src={pdpActiveImage || focusedProduct.imageUrl}
+                                alt={pName}
+                              />
+                            </div>
+
+                            {pGallery.length > 1 && (
+                              <div className="flex items-center gap-2.5 overflow-x-auto scrollbar-none pb-1">
+                                {pGallery.map((imgUrl, idx) => {
+                                  const active =
+                                    imgUrl === (pdpActiveImage || focusedProduct.imageUrl);
+                                  return (
+                                    <button
+                                      key={`${imgUrl}-${idx}`}
+                                      type="button"
+                                      onClick={() => setPdpActiveImage(imgUrl)}
+                                      className={`h-16 w-16 sm:h-20 sm:w-20 rounded-xl bg-white p-1.5 overflow-hidden border-2 shrink-0 transition-colors ${
+                                        active
+                                          ? "border-[#0B5336]"
+                                          : "border-slate-200 hover:border-slate-400"
+                                      }`}
+                                    >
+                                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                                      <img
+                                        src={normalizeMartImageUrl(imgUrl)}
+                                        alt={pName}
+                                        referrerPolicy="no-referrer"
+                                        className="h-full w-full object-contain"
+                                      />
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Right Column: Title, Price, Variants, Quantity & Direct Buy Now */}
+                          <div className="lg:col-span-6 space-y-5">
+                            <div className="space-y-2">
+                              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                                <span className="font-semibold text-[#0B5336]">
+                                  {[
+                                    ...(pCategories.length > 0
+                                      ? pCategories.map((c) => c.title)
+                                      : [t.catalog.generalFallback]),
+                                    ...pLabels,
+                                  ].join(" · ")}
+                                </span>
+                                {(activeCell?.sku || focusedProduct.sku) && (
+                                  <span className="font-mono text-xs text-slate-500 bg-slate-100 rounded-lg px-2.5 py-1">
+                                    {t.common.sku}: {activeCell?.sku || focusedProduct.sku}
+                                  </span>
+                                )}
+                              </div>
+
+                              <h1 className="font-display text-2xl sm:text-3xl font-bold text-slate-900 leading-snug">
+                                {pName}
+                              </h1>
+                            </div>
+
+                            {/* Price & Savings Block */}
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-2.5">
+                              <div className="flex flex-wrap items-baseline gap-3">
+                                <span className="font-mono text-2xl sm:text-3xl font-bold text-[#0B5336] tabular-nums">
+                                  {formatMartPrice(pPricing.unitPrice, lang)}
+                                </span>
+                                {pPricing.comparePrice > pPricing.unitPrice && (
+                                  <span className="font-mono text-sm sm:text-base text-slate-400 line-through tabular-nums">
+                                    {formatMartPrice(pPricing.comparePrice, lang)}
+                                  </span>
+                                )}
+                                {saveAmount > 0 && (
+                                  <span className="rounded-lg bg-brand-50 border border-brand-200 px-2.5 py-1 text-xs font-mono font-semibold text-[#0B5336] tabular-nums">
+                                    {t.quickView.saveAmountPrefix}{" "}
+                                    {formatMartPrice(saveAmount, lang)}
+                                  </span>
+                                )}
+                                {pPricing.isWholesale && (
+                                  <span className="rounded-lg bg-brand-50 border border-brand-200 px-2.5 py-1 text-xs font-semibold text-[#0B5336]">
+                                    {tvar.wholesaleActiveBadge}
+                                  </span>
+                                )}
+                              </div>
+
+                              {pMinWholesale > 0 &&
+                                pWholesalePrice > 0 &&
+                                !pPricing.isWholesale && (
+                                  <div className="rounded-xl border border-brand-200 bg-white px-3 py-2 text-xs font-medium text-[#0B5336] font-mono tabular-nums">
+                                    {tvar.wholesaleUnlockPrefix}{" "}
+                                    {toLocalizedDigits(pMinWholesale, lang)}{" "}
+                                    {tvar.wholesaleUnlockMiddle}{" "}
+                                    <strong>{formatMartPrice(pWholesalePrice, lang)}</strong>{" "}
+                                    {tvar.wholesaleUnitSuffix}
+                                  </div>
+                                )}
+
+                              <div className="text-xs font-mono text-slate-600 tabular-nums pt-0.5">
+                                {t.quickView.availabilityLabel}:{" "}
+                                <span
+                                  className={
+                                    !pVariantOut
+                                      ? "font-semibold text-[#0B5336]"
+                                      : "font-semibold text-red-600"
+                                  }
+                                >
+                                  {pVariantOut
+                                    ? t.quickView.outOfStock
+                                    : focusedProduct.fulfillmentType === "dropship"
+                                    ? t.quickView.availableReady
+                                    : `${toLocalizedDigits(activeDisplayStock, lang)} ${t.quickView.unitsInStockSuffix}`}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Color Swatches */}
+                            {pColors.length > 0 && (
+                              <div className="space-y-2">
+                                <div className="text-xs font-semibold text-slate-700">
+                                  {tvar.selectColorLabel}:{" "}
+                                  <span className="text-slate-900">
+                                    {pdpSelectedColor
+                                      ? pickLocalized(
+                                          pdpSelectedColor.nameEn,
+                                          pdpSelectedColor.nameBn,
+                                          lang
+                                        )
+                                      : ""}
+                                  </span>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  {pColors.map((clr) => {
+                                    const selected = pdpSelectedColor?.id === clr.id;
+                                    const label = pickLocalized(clr.nameEn, clr.nameBn, lang);
+                                    return (
+                                      <button
+                                        key={clr.id}
+                                        type="button"
+                                        onClick={() => {
+                                          setPdpSelectedColor(clr);
+                                          if (clr.imageUrl) {
+                                            setPdpActiveImage(clr.imageUrl);
+                                          }
+                                        }}
+                                        className={`inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-semibold transition-colors min-h-[42px] ${
+                                          selected
+                                            ? "border-[#0B5336] bg-brand-50 text-[#0B5336]"
+                                            : "border-slate-200 bg-white text-slate-700 hover:border-slate-400"
+                                        }`}
+                                      >
+                                        <span
+                                          className="h-4 w-4 rounded-full border border-slate-300 shrink-0"
+                                          style={{ backgroundColor: clr.hex || "#0B5336" }}
+                                        />
+                                        <span>{label}</span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Size Matrix Chips */}
+                            {pSizes.length > 0 && (
+                              <div className="space-y-2">
+                                <div className="text-xs font-semibold text-slate-700">
+                                  {tvar.selectSizeLabel}:{" "}
+                                  <span className="font-mono text-slate-900">
+                                    {pdpSelectedSize}
+                                  </span>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  {pSizes.map((sz) => {
+                                    const cell = findMatchingVariant(
+                                      pMatrix,
+                                      pdpSelectedColor?.nameEn,
+                                      sz
+                                    );
+                                    const cellDisabled =
+                                      cell &&
+                                      (!cell.active ||
+                                        (focusedProduct.fulfillmentType !== "dropship" &&
+                                          cell.stock <= 0));
+                                    const selected = pdpSelectedSize === sz;
+                                    return (
+                                      <button
+                                        key={sz}
+                                        type="button"
+                                        onClick={() => setPdpSelectedSize(sz)}
+                                        className={`rounded-xl border px-4 py-2 text-xs font-mono font-semibold transition-colors min-h-[42px] min-w-[48px] ${
+                                          selected
+                                            ? "border-[#0B5336] bg-[#0B5336] text-white"
+                                            : cellDisabled
+                                            ? "border-slate-200 bg-slate-100 text-slate-400 line-through"
+                                            : "border-slate-200 bg-white text-slate-700 hover:border-slate-400"
+                                        }`}
+                                      >
+                                        {sz}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Legacy Single-Line Variants Fallback */}
+                            {pColors.length === 0 &&
+                              pSizes.length === 0 &&
+                              legacyVars.length > 0 && (
+                                <div className="space-y-2">
+                                  <label className="block text-xs font-semibold text-slate-700">
+                                    {t.quickView.selectVariant}
+                                  </label>
+                                  <div className="flex flex-wrap gap-2">
+                                    {legacyVars.map((variant) => (
+                                      <button
+                                        key={variant}
+                                        type="button"
+                                        onClick={() => setPdpVariant(variant)}
+                                        className={`rounded-xl border px-3.5 py-2 text-xs font-semibold transition-colors min-h-[42px] ${
+                                          pdpVariant === variant
+                                            ? "border-[#0B5336] bg-[#0B5336] text-white"
+                                            : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                                        }`}
+                                      >
+                                        {variant}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                            {pVariantOut && isProductOrderable(focusedProduct) && (
+                              <p className="text-xs font-medium text-red-600">
+                                {tvar.selectedVariantOutOfStock}
+                              </p>
+                            )}
+
+                            {/* Quantity Stepper + Add to Cart + Direct Buy Now */}
+                            <div className="pt-2 space-y-3 border-t border-slate-200">
+                              <div className="flex items-center justify-between gap-4">
+                                <div className="inline-flex items-center rounded-xl border border-slate-200 bg-slate-50">
+                                  <button
+                                    type="button"
+                                    onClick={() => setPdpQty((q) => Math.max(1, q - 1))}
+                                    aria-label={t.quickView.decreaseQtyAria}
+                                    className="inline-flex items-center justify-center min-h-[44px] min-w-[44px] text-slate-600 hover:text-slate-900"
+                                  >
+                                    <Minus className="h-4 w-4" />
+                                  </button>
+                                  <span className="w-12 text-center font-mono text-sm font-bold tabular-nums">
+                                    {toLocalizedDigits(pdpQty, lang)}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setPdpQty((q) => Math.min(pMaxQty, q + 1))
+                                    }
+                                    aria-label={t.quickView.increaseQtyAria}
+                                    className="inline-flex items-center justify-center min-h-[44px] min-w-[44px] text-slate-600 hover:text-slate-900"
+                                  >
+                                    <Plus className="h-4 w-4" />
+                                  </button>
+                                </div>
+
+                                <div className="text-right">
+                                  <div className="text-[11px] text-slate-500">
+                                    {t.cart.subtotal}
+                                  </div>
+                                  <div className="font-mono text-lg sm:text-xl font-bold text-slate-900 tabular-nums">
+                                    {formatMartPrice(pPricing.unitPrice * pdpQty, lang)}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <button
+                                  type="button"
+                                  disabled={pVariantOut}
+                                  onClick={() =>
+                                    addToCart(focusedProduct, {
+                                      variantChoice: pdpVariant,
+                                      color: pdpSelectedColor,
+                                      size: pdpSelectedSize,
+                                      qtyToAdd: pdpQty,
+                                      openDrawer: false,
+                                      overrideImage:
+                                        pdpSelectedColor?.imageUrl ||
+                                        focusedProduct.imageUrl,
+                                    })
+                                  }
+                                  className="btn-outline py-3 text-xs sm:text-sm gap-2 disabled:opacity-50 min-h-[48px]"
+                                >
+                                  <ShoppingCart className="h-4 w-4" />
+                                  <span>{t.quickView.addToCart}</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  disabled={pVariantOut}
+                                  onClick={() =>
+                                    addToCart(focusedProduct, {
+                                      variantChoice: pdpVariant,
+                                      color: pdpSelectedColor,
+                                      size: pdpSelectedSize,
+                                      qtyToAdd: pdpQty,
+                                      openDrawer: true,
+                                      overrideImage:
+                                        pdpSelectedColor?.imageUrl ||
+                                        focusedProduct.imageUrl,
+                                    })
+                                  }
+                                  className="btn-primary py-3 text-xs sm:text-sm gap-2 disabled:opacity-50 min-h-[48px]"
+                                >
+                                  <span>
+                                    {pVariantOut ? t.quickView.soldOut : t.quickView.buyNow}
+                                  </span>
+                                  <ArrowRight className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Transparent Delivery Charge & Helpline Box */}
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-2.5 text-xs">
+                              <div className="font-semibold text-slate-800 flex items-center gap-2">
+                                <Truck className="h-4 w-4 text-[#0B5336]" />
+                                <span>{t.hero.deliveryCardTitle}</span>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2.5">
+                                <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 flex items-center justify-between">
+                                  <span className="text-slate-600">
+                                    {t.hero.insideDhakaLabel}
+                                  </span>
+                                  <span className="font-mono font-bold text-slate-900 tabular-nums">
+                                    {formatMartPrice(insideDhakaFee, lang)}
+                                  </span>
+                                </div>
+                                <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 flex items-center justify-between">
+                                  <span className="text-slate-600">
+                                    {t.hero.outsideDhakaLabel}
+                                  </span>
+                                  <span className="font-mono font-bold text-slate-900 tabular-nums">
+                                    {formatMartPrice(outsideDhakaFee, lang)}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-between text-slate-500 pt-1">
+                                <span>{t.hero.directHelplineLabel}</span>
+                                <a
+                                  href={MART_CONTACT_TEL}
+                                  className="font-mono font-semibold text-[#0B5336] hover:underline tabular-nums"
+                                >
+                                  {MART_CONTACT_PHONE}
+                                </a>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Full Product Overview & Description Section */}
+                      <div className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-8 space-y-3 shadow-card">
+                        <h2 className="font-display text-lg sm:text-xl font-bold text-slate-900">
+                          {t.quickView.specificationsTitle}
+                        </h2>
+                        <div className="text-sm sm:text-base text-slate-700 leading-relaxed whitespace-pre-line">
+                          {pDesc}
+                        </div>
+                      </div>
+
+                      {/* Related Products Section */}
+                      {relatedProducts.length > 0 && (
+                        <div className="space-y-4 sm:space-y-6">
+                          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
+                            <div>
+                              <h2 className="font-display text-xl sm:text-2xl font-bold text-slate-900">
+                                {t.quickView.relatedProductsTitle}
+                              </h2>
+                              <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+                                {t.quickView.relatedProductsSubtitle}
+                              </p>
+                            </div>
+                            <Link
+                              href="/mart"
+                              className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#0B5336] hover:underline"
+                            >
+                              <span>{t.quickView.backToStoreBtn}</span>
+                              <ArrowRight className="h-3.5 w-3.5" />
+                            </Link>
+                          </div>
+
+                          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-5 lg:gap-6">
+                            {relatedProducts.map((prod) => renderProductCard(prod))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Sticky Mobile Bottom Purchase Bar */}
+                      <div className="sm:hidden fixed bottom-0 inset-x-0 z-30 border-t border-slate-200 bg-white/95 backdrop-blur-xs px-3 py-2.5 shadow-elevated">
+                        <div className="flex items-center justify-between gap-2.5">
+                          <div className="min-w-0">
+                            <div className="text-[10px] text-slate-500 truncate">{pName}</div>
+                            <div className="font-mono text-base font-bold text-[#0B5336] tabular-nums">
+                              {formatMartPrice(pPricing.unitPrice * pdpQty, lang)}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              disabled={pVariantOut}
+                              onClick={() =>
+                                addToCart(focusedProduct, {
+                                  variantChoice: pdpVariant,
+                                  color: pdpSelectedColor,
+                                  size: pdpSelectedSize,
+                                  qtyToAdd: pdpQty,
+                                  openDrawer: false,
+                                  overrideImage:
+                                    pdpSelectedColor?.imageUrl || focusedProduct.imageUrl,
+                                })
+                              }
+                              className="btn-outline px-3 py-2 text-xs gap-1.5 disabled:opacity-50 min-h-[42px]"
+                            >
+                              <ShoppingCart className="h-3.5 w-3.5" />
+                              <span>{t.quickView.addToCart}</span>
+                            </button>
+                            <button
+                              type="button"
+                              disabled={pVariantOut}
+                              onClick={() =>
+                                addToCart(focusedProduct, {
+                                  variantChoice: pdpVariant,
+                                  color: pdpSelectedColor,
+                                  size: pdpSelectedSize,
+                                  qtyToAdd: pdpQty,
+                                  openDrawer: true,
+                                  overrideImage:
+                                    pdpSelectedColor?.imageUrl || focusedProduct.imageUrl,
+                                })
+                              }
+                              className="btn-primary px-4 py-2 text-xs disabled:opacity-50 min-h-[42px]"
+                            >
+                              {pVariantOut ? t.quickView.soldOut : t.quickView.buyNow}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()
+              )}
+            </div>
+          </section>
+        ) : (
+          <>
         {/* Compact Promotional Hero Section */}
         <section className="bg-slate-900 text-white border-b border-slate-800">
           <div className="mx-auto max-w-7xl px-3 sm:px-6 lg:px-8 py-6 sm:py-10 lg:py-14">
@@ -1750,222 +2695,13 @@ export function MartStorefront() {
               </div>
             ) : (
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-5 lg:gap-6">
-                {filteredProducts.map((product) => {
-                  const hasDiscount =
-                    product.comparePrice > 0 && product.comparePrice > product.price;
-                  const isDropship = product.fulfillmentType === "dropship";
-                  const outOfStock = !isProductOrderable(product);
-                  const effectiveStock = getEffectiveProductStock(product);
-                  const colors = parseProductColors(product.colorsJson);
-                  const sizes = parseProductSizes(product.sizesList);
-                  const hasWholesale = product.wholesaleMinQty > 0 && product.wholesalePrice > 0;
-                  const prodName = pickLocalized(
-                    product.nameEn,
-                    product.nameBn,
-                    lang,
-                    product.sku
-                  );
-                  const prodDesc = pickLocalized(product.descriptionEn, product.descriptionBn, lang);
-                  const variants = parseProductVariants(
-                    pickLocalized(product.variantsEn, product.variantsBn, lang)
-                  );
-
-                  const catNames = parseCsvSlugs(product.categories).map((slug) => {
-                    const c = categoryMap.get(slug);
-                    return c ? pickLocalized(c.nameEn, c.nameBn, lang, slug) : slug;
-                  });
-                  const labelNames = parseCsvSlugs(product.labels).map((slug) => {
-                    const l = labelMap.get(slug);
-                    return l ? pickLocalized(l.nameEn, l.nameBn, lang, slug) : slug;
-                  });
-
-                  const kickerParts = [
-                    ...(catNames.length > 0 ? catNames : [t.catalog.generalFallback]),
-                    ...labelNames.slice(0, 1),
-                  ];
-
-                  const selectedRawColor = cardSelectedColorByProdId[product.id];
-                  const activeCardColor =
-                    selectedRawColor && colors.some((c) => c.id === selectedRawColor.id)
-                      ? selectedRawColor
-                      : null;
-                  const cardDisplayImage = activeCardColor?.imageUrl || product.imageUrl;
-
-                  return (
-                    <article
-                      key={product.id}
-                      className="group flex flex-col justify-between rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-card hover:shadow-elevated transition-all duration-200 hover:-translate-y-0.5"
-                    >
-                      <div>
-                        <button
-                          type="button"
-                          onClick={() => openQuickView(product, activeCardColor)}
-                          className="block w-full aspect-square bg-white p-2.5 sm:p-3 overflow-hidden border-b border-slate-100 text-left"
-                        >
-                          <ProductMedia
-                            src={cardDisplayImage}
-                            alt={prodName}
-                            className="transition-transform duration-200 group-hover:scale-[1.03]"
-                          />
-                        </button>
-
-                        <div className="p-3 sm:p-5 lg:p-6 space-y-1.5 sm:space-y-2.5">
-                          <div className="flex items-center justify-between gap-1.5 text-[10px] sm:text-xs text-slate-500">
-                            <span className="font-semibold text-[#0B5336] truncate">
-                              {kickerParts.join(" · ")}
-                            </span>
-                            <span className="font-mono tabular-nums whitespace-nowrap shrink-0">
-                              {outOfStock
-                                ? t.catalog.outOfStock
-                                : isDropship
-                                ? t.catalog.availableToOrder
-                                : `${toLocalizedDigits(effectiveStock, lang)} ${t.catalog.inStockSuffix}`}
-                            </span>
-                          </div>
-
-                          <h2 className="font-display text-sm sm:text-lg font-semibold text-slate-900 leading-snug line-clamp-2">
-                            <button
-                              type="button"
-                              onClick={() => openQuickView(product, activeCardColor)}
-                              className="text-left hover:text-[#0B5336] transition-colors"
-                            >
-                              {prodName}
-                            </button>
-                          </h2>
-
-                          {colors.length > 0 && (
-                            <div className="flex flex-wrap items-center gap-1 pt-0.5">
-                              {colors.slice(0, 5).map((clr) => {
-                                const clrTitle = pickLocalized(clr.nameEn, clr.nameBn, lang);
-                                const isChosen = activeCardColor?.id === clr.id;
-                                return (
-                                  <button
-                                    key={clr.id}
-                                    type="button"
-                                    title={clrTitle}
-                                    aria-label={clrTitle}
-                                    onClick={() =>
-                                      setCardSelectedColorByProdId((prev) => ({
-                                        ...prev,
-                                        [product.id]: clr,
-                                      }))
-                                    }
-                                    className={`inline-flex h-6 w-6 items-center justify-center rounded-full transition-all ${
-                                      isChosen
-                                        ? "ring-2 ring-[#0B5336] bg-brand-50"
-                                        : "hover:bg-slate-100"
-                                    }`}
-                                  >
-                                    <span
-                                      className="h-3.5 w-3.5 rounded-full border border-slate-300 shrink-0"
-                                      style={{ backgroundColor: clr.hex || "#0B5336" }}
-                                    />
-                                  </button>
-                                );
-                              })}
-                              {colors.length > 5 && (
-                                <span className="font-mono text-[10px] text-slate-400 px-0.5">
-                                  +{toLocalizedDigits(colors.length - 5, lang)}
-                                </span>
-                              )}
-                              {activeCardColor && (
-                                <span className="text-[11px] font-medium text-[#0B5336] truncate max-w-[110px]">
-                                  {pickLocalized(
-                                    activeCardColor.nameEn,
-                                    activeCardColor.nameBn,
-                                    lang
-                                  )}
-                                </span>
-                              )}
-                              {!activeCardColor && sizes.length > 0 && (
-                                <span className="hidden sm:inline text-[11px] text-slate-500 ml-0.5 truncate">
-                                  · {sizes.slice(0, 4).join(", ")}
-                                </span>
-                              )}
-                            </div>
-                          )}
-
-                          {colors.length === 0 && variants.length > 0 && (
-                            <div className="text-[11px] sm:text-xs text-slate-500 truncate">
-                              {t.catalog.optionsPrefix}: {variants.join(" · ")}
-                            </div>
-                          )}
-
-                          {prodDesc && (
-                            <p className="hidden sm:line-clamp-2 text-sm text-slate-600 leading-relaxed">
-                              {prodDesc}
-                            </p>
-                          )}
-
-                          {hasWholesale && (
-                            <div className="text-[10px] sm:text-[11px] font-semibold text-[#0B5336] font-mono tabular-nums truncate">
-                              {tvar.wholesaleCardHintPrefix}:{" "}
-                              {formatMartPrice(product.wholesalePrice, lang)} (
-                              {toLocalizedDigits(product.wholesaleMinQty, lang)}+)
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="px-3 pb-3 pt-2.5 sm:px-5 sm:pb-5 lg:px-6 lg:pb-6 sm:pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3">
-                        <div>
-                          <div className="flex flex-wrap items-baseline gap-1.5 sm:gap-2">
-                            <span className="font-mono text-base sm:text-xl font-bold text-slate-900 tabular-nums">
-                              {formatMartPrice(product.price, lang)}
-                            </span>
-                            {hasDiscount && (
-                              <span className="font-mono text-[11px] sm:text-xs text-slate-400 line-through tabular-nums">
-                                {formatMartPrice(product.comparePrice, lang)}
-                              </span>
-                            )}
-                          </div>
-                          {product.sku && (
-                            <div className="hidden sm:block font-mono text-[11px] text-slate-400">
-                              {t.common.sku}: {product.sku}
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => openQuickView(product, activeCardColor)}
-                            aria-label={`${t.catalog.quickViewAria} ${prodName}`}
-                            className="inline-flex items-center justify-center rounded-xl border border-slate-200 p-2 text-slate-600 hover:border-[#0B5336] hover:text-[#0B5336] transition-colors min-h-[40px] min-w-[40px] sm:min-h-[44px] sm:min-w-[44px]"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </button>
-
-                          <button
-                            type="button"
-                            disabled={outOfStock}
-                            onClick={() =>
-                              addToCart(product, {
-                                color: activeCardColor || colors[0] || null,
-                                qtyToAdd: 1,
-                                openDrawer: false,
-                                overrideImage:
-                                  activeCardColor?.imageUrl ||
-                                  colors[0]?.imageUrl ||
-                                  product.imageUrl,
-                              })
-                            }
-                            className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#0B5336] px-2.5 sm:px-4 py-2 text-[11px] sm:text-xs font-semibold text-white hover:bg-[#08412A] disabled:opacity-50 transition-colors min-h-[40px] sm:min-h-[44px] whitespace-nowrap"
-                          >
-                            <ShoppingCart className="h-3.5 w-3.5 shrink-0" />
-                            <span className="truncate">
-                              {outOfStock ? t.catalog.soldOut : t.catalog.addToCart}
-                            </span>
-                          </button>
-                        </div>
-                      </div>
-                    </article>
-                  );
-                })}
+                {filteredProducts.map((product) => renderProductCard(product))}
               </div>
             )}
           </div>
         </section>
+          </>
+        )}
       </main>
 
       <MartFooter
@@ -2340,6 +3076,34 @@ export function MartStorefront() {
                   >
                     {qVariantOut ? t.quickView.soldOut : t.quickView.buyNow}
                   </button>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={(e) => handleCopyProductLink(quickViewProduct, e)}
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-[#0B5336] transition-colors py-1"
+                  >
+                    {copiedLinkProdId === quickViewProduct.id ? (
+                      <Check className="h-3.5 w-3.5 text-[#0B5336]" />
+                    ) : (
+                      <Link2 className="h-3.5 w-3.5" />
+                    )}
+                    <span>
+                      {copiedLinkProdId === quickViewProduct.id
+                        ? t.quickView.linkCopiedBtn
+                        : t.quickView.copyLinkBtn}
+                    </span>
+                  </button>
+
+                  <Link
+                    href={buildMartProductUrl(quickViewProduct)}
+                    onClick={() => setQuickViewProduct(null)}
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#0B5336] hover:underline py-1"
+                  >
+                    <span>{t.quickView.viewFullPageBtn}</span>
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </Link>
                 </div>
               </div>
             </div>

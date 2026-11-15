@@ -120,6 +120,16 @@ export interface MartDictionary {
     addToCart: string;
     buyNow: string;
     soldOut: string;
+    viewFullPageBtn: string;
+    copyLinkBtn: string;
+    linkCopiedBtn: string;
+    backToStoreBtn: string;
+    specificationsTitle: string;
+    relatedProductsTitle: string;
+    relatedProductsSubtitle: string;
+    productNotFoundTitle: string;
+    productNotFoundDesc: string;
+    saveAmountPrefix: string;
   };
   cart: {
     drawerTitle: string;
@@ -373,6 +383,8 @@ export interface MartDictionary {
       msgDeleted: string;
       msgImageUploaded: string;
       msgFlagUpdated: string;
+      copyLinkBtn: string;
+      linkCopiedMsg: string;
     };
     taxonomy: {
       catAddTitle: string;
@@ -621,6 +633,17 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
       addToCart: "Add to Cart",
       buyNow: "Buy Now",
       soldOut: "Sold Out",
+      viewFullPageBtn: "Open Full Product Page",
+      copyLinkBtn: "Copy Product Link",
+      linkCopiedBtn: "Link Copied",
+      backToStoreBtn: "Back to Store Catalog",
+      specificationsTitle: "Product Overview & Details",
+      relatedProductsTitle: "Related Products You May Like",
+      relatedProductsSubtitle: "Explore more verified items from this collection",
+      productNotFoundTitle: "Product Not Found",
+      productNotFoundDesc:
+        "The product link you followed may have been updated or is currently unavailable. Browse our active catalog below.",
+      saveAmountPrefix: "Save",
     },
     cart: {
       drawerTitle: "Shopping Cart",
@@ -880,6 +903,8 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
         msgDeleted: "Product deleted from Mart_Products.",
         msgImageUploaded: "Image uploaded to Google Drive.",
         msgFlagUpdated: "Product status updated.",
+        copyLinkBtn: "Copy Link",
+        linkCopiedMsg: "Product marketing link copied to clipboard.",
       },
       taxonomy: {
         catAddTitle: "Add Category (Mart_Categories)",
@@ -1145,6 +1170,17 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
       addToCart: "কার্টে যোগ করুন",
       buyNow: "এখনই কিনুন",
       soldOut: "স্টক আউট",
+      viewFullPageBtn: "সম্পূর্ণ প্রোডাক্ট পেজ দেখুন",
+      copyLinkBtn: "পণ্যের লিংক কপি করুন",
+      linkCopiedBtn: "লিংক কপি হয়েছে",
+      backToStoreBtn: "সকল পণ্যে ফিরে যান",
+      specificationsTitle: "পণ্যের বিস্তারিত বিবরণ",
+      relatedProductsTitle: "সম্পর্কিত অন্যান্য পণ্য",
+      relatedProductsSubtitle: "একই ক্যাটাগরির আরও যাচাইকৃত পণ্য দেখুন",
+      productNotFoundTitle: "পণ্যটি খুঁজে পাওয়া যায়নি",
+      productNotFoundDesc:
+        "আপনি যে পণ্যের লিংকে প্রবেশ করেছেন সেটি সম্ভবত পরিবর্তন করা হয়েছে বা বর্তমানে স্টকে নেই। নিচের ক্যাটালগ থেকে অন্যান্য পণ্য দেখুন।",
+      saveAmountPrefix: "সাশ্রয়",
     },
     cart: {
       drawerTitle: "শপিং কার্ট",
@@ -1406,6 +1442,8 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
         msgDeleted: "পণ্যটি Mart_Products থেকে মুছে ফেলা হয়েছে।",
         msgImageUploaded: "ছবি Google Drive-এ আপলোড হয়েছে।",
         msgFlagUpdated: "পণ্যের স্ট্যাটাস আপডেট করা হয়েছে।",
+        copyLinkBtn: "লিংক কপি",
+        linkCopiedMsg: "পণ্যের মার্কেটিং লিংক কপি করা হয়েছে।",
       },
       taxonomy: {
         catAddTitle: "নতুন ক্যাটাগরি তৈরি (Mart_Categories)",
