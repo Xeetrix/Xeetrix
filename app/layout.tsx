@@ -1,60 +1,64 @@
 import type { Metadata } from "next";
-import { Inter, Sora } from "next/font/google";
+import { Plus_Jakarta_Sans, DM_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import {
   SITE_DESCRIPTION,
   SITE_NAME,
-  SITE_TAGLINE,
   SITE_URL,
   CONTACT_PHONE,
   CONTACT_EMAIL,
-  CONTACT_ADDRESS,
 } from "@/lib/constants";
 
-const inter = Inter({
+const plusJakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
-  variable: "--font-inter",
+  variable: "--font-jakarta",
+  weight: ["500", "600", "700", "800"],
   display: "swap",
 });
 
-const sora = Sora({
+const dmSans = DM_Sans({
   subsets: ["latin"],
-  variable: "--font-sora",
+  variable: "--font-dm-sans",
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-mono",
+  weight: ["400", "500", "600", "700"],
   display: "swap",
 });
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: "Xeetrix - Air Ticketing & Global Travel",
+    default: "Xeetrix | Holding Group — Retail, Mobility & Global Careers",
     template: `%s | ${SITE_NAME}`,
   },
   description: SITE_DESCRIPTION,
   keywords: [
     "Xeetrix",
-    "Air ticketing agency",
-    "Flight booking Dhaka",
-    "Middle East worker flight tickets",
-    "Student flight baggage 46kg",
-    "Umrah air tickets Jeddah",
-    "Instant flight date change",
-    "Biman Bangladesh Airlines tickets",
-    "Saudia flight tickets",
-    "Emirates cheap flights",
-    "Air ticket agency Bangladesh",
+    "Xeetrix Holding Group",
+    "Xeetrix Mart",
+    "Xeetrix Travels",
+    "KNLTC Japan Program",
+    "Bangladesh Holding Company",
+    "Air Ticketing Dhaka",
+    "Investor Relations Bangladesh",
   ],
   authors: [{ name: SITE_NAME }],
   openGraph: {
     type: "website",
     url: SITE_URL,
     siteName: SITE_NAME,
-    title: "Xeetrix - Air Ticketing & Global Travel",
+    title: "Xeetrix | Holding Group — Retail, Mobility & Global Careers",
     description: SITE_DESCRIPTION,
     locale: "en_US",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Xeetrix - Air Ticketing & Global Travel",
+    title: "Xeetrix | Holding Group — Retail, Mobility & Global Careers",
     description: SITE_DESCRIPTION,
   },
   robots: {
@@ -72,14 +76,12 @@ export const metadata: Metadata = {
   },
 };
 
-const travelAgencyJsonLd = {
+const organizationJsonLd = {
   "@context": "https://schema.org",
-  "@type": "TravelAgency",
-  name: "Xeetrix Air Ticketing & Global Travel",
+  "@type": "Organization",
+  name: "Xeetrix Holding Group",
   url: SITE_URL,
   logo: `${SITE_URL}/logo.svg`,
-  image: `${SITE_URL}/logo.svg`,
-  slogan: SITE_TAGLINE,
   description: SITE_DESCRIPTION,
   telephone: CONTACT_PHONE,
   email: CONTACT_EMAIL,
@@ -90,23 +92,6 @@ const travelAgencyJsonLd = {
     postalCode: "1000",
     addressCountry: "BD",
   },
-  openingHoursSpecification: [
-    {
-      "@type": "OpeningHoursSpecification",
-      dayOfWeek: [
-        "Monday",
-        "Tuesday",
-        "Wednesday",
-        "Thursday",
-        "Friday",
-        "Saturday",
-        "Sunday",
-      ],
-      opens: "00:00",
-      closes: "23:59",
-    },
-  ],
-  priceRange: "$$",
 };
 
 export default function RootLayout({
@@ -115,12 +100,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${sora.variable}`}>
+    <html
+      lang="en"
+      className={`${plusJakarta.variable} ${dmSans.variable} ${jetbrainsMono.variable}`}
+    >
       <body className="flex min-h-screen flex-col font-sans bg-white text-slate-900 antialiased selection:bg-brand-100 selection:text-brand-900">
         <script
           type="application/ld+json"
           // eslint-disable-next-line react/no-danger
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(travelAgencyJsonLd) }}
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
         />
         {children}
       </body>

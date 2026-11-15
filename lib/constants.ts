@@ -1,16 +1,19 @@
 export const SITE_NAME = "Xeetrix";
-export const SITE_TAGLINE = "Air Ticketing & Global Travel";
+export const SITE_TAGLINE = "Holding Group";
 export const SITE_DESCRIPTION =
-  "Seamless Air Ticket Booking & Global Travel Solutions. Best fares for domestic & international flights, Middle East & student luggage special fares, Umrah packages, and dedicated 24/7 helpline.";
+  "Xeetrix Holding Group builds scalable ventures across retail commerce (Xeetrix Mart), global mobility & air ticketing (Xeetrix Travels), and Japan career placement (KNLTC).";
 export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://xeetrix.com";
 
-// Contact Details per specification
+// Corporate & Subsidiary Contacts
 export const CONTACT_PHONE = "+8809658036631";
 export const CONTACT_PHONE_DISPLAY = "+880 965 803 6631";
 export const CONTACT_PHONE_TEL = "tel:+8809658036631";
+export const CORPORATE_EMAIL = "info@xeetrix.com";
+export const MART_EMAIL = "mart@xeetrix.com";
 export const CONTACT_EMAIL = "booking@xeetrix.com";
+export const KNLTC_URL = "https://knltc.com";
 export const CONTACT_ADDRESS = "Level 4, Trade Valley Tower, VIP Road, Motijheel, Dhaka-1000, Bangladesh";
-export const SUPPORT_HOURS = "24/7 Dedicated Support & Emergency Ticket Re-issuance";
+export const SUPPORT_HOURS = "24/7 Central Holding & Venture Helpline";
 
 export const CURRENCY_SYMBOL = "৳";
 

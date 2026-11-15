@@ -14,6 +14,10 @@
   ::selection {
     @apply bg-brand-100 text-brand-900;
   }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand-700;
+  }
 }
 
 @layer components {
@@ -22,38 +26,28 @@
   }
 
   .btn-primary {
-    @apply inline-flex items-center justify-center font-medium transition-all duration-150 rounded-xl bg-brand-700 text-white hover:bg-brand-800 shadow-sm active:scale-[0.99] min-h-[44px];
+    @apply inline-flex items-center justify-center font-semibold transition-all duration-150 rounded-xl bg-brand-700 text-white hover:bg-brand-800 shadow-sm active:scale-[0.99] min-h-[44px] whitespace-nowrap shrink-0;
   }
 
   .btn-gold {
-    @apply inline-flex items-center justify-center font-medium transition-all duration-150 rounded-xl bg-gold-600 text-white hover:bg-gold-700 shadow-sm hover:shadow active:scale-[0.99] min-h-[44px];
+    @apply inline-flex items-center justify-center font-semibold transition-all duration-150 rounded-xl bg-gold-600 text-white hover:bg-gold-700 shadow-sm active:scale-[0.99] min-h-[44px] whitespace-nowrap shrink-0;
   }
 
   .btn-outline {
-    @apply inline-flex items-center justify-center font-medium transition-all duration-150 rounded-xl border border-slate-200 bg-white text-slate-800 hover:bg-slate-50 hover:border-slate-300 min-h-[44px];
+    @apply inline-flex items-center justify-center font-semibold transition-all duration-150 rounded-xl border border-slate-200 bg-white text-slate-800 hover:bg-slate-50 hover:border-slate-300 min-h-[44px] whitespace-nowrap shrink-0;
   }
 }
 
 @layer utilities {
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
   .scrollbar-none {
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
   .scrollbar-none::-webkit-scrollbar {
     display: none;
-  }
-
-  .line-clamp-2 {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-
-  .line-clamp-3 {
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
   }
 }
