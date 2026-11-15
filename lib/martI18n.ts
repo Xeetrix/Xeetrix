@@ -103,6 +103,8 @@ export interface MartDictionary {
     noMatchDesc: string;
     resetFiltersBtn: string;
     generalFallback: string;
+    subcategoriesLabel: string;
+    allInCategoryBtn: string;
   };
   quickView: {
     closeAria: string;
@@ -177,6 +179,9 @@ export interface MartDictionary {
     backToBagBtn: string;
     savedAddressHint: string;
     clearSavedAddressBtn: string;
+    changeVariantLabel: string;
+    changeColorLabel: string;
+    changeSizeLabel: string;
   };
   track: {
     modalTitle: string;
@@ -431,6 +436,9 @@ export interface MartDictionary {
       msgLblCreated: string;
       msgLblUpdated: string;
       msgLblDeleted: string;
+      removeImageBtn: string;
+      coverPreviewAlt: string;
+      linkedProductsSuffix: string;
     };
     settings: {
       title: string;
@@ -487,6 +495,8 @@ export interface MartDictionary {
     NOT_FOUND: string;
     MISSING_FIELDS: string;
     GENERIC_NETWORK: string;
+    OUT_OF_STOCK: string;
+    VARIANT_UNAVAILABLE: string;
   };
 }
 
@@ -594,6 +604,8 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
         "Try clearing one of your selected categories, labels, or search keywords.",
       resetFiltersBtn: "Reset Filters",
       generalFallback: "General",
+      subcategoriesLabel: "Sub-categories",
+      allInCategoryBtn: "All in category",
     },
     quickView: {
       closeAria: "Close product quick view",
@@ -670,6 +682,9 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
       backToBagBtn: "Back to Bag",
       savedAddressHint: "Saved delivery details pre-filled",
       clearSavedAddressBtn: "Clear Saved",
+      changeVariantLabel: "Variant",
+      changeColorLabel: "Color",
+      changeSizeLabel: "Size",
     },
     track: {
       modalTitle: "Track Your Order",
@@ -928,6 +943,9 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
         msgLblCreated: "Label saved to Mart_Labels.",
         msgLblUpdated: "Label updated and linked products synced.",
         msgLblDeleted: "Label deleted from Mart_Labels.",
+        removeImageBtn: "Remove Photo",
+        coverPreviewAlt: "Category cover preview",
+        linkedProductsSuffix: "products",
       },
       settings: {
         title: "Bilingual Storefront Hero & Delivery Settings (Mart_Settings)",
@@ -1003,6 +1021,8 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
       NOT_FOUND: "No matching record found. Please verify your details and try again.",
       MISSING_FIELDS: "Please fill in all required fields before submitting.",
       GENERIC_NETWORK: "Connection error. Please check your internet and try again.",
+      OUT_OF_STOCK: "One or more selected items do not have enough stock available.",
+      VARIANT_UNAVAILABLE: "Selected color or size option is currently unavailable.",
     },
   },
   bn: {
@@ -1108,6 +1128,8 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
         "সিলেক্ট করা ক্যাটাগরি, লেবেল বা সার্চ কি-ওয়ার্ড পরিবর্তন করে আবার চেষ্টা করুন।",
       resetFiltersBtn: "সব ফিল্টার রিসেট করুন",
       generalFallback: "সাধারণ",
+      subcategoriesLabel: "সাব-ক্যাটাগরি",
+      allInCategoryBtn: "সব পণ্য",
     },
     quickView: {
       closeAria: "প্রোডাক্ট প্রিভিউ বন্ধ করুন",
@@ -1185,6 +1207,9 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
       backToBagBtn: "কার্টে ফিরুন",
       savedAddressHint: "আগের সংরক্ষিত ঠিকানা অটো-ফিল হয়েছে",
       clearSavedAddressBtn: "তথ্য মুছুন",
+      changeVariantLabel: "ভ্যারিয়েন্ট",
+      changeColorLabel: "কালার",
+      changeSizeLabel: "সাইজ",
     },
     track: {
       modalTitle: "অর্ডার ট্র্যাক করুন",
@@ -1444,6 +1469,9 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
         msgLblCreated: "লেবেল Mart_Labels-এ সেভ হয়েছে।",
         msgLblUpdated: "লেবেল আপডেট হয়েছে এবং যুক্ত পণ্য সিঙ্ক হয়েছে।",
         msgLblDeleted: "লেবেল মুছে ফেলা হয়েছে।",
+        removeImageBtn: "ছবি সরান",
+        coverPreviewAlt: "ক্যাটাগরি কভার প্রিভিউ",
+        linkedProductsSuffix: "টি পণ্য",
       },
       settings: {
         title: "দ্বিভাষিক স্টোরফ্রন্ট হিরো ও ডেলিভারি সেটিংস (Mart_Settings)",
@@ -1519,6 +1547,8 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
       NOT_FOUND: "কোনো তথ্য খুঁজে পাওয়া যায়নি। অনুগ্রহ করে অর্ডার আইডি ও ফোন নম্বর যাচাই করুন।",
       MISSING_FIELDS: "অনুগ্রহ করে সব আবশ্যক তথ্য পূরণ করুন।",
       GENERIC_NETWORK: "নেটওয়ার্ক সংযোগে সমস্যা হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।",
+      OUT_OF_STOCK: "নির্বাচিত এক বা একাধিক পণ্যের পর্যাপ্ত স্টক বর্তমানে নেই।",
+      VARIANT_UNAVAILABLE: "নির্বাচিত কালার বা সাইজ অপশনটি বর্তমানে উপলব্ধ নয়।",
     },
   },
 };
@@ -1625,6 +1655,12 @@ export function translateMartError(
   }
   if (msg.includes("required")) {
     return dict.MISSING_FIELDS;
+  }
+  if (msg.includes("out_of_stock") || msg.includes("insufficient stock") || msg.includes("out of stock")) {
+    return dict.OUT_OF_STOCK;
+  }
+  if (msg.includes("variant_unavailable") || msg.includes("variant unavailable") || msg.includes("no longer available")) {
+    return dict.VARIANT_UNAVAILABLE;
   }
   return rawMessage || MART_DICTIONARY[lang].common.errorFallback;
 }

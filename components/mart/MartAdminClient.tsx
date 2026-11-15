@@ -121,6 +121,8 @@ type MartAdminSection =
   | "customers"
   | "settings";
 
+type ProductVariationMode = "none" | "simple" | "matrix";
+
 const MART_ITEM_STATUSES: MartItemStatus[] = [
   "Pending",
   "Forwarded to Supplier",
@@ -251,7 +253,9 @@ export function MartAdminClient() {
   const [prodColors, setProdColors] = useState<MartProductColor[]>([]);
   const [prodSizesInput, setProdSizesInput] = useState("");
   const [prodMatrix, setProdMatrix] = useState<MartVariationVariant[]>([]);
-  const [showVariationBuilder, setShowVariationBuilder] = useState(false);
+  const [variationMode, setVariationMode] = useState<ProductVariationMode>("none");
+  const [uploadingColorRowId, setUploadingColorRowId] = useState<string | null>(null);
+  const [colorGalleryPickerIdx, setColorGalleryPickerIdx] = useState<number | null>(null);
   const [prodDescEn, setProdDescEn] = useState("");
   const [prodDescBn, setProdDescBn] = useState("");
   const [prodFeatured, setProdFeatured] = useState(false);
@@ -404,7 +408,9 @@ export function MartAdminClient() {
     setProdColors([]);
     setProdSizesInput("");
     setProdMatrix([]);
-    setShowVariationBuilder(false);
+    setVariationMode("none");
+    setUploadingColorRowId(null);
+    setColorGalleryPickerIdx(null);
     setProdDescEn("");
     setProdDescBn("");
     setProdFeatured(false);
@@ -445,13 +451,14 @@ export function MartAdminClient() {
     setProdColors(parsedColors);
     setProdSizesInput(p.sizesList || "");
     setProdMatrix(parsedMatrix);
-    setShowVariationBuilder(
-      extraGallery.length > 0 ||
-        parsedColors.length > 0 ||
-        Boolean(p.sizesList) ||
-        parsedMatrix.length > 0 ||
-        (p.wholesaleMinQty || 0) > 0
-    );
+    setColorGalleryPickerIdx(null);
+    if (parsedColors.length > 0 || Boolean(p.sizesList) || parsedMatrix.length > 0) {
+      setVariationMode("matrix");
+    } else if (Boolean(p.variantsEn?.trim()) || Boolean(p.variantsBn?.trim())) {
+      setVariationMode("simple");
+    } else {
+      setVariationMode("none");
+    }
     setProdDescEn(p.descriptionEn || "");
     setProdDescBn(p.descriptionBn || "");
     setProdFeatured(Boolean(p.featured));
@@ -543,6 +550,80 @@ export function MartAdminClient() {
     if (!clean) return;
     setProdGalleryUrls((prev) => (prev.includes(clean) ? prev : [...prev, clean]));
     setExtraImgInput("");
+  }
+
+  function handleSetPrimaryFromGallery(galleryUrl: string) {
+    if (!galleryUrl) return;
+    const oldPrimary = prodImageUrl.trim();
+    setProdImageUrl(galleryUrl);
+    setProdGalleryUrls((prev) => {
+      const remaining = prev.filter((u) => u !== galleryUrl);
+      if (oldPrimary && oldPrimary !== galleryUrl && !remaining.includes(oldPrimary)) {
+        return [oldPrimary, ...remaining];
+      }
+      return remaining;
+    });
+  }
+
+  async function handleColorRowImageUpload(
+    colorId: string,
+    idx: number,
+    e: React.ChangeEvent<HTMLInputElement>
+  ) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!data?.isLiveBackend) {
+      showNotice("error", t.admin.products.errConnectBackend);
+      e.target.value = "";
+      return;
+    }
+    setUploadingColorRowId(colorId);
+    try {
+      const base64Data = await fileToMartBase64(file);
+      const uploaded = await uploadMartImageToDrive({
+        fileName: `color-${file.name}`,
+        mimeType: file.type || "image/jpeg",
+        base64Data,
+        folderType: "products",
+      });
+      setProdColors((prev) =>
+        prev.map((item, i) => (i === idx ? { ...item, imageUrl: uploaded.url } : item))
+      );
+      setProdGalleryUrls((prev) =>
+        prev.includes(uploaded.url) || prodImageUrl.trim() === uploaded.url
+          ? prev
+          : [...prev, uploaded.url]
+      );
+      showNotice("success", `${t.admin.products.msgImageUploaded} (${uploaded.fileId})`);
+    } catch (err) {
+      const apiErr = err as MartApiError;
+      showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
+    } finally {
+      setUploadingColorRowId(null);
+      e.target.value = "";
+    }
+  }
+
+  function handleColorNameEnChange(idx: number, nextNameEn: string) {
+    const target = prodColors[idx];
+    const oldEn = (target?.nameEn || target?.nameBn || "").trim();
+    const newEn = nextNameEn.trim();
+    setProdColors((prev) =>
+      prev.map((item, i) => (i === idx ? { ...item, nameEn: nextNameEn } : item))
+    );
+    if (oldEn && newEn && oldEn !== newEn) {
+      setProdMatrix((prev) =>
+        prev.map((m) =>
+          m.colorNameEn.trim().toLowerCase() === oldEn.toLowerCase()
+            ? {
+                ...m,
+                colorNameEn: newEn,
+                key: `${newEn}::${m.size || ""}`,
+              }
+            : m
+        )
+      );
+    }
   }
 
   function handleAddColorRow() {
@@ -681,23 +762,29 @@ export function MartAdminClient() {
       return;
     }
 
-    const cleanColors = prodColors
-      .filter((c) => c.nameEn.trim() || c.nameBn.trim())
-      .map((c) => ({
-        id: c.id,
-        nameEn: (c.nameEn || c.nameBn).trim(),
-        nameBn: (c.nameBn || c.nameEn).trim(),
-        hex: c.hex || "#0B5336",
-        imageUrl: (c.imageUrl || "").trim(),
-      }));
+    const cleanColors =
+      variationMode === "matrix"
+        ? prodColors
+            .filter((c) => c.nameEn.trim() || c.nameBn.trim())
+            .map((c) => ({
+              id: c.id,
+              nameEn: (c.nameEn || c.nameBn).trim(),
+              nameBn: (c.nameBn || c.nameEn).trim(),
+              hex: c.hex || "#0B5336",
+              imageUrl: (c.imageUrl || "").trim(),
+            }))
+        : [];
 
-    const cleanMatrix = prodMatrix.map((v) => ({
-      ...v,
-      sku: v.sku.trim(),
-      priceOverride: Math.max(0, Number(v.priceOverride) || 0),
-      costOverride: Math.max(0, Number(v.costOverride) || 0),
-      stock: Math.max(0, Number(v.stock) || 0),
-    }));
+    const cleanMatrix =
+      variationMode === "matrix"
+        ? prodMatrix.map((v) => ({
+            ...v,
+            sku: v.sku.trim(),
+            priceOverride: Math.max(0, Number(v.priceOverride) || 0),
+            costOverride: Math.max(0, Number(v.costOverride) || 0),
+            stock: Math.max(0, Number(v.stock) || 0),
+          }))
+        : [];
 
     const matrixStockTotal = cleanMatrix
       .filter((v) => v.active)
@@ -706,9 +793,13 @@ export function MartAdminClient() {
     const effectiveStock =
       prodFulfillmentType === "dropship"
         ? 0
-        : cleanMatrix.length > 0
+        : variationMode === "matrix" && cleanMatrix.length > 0
         ? matrixStockTotal
         : Math.max(0, Number(prodStock) || 0);
+
+    const effectiveVariantsEn = variationMode === "simple" ? prodVariantsEn.trim() : "";
+    const effectiveVariantsBn = variationMode === "simple" ? prodVariantsBn.trim() : "";
+    const effectiveSizesList = variationMode === "matrix" ? prodSizesInput.trim() : "";
 
     const payload = {
       sku: prodSku.trim() || `XM-${Date.now().toString().slice(-5)}`,
@@ -716,8 +807,8 @@ export function MartAdminClient() {
       nameBn: prodNameBn.trim(),
       categories: prodCategories.join(","),
       labels: prodLabels.join(","),
-      price: Number(prodPrice) || 0,
-      comparePrice: Number(prodComparePrice) || 0,
+      price: Math.max(0, Number(prodPrice) || 0),
+      comparePrice: Math.max(0, Number(prodComparePrice) || 0),
       costPrice: Math.max(0, Number(prodCostPrice) || 0),
       wholesaleMinQty: Math.max(0, Number(prodWholesaleMinQty) || 0),
       wholesalePrice: Math.max(0, Number(prodWholesalePrice) || 0),
@@ -728,10 +819,10 @@ export function MartAdminClient() {
       supplierAvailable: prodFulfillmentType === "dropship" ? prodSupplierAvailable : true,
       lowStockThreshold: Math.max(0, Number(prodLowStockThreshold) || 5),
       stock: effectiveStock,
-      variantsEn: prodVariantsEn.trim(),
-      variantsBn: prodVariantsBn.trim(),
+      variantsEn: effectiveVariantsEn,
+      variantsBn: effectiveVariantsBn,
       colorsJson: cleanColors.length > 0 ? JSON.stringify(cleanColors) : "",
-      sizesList: prodSizesInput.trim(),
+      sizesList: effectiveSizesList,
       variationMatrixJson: cleanMatrix.length > 0 ? JSON.stringify(cleanMatrix) : "",
       imageUrl: prodImageUrl.trim(),
       galleryUrls: prodGalleryUrls.filter(Boolean).join(","),
@@ -1579,6 +1670,54 @@ export function MartAdminClient() {
     });
     return map;
   }, [labels]);
+
+  const categoryProductCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    products.forEach((p) => {
+      parseCsvSlugs(p.categories).forEach((slug) => {
+        map.set(slug, (map.get(slug) || 0) + 1);
+      });
+    });
+    return map;
+  }, [products]);
+
+  const labelProductCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    products.forEach((p) => {
+      parseCsvSlugs(p.labels).forEach((slug) => {
+        map.set(slug, (map.get(slug) || 0) + 1);
+      });
+    });
+    return map;
+  }, [products]);
+
+  const availableGalleryPool = useMemo(() => {
+    const urls = [prodImageUrl.trim(), ...prodGalleryUrls.map((u) => u.trim())].filter(Boolean);
+    return Array.from(new Set(urls));
+  }, [prodImageUrl, prodGalleryUrls]);
+
+  const matrixNeedsSync = useMemo(() => {
+    if (variationMode !== "matrix") return false;
+    const validColors = prodColors.filter((c) => c.nameEn.trim() || c.nameBn.trim());
+    const sizes = parseProductSizes(prodSizesInput);
+    if (validColors.length === 0 && sizes.length === 0) return false;
+    const expectedKeys = new Set<string>();
+    if (validColors.length > 0 && sizes.length > 0) {
+      validColors.forEach((c) => {
+        const cEn = (c.nameEn || c.nameBn).trim();
+        sizes.forEach((s) => expectedKeys.add(`${cEn}::${s}`));
+      });
+    } else if (validColors.length > 0) {
+      validColors.forEach((c) => {
+        const cEn = (c.nameEn || c.nameBn).trim();
+        expectedKeys.add(`${cEn}::`);
+      });
+    } else {
+      sizes.forEach((s) => expectedKeys.add(`::${s}`));
+    }
+    if (expectedKeys.size !== prodMatrix.length) return true;
+    return prodMatrix.some((m) => !expectedKeys.has(m.key));
+  }, [variationMode, prodColors, prodSizesInput, prodMatrix]);
 
   const supplierSummaries = useMemo(
     () =>
@@ -3274,7 +3413,7 @@ export function MartAdminClient() {
                         <div className="input flex items-center text-xs font-semibold text-[#0B5336] bg-brand-50">
                           {tsrc.unlimitedLabel}
                         </div>
-                      ) : prodMatrix.length > 0 ? (
+                      ) : variationMode === "matrix" && prodMatrix.length > 0 ? (
                         <div>
                           <div className="input flex items-center justify-between text-xs font-mono font-bold text-[#0B5336] bg-brand-50/70 tabular-nums">
                             <span>
@@ -3306,8 +3445,8 @@ export function MartAdminClient() {
                     </div>
                   </div>
 
-                  {/* Prices + EN/BN Variants */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {/* Balanced Selling & Regular Prices Row */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                         {t.admin.products.priceLabel}
@@ -3334,32 +3473,6 @@ export function MartAdminClient() {
                         onChange={(e) => setProdComparePrice(e.target.value)}
                         placeholder="1550"
                         className="input font-mono"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                        {t.admin.products.variantsEnLabel}
-                      </label>
-                      <input
-                        type="text"
-                        value={prodVariantsEn}
-                        onChange={(e) => setProdVariantsEn(e.target.value)}
-                        placeholder={t.admin.products.variantsEnPlaceholder}
-                        className="input"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                        {t.admin.products.variantsBnLabel}
-                      </label>
-                      <input
-                        type="text"
-                        value={prodVariantsBn}
-                        onChange={(e) => setProdVariantsBn(e.target.value)}
-                        placeholder={t.admin.products.variantsBnPlaceholder}
-                        className="input"
                       />
                     </div>
                   </div>
@@ -3461,7 +3574,7 @@ export function MartAdminClient() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 items-end">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
                       <div>
                         <label className="block text-xs font-semibold text-slate-700 mb-1">
                           {tsrc.collectionModeLabel}
@@ -3619,143 +3732,238 @@ export function MartAdminClient() {
                     </div>
                   </div>
 
-                  {/* Primary Image Upload + URL */}
-                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-end">
-                    <div className="lg:col-span-8">
-                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                        {t.admin.products.imageUrlLabel}
-                      </label>
-                      <input
-                        type="text"
-                        value={prodImageUrl}
-                        onChange={(e) => setProdImageUrl(e.target.value)}
-                        placeholder="https://lh3.googleusercontent.com/d/..."
-                        className="input font-mono text-xs"
-                      />
+                  {/* Product Primary Image & Multi-Angle Gallery Pool */}
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-4">
+                    <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                      <ImagePlus className="h-3.5 w-3.5 text-[#0B5336]" />
+                      <span>{tvar.mediaGallerySectionTitle}</span>
                     </div>
 
-                    <div className="lg:col-span-4">
-                      <label className="btn-outline w-full px-4 py-2.5 text-xs gap-2 cursor-pointer">
-                        <Upload className="h-3.5 w-3.5 text-[#0B5336]" />
-                        <span>
-                          {uploadingProdImg
-                            ? t.admin.products.uploading
-                            : t.admin.products.uploadToDrive}
-                        </span>
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
+                      <div className="lg:col-span-2 flex items-center gap-3">
+                        <div className="h-20 w-20 rounded-xl border border-slate-200 bg-white overflow-hidden shrink-0 flex items-center justify-center">
+                          {prodImageUrl.trim() ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={normalizeMartImageUrl(prodImageUrl)}
+                              alt={tvar.primaryPreviewLabel}
+                              referrerPolicy="no-referrer"
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <span className="text-[10px] text-slate-400 text-center px-1">
+                              {tvar.noPrimaryImageHint}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="lg:col-span-6">
+                        <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                          {t.admin.products.imageUrlLabel}
+                        </label>
                         <input
-                          type="file"
-                          accept="image/*"
-                          disabled={uploadingProdImg}
-                          onChange={handleProductImageUpload}
-                          className="sr-only"
+                          type="text"
+                          value={prodImageUrl}
+                          onChange={(e) => setProdImageUrl(e.target.value)}
+                          placeholder="https://lh3.googleusercontent.com/d/..."
+                          className="input bg-white font-mono text-xs"
                         />
-                      </label>
+                      </div>
+
+                      <div className="lg:col-span-4 lg:self-end">
+                        <label className="btn-outline bg-white w-full px-4 py-2.5 text-xs gap-2 cursor-pointer">
+                          <Upload className="h-3.5 w-3.5 text-[#0B5336]" />
+                          <span>
+                            {uploadingProdImg
+                              ? t.admin.products.uploading
+                              : t.admin.products.uploadToDrive}
+                          </span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            disabled={uploadingProdImg}
+                            onChange={handleProductImageUpload}
+                            className="sr-only"
+                          />
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-200 space-y-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <div className="text-xs font-bold text-slate-800">
+                            {tvar.galleryTitle}
+                          </div>
+                          <div className="text-[11px] text-slate-500">{tvar.galleryHint}</div>
+                        </div>
+                        <label className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
+                          <ImagePlus className="h-3.5 w-3.5 text-[#0B5336]" />
+                          <span>
+                            {uploadingGalleryImg
+                              ? t.admin.products.uploading
+                              : tvar.uploadGalleryBtn}
+                          </span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            disabled={uploadingGalleryImg}
+                            onChange={handleGalleryImageUpload}
+                            className="sr-only"
+                          />
+                        </label>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <input
+                          type="text"
+                          value={extraImgInput}
+                          onChange={(e) => setExtraImgInput(e.target.value)}
+                          placeholder={tvar.addImageUrlPlaceholder}
+                          className="input text-xs font-mono flex-1 bg-white"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddExtraGalleryUrl}
+                          className="btn-outline bg-white px-4 py-2 text-xs whitespace-nowrap"
+                        >
+                          {tvar.addImageBtn}
+                        </button>
+                      </div>
+
+                      {prodGalleryUrls.length > 0 && (
+                        <div className="flex flex-wrap gap-3 pt-1">
+                          {prodGalleryUrls.map((url, idx) => (
+                            <div
+                              key={`${url}-${idx}`}
+                              className="group relative flex flex-col items-center gap-1 rounded-xl border border-slate-200 bg-white p-1.5"
+                            >
+                              <div className="relative h-16 w-16 rounded-lg overflow-hidden bg-slate-100">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={normalizeMartImageUrl(url)}
+                                  alt={tvar.galleryTitle}
+                                  referrerPolicy="no-referrer"
+                                  className="h-full w-full object-cover"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setProdGalleryUrls((prev) =>
+                                      prev.filter((_, i) => i !== idx)
+                                    )
+                                  }
+                                  aria-label={t.common.delete}
+                                  className="absolute top-0.5 right-0.5 rounded bg-slate-900/80 p-0.5 text-white hover:bg-red-600"
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleSetPrimaryFromGallery(url)}
+                                className="w-full rounded px-1.5 py-0.5 text-[10px] font-semibold text-[#0B5336] bg-brand-50 hover:bg-[#0B5336] hover:text-white transition-colors whitespace-nowrap"
+                              >
+                                {tvar.setAsPrimaryBtn}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
 
-                  {/* Color & Size Variations, Gallery & Wholesale Pricing Builder */}
+                  {/* Unified 3-Mode Variation Studio + Wholesale Bulk Tier Pricing */}
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="space-y-2.5">
                       <div>
                         <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
                           <Layers className="h-3.5 w-3.5 text-[#0B5336]" />
-                          <span>{tvar.sectionTitle}</span>
+                          <span>{tvar.modeLabel}</span>
                         </div>
                         <p className="text-[11px] text-slate-500 mt-0.5">{tvar.sectionSubtitle}</p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setShowVariationBuilder((prev) => !prev)}
-                        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] whitespace-nowrap inline-flex items-center gap-1.5"
-                      >
-                        {showVariationBuilder ? (
-                          <ChevronUp className="h-3.5 w-3.5" />
-                        ) : (
-                          <ChevronDown className="h-3.5 w-3.5" />
-                        )}
-                        <span>{tvar.toggleBuilderBtn}</span>
-                      </button>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                        {(
+                          [
+                            { id: "none", title: tvar.modeNone, hint: tvar.modeNoneHint },
+                            { id: "simple", title: tvar.modeSimple, hint: tvar.modeSimpleHint },
+                            { id: "matrix", title: tvar.modeMatrix, hint: tvar.modeMatrixHint },
+                          ] as const
+                        ).map((modeOpt) => {
+                          const active = variationMode === modeOpt.id;
+                          return (
+                            <button
+                              key={modeOpt.id}
+                              type="button"
+                              onClick={() => {
+                                setVariationMode(modeOpt.id);
+                                setColorGalleryPickerIdx(null);
+                              }}
+                              className={`rounded-xl border p-3 text-left transition-colors ${
+                                active
+                                  ? "border-[#0B5336] bg-white ring-2 ring-[#0B5336]/15"
+                                  : "border-slate-200 bg-white/70 hover:border-slate-300"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span
+                                  className={`text-xs font-bold ${
+                                    active ? "text-[#0B5336]" : "text-slate-800"
+                                  }`}
+                                >
+                                  {modeOpt.title}
+                                </span>
+                                {active && (
+                                  <CheckCircle2 className="h-3.5 w-3.5 text-[#0B5336] shrink-0" />
+                                )}
+                              </div>
+                              <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                                {modeOpt.hint}
+                              </p>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
 
-                    {showVariationBuilder && (
-                      <div className="space-y-5 pt-3 border-t border-slate-200">
-                        {/* Additional Gallery Photos */}
-                        <div className="space-y-2.5">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div>
-                              <div className="text-xs font-bold text-slate-800">
-                                {tvar.galleryTitle}
-                              </div>
-                              <div className="text-[11px] text-slate-500">{tvar.galleryHint}</div>
-                            </div>
-                            <label className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
-                              <ImagePlus className="h-3.5 w-3.5 text-[#0B5336]" />
-                              <span>
-                                {uploadingGalleryImg
-                                  ? t.admin.products.uploading
-                                  : tvar.uploadGalleryBtn}
-                              </span>
-                              <input
-                                type="file"
-                                accept="image/*"
-                                disabled={uploadingGalleryImg}
-                                onChange={handleGalleryImageUpload}
-                                className="sr-only"
-                              />
-                            </label>
-                          </div>
-
-                          <div className="flex flex-col sm:flex-row gap-2">
-                            <input
-                              type="text"
-                              value={extraImgInput}
-                              onChange={(e) => setExtraImgInput(e.target.value)}
-                              placeholder={tvar.addImageUrlPlaceholder}
-                              className="input text-xs font-mono flex-1 bg-white"
-                            />
-                            <button
-                              type="button"
-                              onClick={handleAddExtraGalleryUrl}
-                              className="btn-outline px-4 py-2 text-xs whitespace-nowrap"
-                            >
-                              {tvar.addImageBtn}
-                            </button>
-                          </div>
-
-                          {prodGalleryUrls.length > 0 && (
-                            <div className="flex flex-wrap gap-2.5 pt-1">
-                              {prodGalleryUrls.map((url, idx) => (
-                                <div
-                                  key={`${url}-${idx}`}
-                                  className="relative h-16 w-16 rounded-lg border border-slate-200 bg-white overflow-hidden"
-                                >
-                                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                                  <img
-                                    src={normalizeMartImageUrl(url)}
-                                    alt={tvar.galleryTitle}
-                                    referrerPolicy="no-referrer"
-                                    className="h-full w-full object-cover"
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setProdGalleryUrls((prev) =>
-                                        prev.filter((_, i) => i !== idx)
-                                      )
-                                    }
-                                    aria-label={t.common.delete}
-                                    className="absolute top-0.5 right-0.5 rounded bg-slate-900/80 p-0.5 text-white hover:bg-red-600"
-                                  >
-                                    <X className="h-3 w-3" />
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
+                    {/* Mode: Simple Option List */}
+                    {variationMode === "simple" && (
+                      <div className="pt-3 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                            {t.admin.products.variantsEnLabel}
+                          </label>
+                          <input
+                            type="text"
+                            value={prodVariantsEn}
+                            onChange={(e) => setProdVariantsEn(e.target.value)}
+                            placeholder={t.admin.products.variantsEnPlaceholder}
+                            className="input bg-white"
+                          />
                         </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                            {t.admin.products.variantsBnLabel}
+                          </label>
+                          <input
+                            type="text"
+                            value={prodVariantsBn}
+                            onChange={(e) => setProdVariantsBn(e.target.value)}
+                            placeholder={t.admin.products.variantsBnPlaceholder}
+                            className="input bg-white"
+                          />
+                        </div>
+                      </div>
+                    )}
 
-                        {/* Color Swatches Builder */}
-                        <div className="space-y-2.5 pt-3 border-t border-slate-200">
+                    {/* Mode: Structured Color Swatches + Sizes + Price/Stock Matrix */}
+                    {variationMode === "matrix" && (
+                      <div className="space-y-4 pt-3 border-t border-slate-200">
+                        {/* Color Swatches Builder with Drive Upload & Gallery Picker */}
+                        <div className="space-y-2.5">
                           <div className="flex items-center justify-between gap-2">
                             <span className="text-xs font-bold text-slate-800">
                               {tvar.colorsTitle}
@@ -3763,96 +3971,230 @@ export function MartAdminClient() {
                             <button
                               type="button"
                               onClick={handleAddColorRow}
-                              className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-[11px] font-semibold text-[#0B5336] hover:bg-brand-50 whitespace-nowrap"
+                              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-[#0B5336] hover:bg-brand-50 whitespace-nowrap"
                             >
                               {tvar.addColorBtn}
                             </button>
                           </div>
 
                           {prodColors.length > 0 && (
-                            <div className="space-y-2">
-                              {prodColors.map((clr, idx) => (
-                                <div
-                                  key={clr.id}
-                                  className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center rounded-lg border border-slate-200 bg-white p-2.5"
-                                >
-                                  <div className="sm:col-span-3">
-                                    <input
-                                      type="text"
-                                      value={clr.nameEn}
-                                      onChange={(e) =>
-                                        setProdColors((prev) =>
-                                          prev.map((item, i) =>
-                                            i === idx ? { ...item, nameEn: e.target.value } : item
+                            <div className="space-y-2.5">
+                              {prodColors.map((clr, idx) => {
+                                const isUploadingColor = uploadingColorRowId === clr.id;
+                                const pickerOpen = colorGalleryPickerIdx === idx;
+                                return (
+                                  <div
+                                    key={clr.id}
+                                    className="rounded-xl border border-slate-200 bg-white p-3 space-y-2.5"
+                                  >
+                                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center">
+                                      {/* Live Color Image / Hex Swatch Preview */}
+                                      <div className="sm:col-span-1 flex items-center gap-2">
+                                        <div className="h-10 w-10 rounded-lg border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center bg-slate-100">
+                                          {clr.imageUrl ? (
+                                            // eslint-disable-next-line @next/next/no-img-element
+                                            <img
+                                              src={normalizeMartImageUrl(clr.imageUrl)}
+                                              alt={clr.nameEn || clr.nameBn || "Color"}
+                                              referrerPolicy="no-referrer"
+                                              className="h-full w-full object-cover"
+                                            />
+                                          ) : (
+                                            <span
+                                              className="h-5 w-5 rounded-full border border-slate-300"
+                                              style={{ backgroundColor: clr.hex || "#0B5336" }}
+                                            />
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      <div className="sm:col-span-4">
+                                        <input
+                                          type="text"
+                                          value={clr.nameEn}
+                                          onChange={(e) =>
+                                            handleColorNameEnChange(idx, e.target.value)
+                                          }
+                                          placeholder={tvar.colorNameEnPlaceholder}
+                                          aria-label={tvar.colorNameEnLabel}
+                                          className="input min-h-[38px] py-1.5 text-xs"
+                                        />
+                                      </div>
+
+                                      <div className="sm:col-span-4">
+                                        <input
+                                          type="text"
+                                          value={clr.nameBn}
+                                          onChange={(e) =>
+                                            setProdColors((prev) =>
+                                              prev.map((item, i) =>
+                                                i === idx ? { ...item, nameBn: e.target.value } : item
+                                              )
+                                            )
+                                          }
+                                          placeholder={tvar.colorNameBnPlaceholder}
+                                          aria-label={tvar.colorNameBnLabel}
+                                          className="input min-h-[38px] py-1.5 text-xs"
+                                        />
+                                      </div>
+
+                                      <div className="sm:col-span-2 flex items-center gap-2">
+                                        <input
+                                          type="color"
+                                          value={clr.hex || "#0B5336"}
+                                          onChange={(e) =>
+                                            setProdColors((prev) =>
+                                              prev.map((item, i) =>
+                                                i === idx ? { ...item, hex: e.target.value } : item
+                                              )
+                                            )
+                                          }
+                                          aria-label={tvar.colorHexLabel}
+                                          className="h-9 w-12 rounded-lg border border-slate-200 cursor-pointer shrink-0"
+                                        />
+                                        <span className="font-mono text-[11px] text-slate-400">
+                                          {clr.hex || "#0B5336"}
+                                        </span>
+                                      </div>
+
+                                      <div className="sm:col-span-1 text-right">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setProdColors((prev) =>
+                                              prev.filter((_, i) => i !== idx)
+                                            );
+                                            if (colorGalleryPickerIdx === idx) {
+                                              setColorGalleryPickerIdx(null);
+                                            }
+                                          }}
+                                          aria-label={t.common.delete}
+                                          className="text-red-600 hover:text-red-800 p-1.5 rounded-lg hover:bg-red-50"
+                                        >
+                                          <Trash2 className="h-4 w-4" />
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    {/* Per-Color Dedicated Drive Upload, Gallery Picker & URL Input */}
+                                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-2 border-t border-slate-100">
+                                      <input
+                                        type="text"
+                                        value={clr.imageUrl || ""}
+                                        onChange={(e) =>
+                                          setProdColors((prev) =>
+                                            prev.map((item, i) =>
+                                              i === idx
+                                                ? { ...item, imageUrl: e.target.value }
+                                                : item
+                                            )
                                           )
-                                        )
-                                      }
-                                      placeholder={tvar.colorNameEnPlaceholder}
-                                      aria-label={tvar.colorNameEnLabel}
-                                      className="input min-h-[34px] py-1 text-xs"
-                                    />
+                                        }
+                                        placeholder={tvar.colorImageLabel}
+                                        className="input min-h-[36px] py-1 text-xs font-mono flex-1"
+                                      />
+
+                                      <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                                        <label className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] cursor-pointer inline-flex items-center gap-1.5 min-h-[36px] whitespace-nowrap">
+                                          <Upload className="h-3.5 w-3.5 text-[#0B5336]" />
+                                          <span>
+                                            {isUploadingColor
+                                              ? t.admin.products.uploading
+                                              : tvar.uploadColorImgBtn}
+                                          </span>
+                                          <input
+                                            type="file"
+                                            accept="image/*"
+                                            disabled={isUploadingColor}
+                                            onChange={(e) =>
+                                              handleColorRowImageUpload(clr.id, idx, e)
+                                            }
+                                            className="sr-only"
+                                          />
+                                        </label>
+
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setColorGalleryPickerIdx((prev) =>
+                                              prev === idx ? null : idx
+                                            )
+                                          }
+                                          className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold min-h-[36px] whitespace-nowrap transition-colors ${
+                                            pickerOpen
+                                              ? "border-[#0B5336] bg-[#0B5336] text-white"
+                                              : "border-slate-300 bg-white text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336]"
+                                          }`}
+                                        >
+                                          {tvar.pickFromGalleryBtn}
+                                        </button>
+
+                                        {clr.imageUrl && (
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              setProdColors((prev) =>
+                                                prev.map((item, i) =>
+                                                  i === idx ? { ...item, imageUrl: "" } : item
+                                                )
+                                              )
+                                            }
+                                            className="rounded-lg border border-slate-200 px-2 py-1.5 text-[11px] font-semibold text-slate-500 hover:text-red-600 min-h-[36px]"
+                                            title={tvar.clearColorImgBtn}
+                                          >
+                                            <X className="h-3.5 w-3.5" />
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {pickerOpen && (
+                                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 space-y-2">
+                                        {availableGalleryPool.length === 0 ? (
+                                          <p className="text-[11px] text-slate-500">
+                                            {tvar.noGalleryPhotosHint}
+                                          </p>
+                                        ) : (
+                                          <div className="flex flex-wrap gap-2">
+                                            {availableGalleryPool.map((poolUrl, pIdx) => {
+                                              const selected = clr.imageUrl === poolUrl;
+                                              return (
+                                                <button
+                                                  key={`${poolUrl}-${pIdx}`}
+                                                  type="button"
+                                                  onClick={() => {
+                                                    setProdColors((prev) =>
+                                                      prev.map((item, i) =>
+                                                        i === idx
+                                                          ? { ...item, imageUrl: poolUrl }
+                                                          : item
+                                                      )
+                                                    );
+                                                    setColorGalleryPickerIdx(null);
+                                                  }}
+                                                  className={`h-14 w-14 rounded-lg overflow-hidden border-2 transition-all ${
+                                                    selected
+                                                      ? "border-[#0B5336] ring-2 ring-[#0B5336]/25"
+                                                      : "border-slate-200 hover:border-[#0B5336]"
+                                                  }`}
+                                                >
+                                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                  <img
+                                                    src={normalizeMartImageUrl(poolUrl)}
+                                                    alt={tvar.galleryTitle}
+                                                    referrerPolicy="no-referrer"
+                                                    className="h-full w-full object-cover"
+                                                  />
+                                                </button>
+                                              );
+                                            })}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
                                   </div>
-                                  <div className="sm:col-span-3">
-                                    <input
-                                      type="text"
-                                      value={clr.nameBn}
-                                      onChange={(e) =>
-                                        setProdColors((prev) =>
-                                          prev.map((item, i) =>
-                                            i === idx ? { ...item, nameBn: e.target.value } : item
-                                          )
-                                        )
-                                      }
-                                      placeholder={tvar.colorNameBnPlaceholder}
-                                      aria-label={tvar.colorNameBnLabel}
-                                      className="input min-h-[34px] py-1 text-xs"
-                                    />
-                                  </div>
-                                  <div className="sm:col-span-1 flex items-center justify-center">
-                                    <input
-                                      type="color"
-                                      value={clr.hex || "#0B5336"}
-                                      onChange={(e) =>
-                                        setProdColors((prev) =>
-                                          prev.map((item, i) =>
-                                            i === idx ? { ...item, hex: e.target.value } : item
-                                          )
-                                        )
-                                      }
-                                      aria-label={tvar.colorHexLabel}
-                                      className="h-8 w-10 rounded border border-slate-200 cursor-pointer"
-                                    />
-                                  </div>
-                                  <div className="sm:col-span-4">
-                                    <input
-                                      type="text"
-                                      value={clr.imageUrl || ""}
-                                      onChange={(e) =>
-                                        setProdColors((prev) =>
-                                          prev.map((item, i) =>
-                                            i === idx
-                                              ? { ...item, imageUrl: e.target.value }
-                                              : item
-                                          )
-                                        )
-                                      }
-                                      placeholder={tvar.colorImageLabel}
-                                      className="input min-h-[34px] py-1 text-xs font-mono"
-                                    />
-                                  </div>
-                                  <div className="sm:col-span-1 text-right">
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        setProdColors((prev) => prev.filter((_, i) => i !== idx))
-                                      }
-                                      className="text-red-600 hover:text-red-800 p-1"
-                                    >
-                                      <Trash2 className="h-3.5 w-3.5" />
-                                    </button>
-                                  </div>
-                                </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           )}
                         </div>
@@ -3875,9 +4217,9 @@ export function MartAdminClient() {
                             <button
                               type="button"
                               onClick={handleBuildVariationMatrix}
-                              className="btn-outline px-3.5 py-2 text-xs whitespace-nowrap"
+                              className="btn-outline bg-white px-3.5 py-2 text-xs whitespace-nowrap"
                             >
-                              {tvar.generateMatrixBtn}
+                              {tvar.syncMatrixBtn}
                             </button>
                             {prodMatrix.length > 0 && (
                               <button
@@ -3890,6 +4232,22 @@ export function MartAdminClient() {
                             )}
                           </div>
                         </div>
+
+                        {matrixNeedsSync && (
+                          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-900">
+                            <div className="flex items-center gap-2">
+                              <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                              <span>{tvar.matrixSyncNeededHint}</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleBuildVariationMatrix}
+                              className="rounded-lg bg-amber-600 px-3 py-1 text-[11px] font-semibold text-white hover:bg-amber-700 whitespace-nowrap"
+                            >
+                              {tvar.syncMatrixBtn}
+                            </button>
+                          </div>
+                        )}
 
                         {/* Optional Price/Cost/Stock Variation Matrix */}
                         {prodMatrix.length > 0 && (
@@ -3941,7 +4299,7 @@ export function MartAdminClient() {
                                             setProdMatrix((prev) =>
                                               prev.map((m, i) =>
                                                 i === idx
-                                                  ? { ...m, priceOverride: Number(e.target.value) || 0 }
+                                                  ? { ...m, priceOverride: Math.max(0, Number(e.target.value) || 0) }
                                                   : m
                                               )
                                             )
@@ -3958,7 +4316,7 @@ export function MartAdminClient() {
                                             setProdMatrix((prev) =>
                                               prev.map((m, i) =>
                                                 i === idx
-                                                  ? { ...m, costOverride: Number(e.target.value) || 0 }
+                                                  ? { ...m, costOverride: Math.max(0, Number(e.target.value) || 0) }
                                                   : m
                                               )
                                             )
@@ -4004,44 +4362,44 @@ export function MartAdminClient() {
                             </div>
                           </div>
                         )}
-
-                        {/* Wholesale / Bulk Tier Pricing */}
-                        <div className="pt-3 border-t border-slate-200 space-y-2">
-                          <div className="text-xs font-bold text-slate-800">
-                            {tvar.wholesaleTitle}
-                          </div>
-                          <p className="text-[11px] text-slate-500">{tvar.wholesaleHint}</p>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                {tvar.wholesaleMinQtyLabel}
-                              </label>
-                              <input
-                                type="number"
-                                min={0}
-                                value={prodWholesaleMinQty}
-                                onChange={(e) => setProdWholesaleMinQty(e.target.value)}
-                                placeholder="10"
-                                className="input bg-white font-mono text-xs"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                {tvar.wholesalePriceLabel}
-                              </label>
-                              <input
-                                type="number"
-                                min={0}
-                                value={prodWholesalePrice}
-                                onChange={(e) => setProdWholesalePrice(e.target.value)}
-                                placeholder="980"
-                                className="input bg-white font-mono text-xs"
-                              />
-                            </div>
-                          </div>
-                        </div>
                       </div>
                     )}
+
+                    {/* Wholesale / Bulk Tier Pricing (Applies across standard & variant products) */}
+                    <div className="pt-3 border-t border-slate-200 space-y-2">
+                      <div className="text-xs font-bold text-slate-800">
+                        {tvar.wholesaleTitle}
+                      </div>
+                      <p className="text-[11px] text-slate-500">{tvar.wholesaleHint}</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">
+                            {tvar.wholesaleMinQtyLabel}
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={prodWholesaleMinQty}
+                            onChange={(e) => setProdWholesaleMinQty(e.target.value)}
+                            placeholder="10"
+                            className="input bg-white font-mono text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">
+                            {tvar.wholesalePriceLabel}
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={prodWholesalePrice}
+                            onChange={(e) => setProdWholesalePrice(e.target.value)}
+                            placeholder="980"
+                            className="input bg-white font-mono text-xs"
+                          />
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Dual EN + BN Descriptions */}
@@ -4194,14 +4552,28 @@ export function MartAdminClient() {
                                 </div>
                               </div>
 
-                              <div className="font-mono text-[11px] text-slate-400 mt-0.5">
-                                {p.sku || p.id}
-                                {colorList.length > 0
-                                  ? ` · ${toLocalizedDigits(colorList.length, lang)} ${tvar.colorsCountSuffix}`
-                                  : ""}
-                                {sizeList.length > 0
-                                  ? ` · ${toLocalizedDigits(sizeList.length, lang)} ${tvar.sizesCountSuffix}`
-                                  : ""}
+                              <div className="font-mono text-[11px] text-slate-400 mt-0.5 flex flex-wrap items-center gap-1.5">
+                                <span>
+                                  {p.sku || p.id}
+                                  {colorList.length > 0
+                                    ? ` · ${toLocalizedDigits(colorList.length, lang)} ${tvar.colorsCountSuffix}`
+                                    : ""}
+                                  {sizeList.length > 0
+                                    ? ` · ${toLocalizedDigits(sizeList.length, lang)} ${tvar.sizesCountSuffix}`
+                                    : ""}
+                                </span>
+                                {colorList.length > 0 && (
+                                  <span className="inline-flex items-center gap-1">
+                                    {colorList.slice(0, 5).map((clr) => (
+                                      <span
+                                        key={clr.id}
+                                        title={pickLocalized(clr.nameEn, clr.nameBn, lang)}
+                                        className="h-2.5 w-2.5 rounded-full border border-slate-300"
+                                        style={{ backgroundColor: clr.hex || "#0B5336" }}
+                                      />
+                                    ))}
+                                  </span>
+                                )}
                               </div>
                               {hasWholesale && (
                                 <div className="text-[11px] font-mono text-[#0B5336] font-semibold mt-0.5">
@@ -4425,14 +4797,28 @@ export function MartAdminClient() {
                                     <div className="font-semibold text-slate-900">
                                       {displayProdName}
                                     </div>
-                                    <div className="font-mono text-[11px] text-slate-400">
-                                      {p.sku || p.id}
-                                      {colorList.length > 0
-                                        ? ` · ${toLocalizedDigits(colorList.length, lang)} ${tvar.colorsCountSuffix}`
-                                        : ""}
-                                      {sizeList.length > 0
-                                        ? ` · ${toLocalizedDigits(sizeList.length, lang)} ${tvar.sizesCountSuffix}`
-                                        : ""}
+                                    <div className="font-mono text-[11px] text-slate-400 flex flex-wrap items-center gap-1.5">
+                                      <span>
+                                        {p.sku || p.id}
+                                        {colorList.length > 0
+                                          ? ` · ${toLocalizedDigits(colorList.length, lang)} ${tvar.colorsCountSuffix}`
+                                          : ""}
+                                        {sizeList.length > 0
+                                          ? ` · ${toLocalizedDigits(sizeList.length, lang)} ${tvar.sizesCountSuffix}`
+                                          : ""}
+                                      </span>
+                                      {colorList.length > 0 && (
+                                        <span className="inline-flex items-center gap-1">
+                                          {colorList.slice(0, 5).map((clr) => (
+                                            <span
+                                              key={clr.id}
+                                              title={pickLocalized(clr.nameEn, clr.nameBn, lang)}
+                                              className="h-2.5 w-2.5 rounded-full border border-slate-300"
+                                              style={{ backgroundColor: clr.hex || "#0B5336" }}
+                                            />
+                                          ))}
+                                        </span>
+                                      )}
                                     </div>
                                   </div>
                                 </div>
@@ -4781,6 +5167,35 @@ export function MartAdminClient() {
                           />
                         </label>
                       </div>
+
+                      {catImageUrl.trim() && (
+                        <div className="mt-2.5 flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-2.5">
+                          <div className="h-14 w-20 rounded-lg border border-slate-200 bg-white overflow-hidden shrink-0">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={normalizeMartImageUrl(catImageUrl)}
+                              alt={t.admin.taxonomy.coverPreviewAlt}
+                              referrerPolicy="no-referrer"
+                              className="h-full w-full object-cover"
+                            />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-[11px] font-semibold text-slate-700">
+                              {t.admin.taxonomy.coverPreviewAlt}
+                            </div>
+                            <div className="font-mono text-[10px] text-slate-400 truncate">
+                              {catImageUrl.trim()}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setCatImageUrl("")}
+                            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-red-600 hover:bg-red-50 shrink-0"
+                          >
+                            {t.admin.taxonomy.removeImageBtn}
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     <button
@@ -4837,7 +5252,7 @@ export function MartAdminClient() {
                                   {cat.nameEn}
                                   {cat.nameBn ? ` · ${cat.nameBn}` : ""}
                                 </div>
-                                <div className="font-mono text-[11px] text-slate-400 truncate">
+                                <div className="font-mono text-[11px] text-slate-400 truncate tabular-nums">
                                   /{cat.slug}
                                   {parent
                                     ? ` · ${t.admin.taxonomy.catParentPrefix} ${pickLocalized(
@@ -4846,6 +5261,10 @@ export function MartAdminClient() {
                                         lang
                                       )}`
                                     : ""}
+                                  {` · ${toLocalizedDigits(
+                                    categoryProductCounts.get(cat.slug) || 0,
+                                    lang
+                                  )} ${t.admin.taxonomy.linkedProductsSuffix}`}
                                 </div>
                               </div>
                             </div>
@@ -5053,8 +5472,10 @@ export function MartAdminClient() {
                               {lbl.nameEn}
                               {lbl.nameBn ? ` · ${lbl.nameBn}` : ""}
                             </div>
-                            <div className="font-mono text-[11px] text-slate-400 truncate">
-                              #{lbl.slug} · {lbl.tone}
+                            <div className="font-mono text-[11px] text-slate-400 truncate tabular-nums">
+                              #{lbl.slug} · {lbl.tone} ·{" "}
+                              {toLocalizedDigits(labelProductCounts.get(lbl.slug) || 0, lang)}{" "}
+                              {t.admin.taxonomy.linkedProductsSuffix}
                             </div>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">

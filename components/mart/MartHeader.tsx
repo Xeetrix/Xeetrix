@@ -9,11 +9,17 @@ import {
   Menu,
   X,
   Phone,
+  Layers,
 } from "lucide-react";
 import { MartLogo } from "./MartLogo";
 import { MartLanguageSwitcher } from "./MartLanguageSwitcher";
 import { useMartI18n } from "./MartI18nProvider";
-import { MART_CONTACT_PHONE, MART_CONTACT_TEL, MartCategory } from "@/lib/martApi";
+import {
+  MART_CONTACT_PHONE,
+  MART_CONTACT_TEL,
+  MartCategory,
+  normalizeMartImageUrl,
+} from "@/lib/martApi";
 import { pickLocalized, toLocalizedDigits } from "@/lib/martI18n";
 
 interface MartHeaderProps {
@@ -26,6 +32,36 @@ interface MartHeaderProps {
   cartCount: number;
   onOpenCart: () => void;
   onOpenTrackOrder: () => void;
+  categoryThumbs?: Record<string, string>;
+  categoryCounts?: Record<string, number>;
+}
+
+function HeaderCategoryThumb({ src, alt, active }: { src: string; alt: string; active: boolean }) {
+  const [failed, setFailed] = useState(false);
+  const resolved = normalizeMartImageUrl(src);
+  if (!resolved || failed) {
+    return (
+      <span
+        className={`inline-flex h-6 w-6 items-center justify-center rounded-md shrink-0 ${
+          active ? "bg-white/15 text-white" : "bg-slate-100 text-[#0B5336]"
+        }`}
+      >
+        <Layers className="h-3.5 w-3.5" />
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex h-6 w-6 overflow-hidden rounded-md bg-slate-100 shrink-0 border border-black/10">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={resolved}
+        alt={alt}
+        referrerPolicy="no-referrer"
+        onError={() => setFailed(true)}
+        className="h-full w-full object-cover"
+      />
+    </span>
+  );
 }
 
 export function MartHeader({
@@ -38,6 +74,8 @@ export function MartHeader({
   cartCount,
   onOpenCart,
   onOpenTrackOrder,
+  categoryThumbs,
+  categoryCounts,
 }: MartHeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { lang, t } = useMartI18n();
@@ -145,16 +183,28 @@ export function MartHeader({
                     onClearCategories();
                     setMobileMenuOpen(false);
                   }}
-                  className={`rounded-lg px-3 py-2 text-xs font-semibold border transition-colors min-h-[40px] ${
+                  className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold border transition-colors min-h-[40px] ${
                     selectedCategories.length === 0
                       ? "bg-[#0B5336] border-[#0B5336] text-white"
                       : "bg-white border-slate-200 text-slate-700"
                   }`}
                 >
-                  {t.catalog.allCategories}
+                  <span
+                    className={`inline-flex h-6 w-6 items-center justify-center rounded-md shrink-0 ${
+                      selectedCategories.length === 0
+                        ? "bg-white/15 text-white"
+                        : "bg-slate-100 text-[#0B5336]"
+                    }`}
+                  >
+                    <Layers className="h-3.5 w-3.5" />
+                  </span>
+                  <span>{t.catalog.allCategories}</span>
                 </button>
                 {categories.map((cat) => {
                   const active = selectedCategories.includes(cat.slug);
+                  const catTitle = pickLocalized(cat.nameEn, cat.nameBn, lang, cat.slug);
+                  const thumbUrl = categoryThumbs?.[cat.slug] || cat.imageUrl || "";
+                  const catCount = categoryCounts?.[cat.slug];
                   return (
                     <button
                       key={cat.slug}
@@ -163,13 +213,23 @@ export function MartHeader({
                         onToggleCategory(cat.slug);
                         setMobileMenuOpen(false);
                       }}
-                      className={`rounded-lg px-3 py-2 text-xs font-semibold border transition-colors min-h-[40px] ${
+                      className={`inline-flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-semibold border transition-colors min-h-[40px] ${
                         active
                           ? "bg-[#0B5336] border-[#0B5336] text-white"
                           : "bg-white border-slate-200 text-slate-700"
                       }`}
                     >
-                      {pickLocalized(cat.nameEn, cat.nameBn, lang, cat.slug)}
+                      <HeaderCategoryThumb key={thumbUrl || "no-img"} src={thumbUrl} alt={catTitle} active={active} />
+                      <span>{catTitle}</span>
+                      {catCount !== undefined && (
+                        <span
+                          className={`font-mono text-[10px] tabular-nums ${
+                            active ? "text-emerald-100" : "text-slate-400"
+                          }`}
+                        >
+                          ({toLocalizedDigits(catCount, lang)})
+                        </span>
+                      )}
                     </button>
                   );
                 })}

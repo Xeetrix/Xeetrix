@@ -107,13 +107,24 @@ export async function fetchMartPublicFromScript(forceFresh = false): Promise<{
   }
 }
 
+export class MartScriptError extends Error {
+  code?: string;
+  status?: number;
+  constructor(message: string, code?: string, status?: number) {
+    super(message);
+    this.name = "MartScriptError";
+    this.code = code;
+    this.status = status;
+  }
+}
+
 export async function callMartScriptPost<T = Record<string, unknown>>(
   payload: Record<string, unknown>,
   includeAdminToken = false
-): Promise<{ ok: boolean; error?: string } & T> {
+): Promise<{ ok: boolean; error?: string; code?: string } & T> {
   const scriptUrl = getMartScriptUrlServer();
   if (!scriptUrl) {
-    throw new Error("MART_BACKEND_NOT_CONFIGURED");
+    throw new MartScriptError("MART_BACKEND_NOT_CONFIGURED", "BACKEND_UNCONFIGURED", 503);
   }
 
   const token = includeAdminToken ? getMartApiTokenServer() : "";
@@ -130,12 +141,16 @@ export async function callMartScriptPost<T = Record<string, unknown>>(
   });
 
   if (!res.ok) {
-    throw new Error(`Mart backend HTTP ${res.status}`);
+    throw new MartScriptError(`Mart backend HTTP ${res.status}`, "GENERIC_NETWORK", 502);
   }
 
-  const json = (await res.json()) as { ok: boolean; error?: string } & T;
+  const json = (await res.json()) as { ok: boolean; error?: string; code?: string } & T;
   if (!json.ok) {
-    throw new Error(json.error || "Mart backend rejected the request.");
+    throw new MartScriptError(
+      json.error || "Mart backend rejected the request.",
+      json.code,
+      json.code === "OUT_OF_STOCK" || json.code === "VARIANT_UNAVAILABLE" ? 409 : 400
+    );
   }
 
   // Bust server-side storefront cache whenever a mutation completes

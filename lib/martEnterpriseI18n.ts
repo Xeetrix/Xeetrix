@@ -357,6 +357,24 @@ export interface MartEnterpriseDictionary {
     selectedVariantOutOfStock: string;
     colorsCountSuffix: string;
     sizesCountSuffix: string;
+    modeLabel: string;
+    modeNone: string;
+    modeNoneHint: string;
+    modeSimple: string;
+    modeSimpleHint: string;
+    modeMatrix: string;
+    modeMatrixHint: string;
+    setAsPrimaryBtn: string;
+    isPrimaryBadge: string;
+    uploadColorImgBtn: string;
+    pickFromGalleryBtn: string;
+    noGalleryPhotosHint: string;
+    clearColorImgBtn: string;
+    matrixSyncNeededHint: string;
+    syncMatrixBtn: string;
+    mediaGallerySectionTitle: string;
+    primaryPreviewLabel: string;
+    noPrimaryImageHint: string;
   };
   coupons: {
     title: string;
@@ -827,6 +845,24 @@ export const MART_ENTERPRISE_DICTIONARY: Record<MartLang, MartEnterpriseDictiona
       selectedVariantOutOfStock: "This selected color/size combination is currently out of stock.",
       colorsCountSuffix: "colors",
       sizesCountSuffix: "sizes",
+      modeLabel: "Product Variation Mode",
+      modeNone: "Standard Product (No Variations)",
+      modeNoneHint: "Uses the single stock quantity above without sub-options.",
+      modeSimple: "Simple Option List (Pack / Weight / Model)",
+      modeSimpleHint: "Single comma-separated list (e.g. 500g, 1kg) without color swatches.",
+      modeMatrix: "Color Swatches & Size Matrix",
+      modeMatrixHint: "Manage color photos, sizes, per-variant SKU, price & stock matrix.",
+      setAsPrimaryBtn: "Set Primary",
+      isPrimaryBadge: "Primary",
+      uploadColorImgBtn: "Drive Upload",
+      pickFromGalleryBtn: "From Gallery",
+      noGalleryPhotosHint: "Add a product or gallery image first to pick from here.",
+      clearColorImgBtn: "Clear photo",
+      matrixSyncNeededHint: "Colors or sizes changed — click Sync Matrix to update cells safely.",
+      syncMatrixBtn: "Generate / Sync Matrix",
+      mediaGallerySectionTitle: "Product Images & Gallery",
+      primaryPreviewLabel: "Primary Thumbnail",
+      noPrimaryImageHint: "No image",
     },
     coupons: {
       title: "Discount Coupons & Promo Codes (Mart_Coupons)",
@@ -1295,6 +1331,24 @@ export const MART_ENTERPRISE_DICTIONARY: Record<MartLang, MartEnterpriseDictiona
       selectedVariantOutOfStock: "নির্বাচিত এই কালার/সাইজটি বর্তমানে স্টকে নেই।",
       colorsCountSuffix: "টি কালার",
       sizesCountSuffix: "টি সাইজ",
+      modeLabel: "পণ্যের ভ্যারিয়েশন মোড",
+      modeNone: "সাধারণ পণ্য (ভ্যারিয়েশন ছাড়া)",
+      modeNoneHint: "ভ্যারিয়েশন ছাড়াই উপরের একক স্টক সংখ্যা ব্যবহার করবে।",
+      modeSimple: "সিম্পল অপশন লিস্ট (প্যাক / ওজন / মডেল)",
+      modeSimpleHint: "কালার সোয়াচ ছাড়া কমা-সেপারেটেড সাধারণ অপশন (যেমন: ৫০০ গ্রাম, ১ কেজি)।",
+      modeMatrix: "কালার সোয়াচ ও সাইজ ম্যাট্রিক্স",
+      modeMatrixHint: "প্রতিটি কালারের ছবি, সাইজ এবং আলাদা SKU, মূল্য ও স্টক ম্যাট্রিক্স।",
+      setAsPrimaryBtn: "মূল ছবি করুন",
+      isPrimaryBadge: "মূল ছবি",
+      uploadColorImgBtn: "ড্রাইভ আপলোড",
+      pickFromGalleryBtn: "গ্যালারি থেকে নিন",
+      noGalleryPhotosHint: "এখান থেকে বাছাই করতে আগে ওপরে মূল ছবি বা গ্যালারি ছবি যোগ করুন।",
+      clearColorImgBtn: "ছবি সরান",
+      matrixSyncNeededHint: "কালার বা সাইজ পরিবর্তিত হয়েছে — পুরনো স্টক অক্ষত রেখে আপডেট করতে ম্যাট্রিক্স সিঙ্ক করুন।",
+      syncMatrixBtn: "ম্যাট্রিক্স তৈরি / সিঙ্ক করুন",
+      mediaGallerySectionTitle: "পণ্যের মূল ছবি ও গ্যালারি",
+      primaryPreviewLabel: "মূল ছবি প্রিভিউ",
+      noPrimaryImageHint: "ছবি নেই",
     },
     coupons: {
       title: "ডিসকাউন্ট কুপন ও প্রমো কোড (Mart_Coupons)",

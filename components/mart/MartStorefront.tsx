@@ -28,6 +28,7 @@ import {
   Copy,
   Ticket,
   QrCode,
+  Layers,
 } from "lucide-react";
 import { MartHeader } from "./MartHeader";
 import { MartFooter } from "./MartFooter";
@@ -135,6 +136,56 @@ function ProductMedia({ src, alt, className = "" }: { src: string; alt: string; 
   );
 }
 
+function CategoryMedia({
+  src,
+  alt,
+  active = false,
+  sizeClass = "h-9 w-9",
+  iconClass = "h-4 w-4",
+}: {
+  src: string;
+  alt: string;
+  active?: boolean;
+  sizeClass?: string;
+  iconClass?: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  const resolved = normalizeMartImageUrl(src);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [resolved]);
+
+  if (!resolved || failed) {
+    return (
+      <div
+        className={`flex ${sizeClass} items-center justify-center rounded-lg shrink-0 ${
+          active ? "bg-white/15 text-white" : "bg-slate-100 text-[#0B5336]"
+        }`}
+      >
+        <Layers className={iconClass} />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={`${sizeClass} overflow-hidden rounded-lg shrink-0 border ${
+        active ? "border-white/30 bg-white/10" : "border-slate-200 bg-slate-100"
+      }`}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={resolved}
+        alt={alt}
+        referrerPolicy="no-referrer"
+        onError={() => setFailed(true)}
+        className="h-full w-full object-cover"
+      />
+    </div>
+  );
+}
+
 const ORDER_STEPS: MartOrderStatus[] = [
   "Pending",
   "Confirmed",
@@ -161,6 +212,9 @@ export function MartStorefront() {
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<SortOption>("featured");
+  const [cardSelectedColorByProdId, setCardSelectedColorByProdId] = useState<
+    Record<string, MartProductColor>
+  >({});
 
   // Cart & Drawer State
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -398,6 +452,87 @@ export function MartStorefront() {
     });
     return Array.from(map.values()).sort((a, b) => a.sortOrder - b.sortOrder);
   }, [labels, products]);
+
+  // Hierarchy, Product Counts & 3-Tier Category Cover Thumbnail Resolver
+  const childCategoriesByParent = useMemo(() => {
+    const map = new Map<string, MartCategory[]>();
+    visibleCategories.forEach((cat) => {
+      if (!cat.parentSlug) return;
+      const list = map.get(cat.parentSlug) || [];
+      list.push(cat);
+      map.set(cat.parentSlug, list);
+    });
+    return map;
+  }, [visibleCategories]);
+
+  const categoryDescendantsMap = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    visibleCategories.forEach((root) => {
+      const set = new Set<string>([root.slug]);
+      let added = true;
+      while (added) {
+        added = false;
+        visibleCategories.forEach((c) => {
+          if (c.parentSlug && set.has(c.parentSlug) && !set.has(c.slug)) {
+            set.add(c.slug);
+            added = true;
+          }
+        });
+      }
+      map.set(root.slug, set);
+    });
+    return map;
+  }, [visibleCategories]);
+
+  const categoryCountsMap = useMemo(() => {
+    const counts: Record<string, number> = {};
+    visibleCategories.forEach((cat) => {
+      const allowed = categoryDescendantsMap.get(cat.slug) || new Set([cat.slug]);
+      counts[cat.slug] = products.filter((p) =>
+        parseCsvSlugs(p.categories).some((cSlug) => allowed.has(cSlug))
+      ).length;
+    });
+    return counts;
+  }, [visibleCategories, categoryDescendantsMap, products]);
+
+  const categoryThumbMap = useMemo(() => {
+    const thumbs: Record<string, string> = {};
+    visibleCategories.forEach((cat) => {
+      const explicitCover = normalizeMartImageUrl(cat.imageUrl);
+      if (explicitCover) {
+        thumbs[cat.slug] = explicitCover;
+        return;
+      }
+      const allowed = categoryDescendantsMap.get(cat.slug) || new Set([cat.slug]);
+      const matchProd = products.find(
+        (p) =>
+          Boolean(normalizeMartImageUrl(p.imageUrl)) &&
+          parseCsvSlugs(p.categories).some((cSlug) => allowed.has(cSlug))
+      );
+      thumbs[cat.slug] = matchProd ? normalizeMartImageUrl(matchProd.imageUrl) : "";
+    });
+    return thumbs;
+  }, [visibleCategories, categoryDescendantsMap, products]);
+
+  const activeCategoryObj = useMemo(() => {
+    if (selectedCategories.length !== 1) return null;
+    const slug = selectedCategories[0];
+    return visibleCategories.find((c) => c.slug === slug) || categoryMap.get(slug) || null;
+  }, [selectedCategories, visibleCategories, categoryMap]);
+
+  const activeCategoryParent = useMemo(() => {
+    if (!activeCategoryObj?.parentSlug) return null;
+    return (
+      visibleCategories.find((c) => c.slug === activeCategoryObj.parentSlug) ||
+      categoryMap.get(activeCategoryObj.parentSlug) ||
+      null
+    );
+  }, [activeCategoryObj, visibleCategories, categoryMap]);
+
+  const activeCategoryChildren = useMemo(() => {
+    if (!activeCategoryObj) return [];
+    return childCategoriesByParent.get(activeCategoryObj.slug) || [];
+  }, [activeCategoryObj, childCategoriesByParent]);
 
   // Parent-child expansion so selecting a parent category matches child categories as well
   const expandedSelectedCategories = useMemo(() => {
@@ -752,14 +887,104 @@ export function MartStorefront() {
     setCart((prev) => prev.filter((item) => item.key !== key));
   }
 
-  function openQuickView(product: MartProduct) {
+  function updateCartItemVariant(
+    itemKey: string,
+    next: { color?: MartProductColor | null; size?: string; legacyVariant?: string }
+  ) {
+    const current = cart.find((i) => i.key === itemKey);
+    if (!current) return;
+    const liveProd = productMap.get(current.productId);
+    if (!liveProd || !isProductOrderable(liveProd)) return;
+
+    const colors = parseProductColors(liveProd.colorsJson);
+    const sizes = parseProductSizes(liveProd.sizesList);
+    const matrix = parseVariationMatrix(liveProd.variationMatrixJson);
+
+    const nextColor =
+      next.color !== undefined
+        ? next.color
+        : colors.find(
+            (c) => c.nameEn.trim().toLowerCase() === (current.colorName || "").trim().toLowerCase()
+          ) ||
+          colors[0] ||
+          null;
+    const nextSize =
+      next.size !== undefined ? next.size : current.sizeName || sizes[0] || "";
+    const nextLegacy =
+      next.legacyVariant !== undefined
+        ? next.legacyVariant
+        : !nextColor && !nextSize
+        ? current.variant
+        : "";
+
+    const matchedCell = findMatchingVariant(matrix, nextColor?.nameEn, nextSize);
+    if (matchedCell) {
+      if (!matchedCell.active) return;
+      if (liveProd.fulfillmentType !== "dropship" && matchedCell.stock <= 0) return;
+    }
+
+    const maxCap = Math.max(1, getProductOrderableMaxQty(liveProd, matchedCell));
+    const colorLabel = nextColor ? pickLocalized(nextColor.nameEn, nextColor.nameBn, lang) : "";
+    const structuredVariant = [colorLabel, nextSize].filter(Boolean).join(" / ");
+    const chosenVariant = structuredVariant || nextLegacy;
+    const unitPricing = resolveProductPricing(liveProd, matchedCell, 1);
+    const newKey = `${liveProd.id}__${nextColor?.nameEn || ""}__${nextSize}__${nextLegacy}`;
+    const resolvedImage = nextColor?.imageUrl || liveProd.imageUrl || current.imageUrl;
+
+    setCart((prev) => {
+      const duplicateTarget = prev.find((i) => i.key === newKey && i.key !== itemKey);
+      if (duplicateTarget) {
+        return prev
+          .filter((i) => i.key !== itemKey)
+          .map((i) =>
+            i.key === newKey
+              ? {
+                  ...i,
+                  sku: matchedCell?.sku || liveProd.sku,
+                  variantSku: matchedCell?.sku || "",
+                  variant: chosenVariant,
+                  colorName: nextColor?.nameEn || "",
+                  sizeName: nextSize,
+                  unitPrice: unitPricing.baseUnitPrice,
+                  maxStock: maxCap,
+                  imageUrl: resolvedImage,
+                  quantity: Math.min(maxCap, i.quantity + current.quantity),
+                }
+              : i
+          );
+      }
+
+      return prev.map((i) =>
+        i.key === itemKey
+          ? {
+              ...i,
+              key: newKey,
+              sku: matchedCell?.sku || liveProd.sku,
+              variantSku: matchedCell?.sku || "",
+              variant: chosenVariant,
+              colorName: nextColor?.nameEn || "",
+              sizeName: nextSize,
+              unitPrice: unitPricing.baseUnitPrice,
+              maxStock: maxCap,
+              imageUrl: resolvedImage,
+              quantity: Math.min(maxCap, i.quantity),
+            }
+          : i
+      );
+    });
+  }
+
+  function openQuickView(product: MartProduct, initialColor?: MartProductColor | null) {
     const colors = parseProductColors(product.colorsJson);
     const sizes = parseProductSizes(product.sizesList);
     const gallery = parseGalleryUrls(product.galleryUrls, product.imageUrl);
     const legacyVariants = parseProductVariants(
       pickLocalized(product.variantsEn, product.variantsBn, lang)
     );
-    const firstColor = colors[0] || null;
+    const firstColor =
+      initialColor && colors.some((c) => c.id === initialColor.id)
+        ? initialColor
+        : colors[0] || null;
     setQuickViewProduct(product);
     setQuickViewSelectedColor(firstColor);
     setQuickViewSelectedSize(sizes[0] || "");
@@ -1014,6 +1239,8 @@ export function MartStorefront() {
         selectedCategories={selectedCategories}
         onToggleCategory={toggleCategoryFilter}
         onClearCategories={() => setSelectedCategories([])}
+        categoryThumbs={categoryThumbMap}
+        categoryCounts={categoryCountsMap}
         cartCount={cartCount}
         onOpenCart={() => {
           setCheckoutStep(1);
@@ -1201,32 +1428,65 @@ export function MartStorefront() {
                         : t.catalog.productPlural}
                     </span>
                   </div>
-                  <div className="flex lg:flex-wrap items-center gap-2 overflow-x-auto snap-x scrollbar-none pb-1 lg:pb-0">
+                  <div className="flex lg:flex-wrap items-center gap-2.5 overflow-x-auto snap-x scrollbar-none pb-1 lg:pb-0">
                     <button
                       type="button"
                       onClick={() => setSelectedCategories([])}
-                      className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 snap-start min-h-[40px] border ${
+                      className={`inline-flex items-center gap-2.5 pl-1.5 pr-3.5 py-1.5 rounded-xl text-xs font-semibold transition-colors whitespace-nowrap shrink-0 snap-start min-h-[48px] border ${
                         selectedCategories.length === 0
                           ? "bg-[#0B5336] border-[#0B5336] text-white"
                           : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
                       }`}
                     >
-                      {t.catalog.allCategories}
+                      <span
+                        className={`flex h-9 w-9 items-center justify-center rounded-lg shrink-0 ${
+                          selectedCategories.length === 0
+                            ? "bg-white/15 text-white"
+                            : "bg-white text-[#0B5336] border border-slate-200"
+                        }`}
+                      >
+                        <Layers className="h-4 w-4" />
+                      </span>
+                      <span>{t.catalog.allCategories}</span>
+                      <span
+                        className={`font-mono text-[11px] tabular-nums ${
+                          selectedCategories.length === 0 ? "text-emerald-100" : "text-slate-400"
+                        }`}
+                      >
+                        {toLocalizedDigits(products.length, lang)}
+                      </span>
                     </button>
                     {visibleCategories.map((cat) => {
                       const active = selectedCategories.includes(cat.slug);
+                      const catTitle = pickLocalized(cat.nameEn, cat.nameBn, lang, cat.slug);
+                      const catThumb = categoryThumbMap[cat.slug] || "";
+                      const catCount = categoryCountsMap[cat.slug] ?? 0;
                       return (
                         <button
                           key={cat.slug}
                           type="button"
                           onClick={() => toggleCategoryFilter(cat.slug)}
-                          className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 snap-start min-h-[40px] border ${
+                          className={`inline-flex items-center gap-2.5 pl-1.5 pr-3.5 py-1.5 rounded-xl text-xs font-semibold transition-colors whitespace-nowrap shrink-0 snap-start min-h-[48px] border ${
                             active
                               ? "bg-[#0B5336] border-[#0B5336] text-white"
                               : "bg-white border-slate-200 text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336]"
                           }`}
                         >
-                          {pickLocalized(cat.nameEn, cat.nameBn, lang, cat.slug)}
+                          <CategoryMedia
+                            src={catThumb}
+                            alt={catTitle}
+                            active={active}
+                            sizeClass="h-9 w-9"
+                            iconClass="h-4 w-4"
+                          />
+                          <span>{catTitle}</span>
+                          <span
+                            className={`font-mono text-[11px] tabular-nums ${
+                              active ? "text-emerald-100" : "text-slate-400"
+                            }`}
+                          >
+                            {toLocalizedDigits(catCount, lang)}
+                          </span>
                         </button>
                       );
                     })}
@@ -1326,6 +1586,108 @@ export function MartStorefront() {
               )}
             </div>
 
+            {/* Contextual Active Category Cover Banner */}
+            {!loading && activeCategoryObj && (() => {
+              const activeTitle = pickLocalized(
+                activeCategoryObj.nameEn,
+                activeCategoryObj.nameBn,
+                lang,
+                activeCategoryObj.slug
+              );
+              const activeDesc = pickLocalized(
+                activeCategoryObj.descriptionEn,
+                activeCategoryObj.descriptionBn,
+                lang
+              );
+              const activeThumb = categoryThumbMap[activeCategoryObj.slug] || "";
+              const parentTitle = activeCategoryParent
+                ? pickLocalized(
+                    activeCategoryParent.nameEn,
+                    activeCategoryParent.nameBn,
+                    lang,
+                    activeCategoryParent.slug
+                  )
+                : "";
+
+              return (
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-4 shadow-xs">
+                  <CategoryMedia
+                    src={activeThumb}
+                    alt={activeTitle}
+                    sizeClass="h-20 w-24 sm:h-24 sm:w-32"
+                    iconClass="h-8 w-8"
+                  />
+                  <div className="flex-1 min-w-0 space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2 min-w-0">
+                        {activeCategoryParent && (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedCategories([activeCategoryParent.slug])}
+                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] min-h-[30px]"
+                          >
+                            <ArrowLeft className="h-3 w-3" />
+                            <span>{parentTitle}</span>
+                          </button>
+                        )}
+                        <h2 className="font-display text-lg sm:text-xl font-bold text-slate-900 truncate">
+                          {activeTitle}
+                        </h2>
+                      </div>
+                      <span className="font-mono text-xs font-semibold text-[#0B5336] bg-brand-50 border border-brand-200 rounded-lg px-2.5 py-1 tabular-nums whitespace-nowrap">
+                        {toLocalizedDigits(filteredProducts.length, lang)}{" "}
+                        {filteredProducts.length === 1
+                          ? t.catalog.productSingular
+                          : t.catalog.productPlural}
+                      </span>
+                    </div>
+
+                    {activeDesc && (
+                      <p className="text-xs sm:text-sm text-slate-600 leading-relaxed line-clamp-2">
+                        {activeDesc}
+                      </p>
+                    )}
+
+                    {activeCategoryChildren.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <span className="text-[11px] font-semibold text-slate-500">
+                          {t.catalog.subcategoriesLabel}:
+                        </span>
+                        {activeCategoryChildren.map((child) => {
+                          const childTitle = pickLocalized(
+                            child.nameEn,
+                            child.nameBn,
+                            lang,
+                            child.slug
+                          );
+                          const childCount = categoryCountsMap[child.slug] ?? 0;
+                          return (
+                            <button
+                              key={child.slug}
+                              type="button"
+                              onClick={() => setSelectedCategories([child.slug])}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 pl-1 pr-2.5 py-1 text-xs font-semibold text-slate-700 hover:border-[#0B5336] hover:bg-white hover:text-[#0B5336] transition-colors min-h-[34px]"
+                            >
+                              <CategoryMedia
+                                src={categoryThumbMap[child.slug] || ""}
+                                alt={childTitle}
+                                sizeClass="h-6 w-6"
+                                iconClass="h-3 w-3"
+                              />
+                              <span>{childTitle}</span>
+                              <span className="font-mono text-[10px] text-slate-400 tabular-nums">
+                                ({toLocalizedDigits(childCount, lang)})
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Catalog Loading / Empty / 2-Column Mobile Product Grid */}
             {loading ? (
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-5 lg:gap-6">
@@ -1422,6 +1784,13 @@ export function MartStorefront() {
                     ...labelNames.slice(0, 1),
                   ];
 
+                  const selectedRawColor = cardSelectedColorByProdId[product.id];
+                  const activeCardColor =
+                    selectedRawColor && colors.some((c) => c.id === selectedRawColor.id)
+                      ? selectedRawColor
+                      : null;
+                  const cardDisplayImage = activeCardColor?.imageUrl || product.imageUrl;
+
                   return (
                     <article
                       key={product.id}
@@ -1430,11 +1799,11 @@ export function MartStorefront() {
                       <div>
                         <button
                           type="button"
-                          onClick={() => openQuickView(product)}
+                          onClick={() => openQuickView(product, activeCardColor)}
                           className="block w-full aspect-square sm:aspect-[4/3] bg-slate-100 overflow-hidden border-b border-slate-100 text-left"
                         >
                           <ProductMedia
-                            src={product.imageUrl}
+                            src={cardDisplayImage}
                             alt={prodName}
                             className="transition-transform duration-200 group-hover:scale-[1.03]"
                           />
@@ -1457,7 +1826,7 @@ export function MartStorefront() {
                           <h2 className="font-display text-sm sm:text-lg font-semibold text-slate-900 leading-snug line-clamp-2">
                             <button
                               type="button"
-                              onClick={() => openQuickView(product)}
+                              onClick={() => openQuickView(product, activeCardColor)}
                               className="text-left hover:text-[#0B5336] transition-colors"
                             >
                               {prodName}
@@ -1465,22 +1834,51 @@ export function MartStorefront() {
                           </h2>
 
                           {colors.length > 0 && (
-                            <div className="flex items-center gap-1.5 pt-0.5">
-                              {colors.slice(0, 4).map((clr) => (
-                                <span
-                                  key={clr.id}
-                                  title={pickLocalized(clr.nameEn, clr.nameBn, lang)}
-                                  className="inline-block h-3 w-3 sm:h-3.5 sm:w-3.5 rounded-full border border-slate-300"
-                                  style={{ backgroundColor: clr.hex || "#0B5336" }}
-                                />
-                              ))}
-                              {colors.length > 4 && (
-                                <span className="font-mono text-[10px] text-slate-400">
-                                  +{toLocalizedDigits(colors.length - 4, lang)}
+                            <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                              {colors.slice(0, 5).map((clr) => {
+                                const clrTitle = pickLocalized(clr.nameEn, clr.nameBn, lang);
+                                const isChosen = activeCardColor?.id === clr.id;
+                                return (
+                                  <button
+                                    key={clr.id}
+                                    type="button"
+                                    title={clrTitle}
+                                    aria-label={clrTitle}
+                                    onClick={() =>
+                                      setCardSelectedColorByProdId((prev) => ({
+                                        ...prev,
+                                        [product.id]: clr,
+                                      }))
+                                    }
+                                    className={`inline-flex h-6 w-6 items-center justify-center rounded-full transition-all ${
+                                      isChosen
+                                        ? "ring-2 ring-[#0B5336] bg-brand-50"
+                                        : "hover:bg-slate-100"
+                                    }`}
+                                  >
+                                    <span
+                                      className="h-3.5 w-3.5 rounded-full border border-slate-300 shrink-0"
+                                      style={{ backgroundColor: clr.hex || "#0B5336" }}
+                                    />
+                                  </button>
+                                );
+                              })}
+                              {colors.length > 5 && (
+                                <span className="font-mono text-[10px] text-slate-400 px-0.5">
+                                  +{toLocalizedDigits(colors.length - 5, lang)}
                                 </span>
                               )}
-                              {sizes.length > 0 && (
-                                <span className="hidden sm:inline text-[11px] text-slate-500 ml-1 truncate">
+                              {activeCardColor && (
+                                <span className="text-[11px] font-medium text-[#0B5336] truncate max-w-[110px]">
+                                  {pickLocalized(
+                                    activeCardColor.nameEn,
+                                    activeCardColor.nameBn,
+                                    lang
+                                  )}
+                                </span>
+                              )}
+                              {!activeCardColor && sizes.length > 0 && (
+                                <span className="hidden sm:inline text-[11px] text-slate-500 ml-0.5 truncate">
                                   · {sizes.slice(0, 4).join(", ")}
                                 </span>
                               )}
@@ -1531,7 +1929,7 @@ export function MartStorefront() {
                         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
                           <button
                             type="button"
-                            onClick={() => openQuickView(product)}
+                            onClick={() => openQuickView(product, activeCardColor)}
                             aria-label={`${t.catalog.quickViewAria} ${prodName}`}
                             className="inline-flex items-center justify-center rounded-xl border border-slate-200 p-2 text-slate-600 hover:border-[#0B5336] hover:text-[#0B5336] transition-colors min-h-[40px] min-w-[40px] sm:min-h-[44px] sm:min-w-[44px]"
                           >
@@ -1541,7 +1939,17 @@ export function MartStorefront() {
                           <button
                             type="button"
                             disabled={outOfStock}
-                            onClick={() => addToCart(product, { qtyToAdd: 1, openDrawer: false })}
+                            onClick={() =>
+                              addToCart(product, {
+                                color: activeCardColor || colors[0] || null,
+                                qtyToAdd: 1,
+                                openDrawer: false,
+                                overrideImage:
+                                  activeCardColor?.imageUrl ||
+                                  colors[0]?.imageUrl ||
+                                  product.imageUrl,
+                              })
+                            }
                             className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#0B5336] px-2.5 sm:px-4 py-2 text-[11px] sm:text-xs font-semibold text-white hover:bg-[#08412A] disabled:opacity-50 transition-colors min-h-[40px] sm:min-h-[44px] whitespace-nowrap"
                           >
                             <ShoppingCart className="h-3.5 w-3.5 shrink-0" />
@@ -2229,6 +2637,124 @@ export function MartStorefront() {
                                 {t.cart.cartItemUnavailable}
                               </div>
                             )}
+
+                            {liveProd && (() => {
+                              const cartColors = parseProductColors(liveProd.colorsJson);
+                              const cartSizes = parseProductSizes(liveProd.sizesList);
+                              const cartMatrix = parseVariationMatrix(liveProd.variationMatrixJson);
+                              const cartLegacyVars = parseProductVariants(
+                                pickLocalized(liveProd.variantsEn, liveProd.variantsBn, lang)
+                              );
+                              const hasVariantControls =
+                                cartColors.length > 0 ||
+                                cartSizes.length > 0 ||
+                                (cartColors.length === 0 &&
+                                  cartSizes.length === 0 &&
+                                  cartLegacyVars.length > 1);
+                              if (!hasVariantControls) return null;
+
+                              return (
+                                <div className="mt-2 pt-2 border-t border-slate-200/70 space-y-1.5">
+                                  {cartColors.length > 0 && (
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                      <span className="text-[11px] font-semibold text-slate-500">
+                                        {t.cart.changeColorLabel}:
+                                      </span>
+                                      {cartColors.map((clr) => {
+                                        const isSelectedColor =
+                                          clr.nameEn.trim().toLowerCase() ===
+                                          (item.colorName || "").trim().toLowerCase();
+                                        const clrLabel = pickLocalized(clr.nameEn, clr.nameBn, lang);
+                                        return (
+                                          <button
+                                            key={clr.id}
+                                            type="button"
+                                            title={clrLabel}
+                                            aria-label={clrLabel}
+                                            onClick={() =>
+                                              updateCartItemVariant(item.key, { color: clr })
+                                            }
+                                            className={`inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[11px] font-medium transition-colors min-h-[28px] ${
+                                              isSelectedColor
+                                                ? "border-[#0B5336] bg-white text-[#0B5336] font-semibold"
+                                                : "border-slate-200 bg-white/70 text-slate-600 hover:border-slate-400"
+                                            }`}
+                                          >
+                                            <span
+                                              className="h-2.5 w-2.5 rounded-full border border-slate-300 shrink-0"
+                                              style={{ backgroundColor: clr.hex || "#0B5336" }}
+                                            />
+                                            <span>{clrLabel}</span>
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+
+                                  {cartSizes.length > 0 && (
+                                    <div className="flex items-center gap-2">
+                                      <label className="text-[11px] font-semibold text-slate-500 whitespace-nowrap">
+                                        {t.cart.changeSizeLabel}:
+                                      </label>
+                                      <select
+                                        value={item.sizeName || cartSizes[0] || ""}
+                                        onChange={(e) =>
+                                          updateCartItemVariant(item.key, { size: e.target.value })
+                                        }
+                                        aria-label={t.cart.changeSizeLabel}
+                                        className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-mono font-semibold text-slate-700 outline-none focus:border-[#0B5336] min-h-[34px]"
+                                      >
+                                        {cartSizes.map((sz) => {
+                                          const cell = findMatchingVariant(
+                                            cartMatrix,
+                                            item.colorName || cartColors[0]?.nameEn,
+                                            sz
+                                          );
+                                          const unavailable = Boolean(
+                                            cell &&
+                                              (!cell.active ||
+                                                (liveProd.fulfillmentType !== "dropship" &&
+                                                  cell.stock <= 0))
+                                          );
+                                          return (
+                                            <option key={sz} value={sz} disabled={unavailable}>
+                                              {sz}
+                                              {unavailable ? ` (${t.catalog.outOfStock})` : ""}
+                                            </option>
+                                          );
+                                        })}
+                                      </select>
+                                    </div>
+                                  )}
+
+                                  {cartColors.length === 0 &&
+                                    cartSizes.length === 0 &&
+                                    cartLegacyVars.length > 1 && (
+                                      <div className="flex items-center gap-2">
+                                        <label className="text-[11px] font-semibold text-slate-500 whitespace-nowrap">
+                                          {t.cart.changeVariantLabel}:
+                                        </label>
+                                        <select
+                                          value={item.variant || cartLegacyVars[0] || ""}
+                                          onChange={(e) =>
+                                            updateCartItemVariant(item.key, {
+                                              legacyVariant: e.target.value,
+                                            })
+                                          }
+                                          aria-label={t.cart.changeVariantLabel}
+                                          className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 outline-none focus:border-[#0B5336] min-h-[34px] max-w-full"
+                                        >
+                                          {cartLegacyVars.map((v) => (
+                                            <option key={v} value={v}>
+                                              {v}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                    )}
+                                </div>
+                              );
+                            })()}
 
                             <div className="flex items-center justify-between mt-2.5 gap-2">
                               <div className="inline-flex items-center rounded-xl border border-slate-200 bg-white">

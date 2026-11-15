@@ -466,7 +466,11 @@ function normalizeMartCell(header, val) {
     header === "sortOrder"
   ) {
     var num = Number(val);
-    return isNaN(num) ? 0 : num;
+    if (isNaN(num)) return 0;
+    if (header !== "sortOrder") {
+      return Math.max(0, num);
+    }
+    return num;
   }
   if (header === "code" || header === "discountCode") {
     return String(val || "").trim().toUpperCase();
@@ -898,6 +902,172 @@ function findVariantCellForProduct(prod, colorName, sizeName, variantSku) {
     // ignore invalid matrix json
   }
   return null;
+}
+
+function sanitizeProductFieldsAndSyncStock(obj, fallbackMatrixJson) {
+  if (!obj || typeof obj !== "object") return obj;
+  var numericCols = [
+    "price",
+    "comparePrice",
+    "costPrice",
+    "wholesaleMinQty",
+    "wholesalePrice",
+    "stock",
+    "lowStockThreshold"
+  ];
+  for (var n = 0; n < numericCols.length; n++) {
+    var k = numericCols[n];
+    if (obj[k] !== undefined && obj[k] !== "") {
+      var parsedNum = Number(obj[k]);
+      obj[k] = isNaN(parsedNum) ? 0 : Math.max(0, parsedNum);
+    }
+  }
+
+  var effectiveMatrixStr =
+    obj.variationMatrixJson !== undefined
+      ? String(obj.variationMatrixJson || "")
+      : String(fallbackMatrixJson || "");
+
+  if (effectiveMatrixStr) {
+    try {
+      var parsedMatrix = JSON.parse(effectiveMatrixStr);
+      if (Array.isArray(parsedMatrix) && parsedMatrix.length > 0) {
+        var totalMatrixStock = 0;
+        var cleanedMatrix = [];
+        for (var i = 0; i < parsedMatrix.length; i++) {
+          var cell = parsedMatrix[i];
+          if (!cell || typeof cell !== "object") continue;
+          var cleanCell = {
+            key: String(cell.key || ""),
+            colorNameEn: String(cell.colorNameEn || ""),
+            size: String(cell.size || ""),
+            sku: String(cell.sku || ""),
+            priceOverride: Math.max(0, Number(cell.priceOverride) || 0),
+            costOverride: Math.max(0, Number(cell.costOverride) || 0),
+            stock: Math.max(0, Number(cell.stock) || 0),
+            active: cell.active !== false
+          };
+          if (cleanCell.active) {
+            totalMatrixStock += cleanCell.stock;
+          }
+          cleanedMatrix.push(cleanCell);
+        }
+        if (cleanedMatrix.length > 0) {
+          if (obj.variationMatrixJson !== undefined) {
+            obj.variationMatrixJson = JSON.stringify(cleanedMatrix);
+          }
+          if (obj.fulfillmentType !== "dropship") {
+            obj.stock = totalMatrixStock;
+          }
+        }
+      }
+    } catch (e) {
+      // Keep original if matrix JSON is malformed
+    }
+  }
+  return obj;
+}
+
+function validateOrderItemsAvailability(ss, itemsJsonStr) {
+  try {
+    var items = JSON.parse(String(itemsJsonStr || "[]"));
+    if (!Array.isArray(items) || items.length === 0) {
+      return { ok: false, code: "MISSING_FIELDS", error: "Order items are required." };
+    }
+
+    var prodSheet = ensureMartSheet(ss, "Mart_Products");
+    var allProducts = readMartRows(prodSheet, "Mart_Products");
+    var prodMap = {};
+    for (var p = 0; p < allProducts.length; p++) {
+      prodMap[String(allProducts[p].id || "")] = allProducts[p];
+    }
+
+    var scalarRequested = {};
+    var cellRequested = {};
+
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      if (!item || !item.productId) {
+        return { ok: false, code: "VARIANT_UNAVAILABLE", error: "Ordered item is unavailable." };
+      }
+      var pid = String(item.productId);
+      var prod = prodMap[pid];
+      if (!prod || prod.active !== true) {
+        return {
+          ok: false,
+          code: "OUT_OF_STOCK",
+          error: (item.name || "Product") + " is no longer available."
+        };
+      }
+
+      var qty = Math.max(1, Number(item.quantity) || 1);
+      if (prod.fulfillmentType === "dropship") {
+        if (prod.supplierAvailable === false) {
+          return {
+            ok: false,
+            code: "OUT_OF_STOCK",
+            error: (prod.nameEn || item.name || "Product") + " supply is currently paused."
+          };
+        }
+        continue;
+      }
+
+      var matrix = [];
+      if (prod.variationMatrixJson) {
+        try {
+          var parsedM = JSON.parse(String(prod.variationMatrixJson));
+          if (Array.isArray(parsedM)) matrix = parsedM;
+        } catch (e) {
+          matrix = [];
+        }
+      }
+
+      if (matrix.length > 0 && (item.colorName || item.sizeName || item.variantSku)) {
+        var matchedCell = findVariantCellForProduct(
+          prod,
+          item.colorName,
+          item.sizeName,
+          item.variantSku
+        );
+        if (!matchedCell || matchedCell.active === false) {
+          return {
+            ok: false,
+            code: "VARIANT_UNAVAILABLE",
+            error: "Selected variant for " + (prod.nameEn || item.name || "product") + " is unavailable."
+          };
+        }
+        var cellId =
+          pid +
+          "::" +
+          String(
+            matchedCell.key ||
+              matchedCell.sku ||
+              (String(matchedCell.colorNameEn || "") + "::" + String(matchedCell.size || ""))
+          );
+        cellRequested[cellId] = (cellRequested[cellId] || 0) + qty;
+        if (cellRequested[cellId] > Math.max(0, Number(matchedCell.stock) || 0)) {
+          return {
+            ok: false,
+            code: "OUT_OF_STOCK",
+            error: "Insufficient stock for " + (prod.nameEn || item.name || "selected variant") + "."
+          };
+        }
+      } else {
+        scalarRequested[pid] = (scalarRequested[pid] || 0) + qty;
+        if (scalarRequested[pid] > Math.max(0, Number(prod.stock) || 0)) {
+          return {
+            ok: false,
+            code: "OUT_OF_STOCK",
+            error: "Insufficient stock for " + (prod.nameEn || item.name || "product") + "."
+          };
+        }
+      }
+    }
+
+    return { ok: true };
+  } catch (err) {
+    return { ok: true };
+  }
 }
 
 function enrichOrderPayloadServerSide(ss, payload) {
@@ -1474,7 +1644,13 @@ function doPost(e) {
       var sheet = ensureMartSheet(ss, sheetName);
       var payload = body.data || {};
       if (isPublicOrder) {
+        var availCheck = validateOrderItemsAvailability(ss, payload.itemsJson);
+        if (!availCheck.ok) {
+          return jsonOut(availCheck);
+        }
         payload = enrichOrderPayloadServerSide(ss, payload);
+      } else if (sheetName === "Mart_Products") {
+        payload = sanitizeProductFieldsAndSyncStock(payload, "");
       }
 
       var now = new Date().toISOString();
@@ -1580,6 +1756,20 @@ function doPost(e) {
       if (body.status !== undefined) updates.status = body.status;
       if (body.active !== undefined) updates.active = body.active;
       if (body.featured !== undefined) updates.featured = body.featured;
+      if (updSheetName === "Mart_Products") {
+        var prodSyncObj = {
+          fulfillmentType:
+            updates.fulfillmentType !== undefined
+              ? updates.fulfillmentType
+              : prevRowObj.fulfillmentType
+        };
+        var uKeys = Object.keys(updates);
+        for (var uk = 0; uk < uKeys.length; uk++) {
+          prodSyncObj[uKeys[uk]] = updates[uKeys[uk]];
+        }
+        sanitizeProductFieldsAndSyncStock(prodSyncObj, prevRowObj.variationMatrixJson);
+        updates = prodSyncObj;
+      }
 
       var updateKeys = Object.keys(updates);
       for (var k = 0; k < updateKeys.length; k++) {

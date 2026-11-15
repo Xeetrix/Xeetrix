@@ -5,6 +5,7 @@ import {
   getExpectedMartAdminPassword,
   getMartApiTokenServer,
   getMartScriptUrlServer,
+  MartScriptError,
 } from "@/lib/martServer";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +35,25 @@ function isAdminHeaderAuthorized(req: NextRequest): boolean {
   const provided = (req.headers.get("x-mart-admin-pass") || "").trim();
   const expected = getExpectedMartAdminPassword();
   return Boolean(provided && provided === expected);
+}
+
+function clampProductNumerics(obj: Record<string, unknown> | undefined) {
+  if (!obj || typeof obj !== "object") return;
+  const numKeys = [
+    "price",
+    "comparePrice",
+    "costPrice",
+    "wholesaleMinQty",
+    "wholesalePrice",
+    "stock",
+    "lowStockThreshold",
+  ];
+  for (const key of numKeys) {
+    if (obj[key] !== undefined && obj[key] !== "") {
+      const parsed = Number(obj[key]);
+      obj[key] = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+    }
+  }
 }
 
 export async function GET(req: NextRequest) {
@@ -199,15 +219,30 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (String(body.sheet || "") === "Mart_Products") {
+      if (action === "createRecord" && body.data && typeof body.data === "object") {
+        clampProductNumerics(body.data as Record<string, unknown>);
+      }
+      if (
+        (action === "updateRecord" || action === "updateStatus") &&
+        body.updates &&
+        typeof body.updates === "object"
+      ) {
+        clampProductNumerics(body.updates as Record<string, unknown>);
+      }
+    }
+
     const result = await callMartScriptPost(body, true);
     return NextResponse.json(result);
   } catch (err) {
+    const scriptErr = err instanceof MartScriptError ? err : null;
     return NextResponse.json(
       {
         ok: false,
+        ...(scriptErr?.code ? { code: scriptErr.code } : {}),
         error: err instanceof Error ? err.message : "Failed to complete Mart Admin action.",
       },
-      { status: 502 }
+      { status: scriptErr?.status || 502 }
     );
   }
 }

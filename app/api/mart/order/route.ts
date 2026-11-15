@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { callMartScriptPost, getMartScriptUrlServer } from "@/lib/martServer";
+import { callMartScriptPost, getMartScriptUrlServer, MartScriptError } from "@/lib/martServer";
 
 export const dynamic = "force-dynamic";
 
@@ -114,12 +114,12 @@ export async function POST(req: NextRequest) {
           itemsJson: JSON.stringify(cleanItems),
           itemsSummary,
           totalItems,
-          subtotal: Number(body.subtotal) || 0,
+          subtotal: Math.max(0, Number(body.subtotal) || 0),
           discountCode,
           discountAmount,
           deliveryArea,
-          deliveryCharge: Number(body.deliveryCharge) || 0,
-          totalAmount: Number(body.totalAmount) || 0,
+          deliveryCharge: Math.max(0, Number(body.deliveryCharge) || 0),
+          totalAmount: Math.max(0, Number(body.totalAmount) || 0),
           customerName,
           phone,
           address,
@@ -172,16 +172,23 @@ export async function POST(req: NextRequest) {
       ...(safeRecord ? { record: safeRecord } : {}),
     });
   } catch (err) {
+    const scriptErr = err instanceof MartScriptError ? err : null;
+    const status =
+      scriptErr?.code === "OUT_OF_STOCK" || scriptErr?.code === "VARIANT_UNAVAILABLE"
+        ? 409
+        : scriptErr?.code === "MISSING_FIELDS"
+        ? 400
+        : scriptErr?.status || 502;
     return NextResponse.json(
       {
         ok: false,
-        code: "GENERIC_NETWORK",
+        code: scriptErr?.code || "GENERIC_NETWORK",
         error:
           err instanceof Error
             ? err.message
             : "Order could not be placed. Please call +880 965 803 6631.",
       },
-      { status: 502 }
+      { status }
     );
   }
 }
