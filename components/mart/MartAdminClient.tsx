@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   ShoppingCart,
   Package,
+  Tags,
   SlidersHorizontal,
   Users,
   LogOut,
@@ -28,6 +29,8 @@ import {
   X,
 } from "lucide-react";
 import { MartLogo } from "./MartLogo";
+import { MartLanguageSwitcher } from "./MartLanguageSwitcher";
+import { useMartI18n } from "./MartI18nProvider";
 import {
   clearStoredMartAdminPass,
   createMartRecord,
@@ -36,10 +39,14 @@ import {
   exportMartOrdersToCsv,
   fetchMartAdminData,
   fileToMartBase64,
-  formatMartBDT,
   getStoredMartAdminPass,
+  MART_CONTACT_EMAIL,
+  MART_CONTACT_PHONE,
   MartAdminBundle,
+  MartApiError,
   MartCategory,
+  MartLabel,
+  MartLabelTone,
   MartOrder,
   MartOrderStatus,
   MartProduct,
@@ -52,8 +59,23 @@ import {
   uploadMartImageToDrive,
   verifyMartAdminPassword,
 } from "@/lib/martApi";
+import {
+  formatMartDate,
+  formatMartDateTime,
+  formatMartPrice,
+  parseCsvSlugs,
+  pickLocalized,
+  toLocalizedDigits,
+  translateMartError,
+} from "@/lib/martI18n";
 
-type MartAdminSection = "analytics" | "orders" | "products" | "settings" | "customers";
+type MartAdminSection =
+  | "analytics"
+  | "orders"
+  | "products"
+  | "taxonomy"
+  | "settings"
+  | "customers";
 
 const MART_SESSION_KEY = "xeetrix_mart_admin_session_v1";
 
@@ -66,7 +88,13 @@ const ORDER_STATUSES: MartOrderStatus[] = [
   "Cancelled",
 ];
 
-function StatusLabel({ status }: { status: MartOrderStatus }) {
+function StatusLabel({
+  status,
+  label,
+}: {
+  status: MartOrderStatus;
+  label: string;
+}) {
   const tone =
     status === "Delivered"
       ? "text-[#0B5336] font-semibold"
@@ -75,10 +103,12 @@ function StatusLabel({ status }: { status: MartOrderStatus }) {
       : status === "Pending"
       ? "text-gold-700 font-semibold"
       : "text-slate-800 font-semibold";
-  return <span className={tone}>{status}</span>;
+  return <span className={tone}>{label}</span>;
 }
 
 export function MartAdminClient() {
+  const { lang, t } = useMartI18n();
+
   const [authenticated, setAuthenticated] = useState(false);
   const [authReady, setAuthReady] = useState(false);
   const [passwordInput, setPasswordInput] = useState("");
@@ -96,29 +126,46 @@ export function MartAdminClient() {
   const [orderStatusFilter, setOrderStatusFilter] = useState<"All" | MartOrderStatus>("All");
   const [invoiceOrder, setInvoiceOrder] = useState<MartOrder | null>(null);
 
-  // Product Form (Add or Edit)
+  // Product Form (Add or Edit — Bilingual + Multi-Category + Multi-Label)
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [prodSku, setProdSku] = useState("");
-  const [prodName, setProdName] = useState("");
-  const [prodCategory, setProdCategory] = useState("");
+  const [prodNameEn, setProdNameEn] = useState("");
+  const [prodNameBn, setProdNameBn] = useState("");
+  const [prodCategories, setProdCategories] = useState<string[]>([]);
+  const [prodLabels, setProdLabels] = useState<string[]>([]);
   const [prodPrice, setProdPrice] = useState("");
   const [prodComparePrice, setProdComparePrice] = useState("");
   const [prodStock, setProdStock] = useState("20");
-  const [prodVariants, setProdVariants] = useState("");
+  const [prodVariantsEn, setProdVariantsEn] = useState("");
+  const [prodVariantsBn, setProdVariantsBn] = useState("");
   const [prodImageUrl, setProdImageUrl] = useState("");
-  const [prodDesc, setProdDesc] = useState("");
+  const [prodDescEn, setProdDescEn] = useState("");
+  const [prodDescBn, setProdDescBn] = useState("");
   const [prodFeatured, setProdFeatured] = useState(false);
   const [prodActive, setProdActive] = useState(true);
   const [uploadingProdImg, setUploadingProdImg] = useState(false);
   const [savingProduct, setSavingProduct] = useState(false);
   const [productSearch, setProductSearch] = useState("");
 
-  // Category Form
-  const [catName, setCatName] = useState("");
-  const [catDesc, setCatDesc] = useState("");
+  // Category Form (Mart_Categories)
+  const [catNameEn, setCatNameEn] = useState("");
+  const [catNameBn, setCatNameBn] = useState("");
+  const [catParentSlug, setCatParentSlug] = useState("");
+  const [catSortOrder, setCatSortOrder] = useState("0");
+  const [catDescEn, setCatDescEn] = useState("");
+  const [catDescBn, setCatDescBn] = useState("");
   const [catImageUrl, setCatImageUrl] = useState("");
   const [uploadingCatImg, setUploadingCatImg] = useState(false);
   const [savingCategory, setSavingCategory] = useState(false);
+
+  // Label Form (Mart_Labels)
+  const [lblNameEn, setLblNameEn] = useState("");
+  const [lblNameBn, setLblNameBn] = useState("");
+  const [lblTone, setLblTone] = useState<MartLabelTone>("emerald");
+  const [lblSortOrder, setLblSortOrder] = useState("0");
+  const [lblDescEn, setLblDescEn] = useState("");
+  const [lblDescBn, setLblDescBn] = useState("");
+  const [savingLabel, setSavingLabel] = useState(false);
 
   // Store Settings Form
   const [settingsForm, setSettingsForm] = useState<MartSettings>(DEFAULT_MART_SETTINGS);
@@ -148,13 +195,12 @@ export function MartAdminClient() {
       setData(res);
       setSettingsForm(res.settings);
     } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : "Failed to sync store data from Google Sheets.";
-      if (msg.toLowerCase().includes("unauthorized")) {
+      const apiErr = err as MartApiError;
+      if (apiErr?.code === "UNAUTHORIZED") {
         handleLogout();
-        setAuthError("Your admin session expired or passcode changed. Please unlock again.");
+        setAuthError(t.admin.sessionExpired);
       } else {
-        showNotice("error", msg);
+        showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
       }
     } finally {
       setLoading(false);
@@ -189,8 +235,11 @@ export function MartAdminClient() {
       setAuthenticated(true);
       setPasswordInput("");
     } catch (err) {
+      const apiErr = err as MartApiError;
       setAuthError(
-        err instanceof Error ? err.message : "Invalid Mart Admin passcode. Please try again."
+        apiErr?.code === "UNAUTHORIZED"
+          ? t.admin.invalidPasscode
+          : translateMartError(apiErr?.message, lang, apiErr?.code)
       );
     } finally {
       setAuthLoading(false);
@@ -211,14 +260,18 @@ export function MartAdminClient() {
   function resetProductForm() {
     setEditingProductId(null);
     setProdSku("");
-    setProdName("");
-    setProdCategory("");
+    setProdNameEn("");
+    setProdNameBn("");
+    setProdCategories([]);
+    setProdLabels([]);
     setProdPrice("");
     setProdComparePrice("");
     setProdStock("20");
-    setProdVariants("");
+    setProdVariantsEn("");
+    setProdVariantsBn("");
     setProdImageUrl("");
-    setProdDesc("");
+    setProdDescEn("");
+    setProdDescBn("");
     setProdFeatured(false);
     setProdActive(true);
   }
@@ -226,14 +279,18 @@ export function MartAdminClient() {
   function startEditProduct(p: MartProduct) {
     setEditingProductId(p.id);
     setProdSku(p.sku || "");
-    setProdName(p.name);
-    setProdCategory(p.category || "");
+    setProdNameEn(p.nameEn || "");
+    setProdNameBn(p.nameBn || "");
+    setProdCategories(parseCsvSlugs(p.categories));
+    setProdLabels(parseCsvSlugs(p.labels));
     setProdPrice(String(p.price));
     setProdComparePrice(p.comparePrice ? String(p.comparePrice) : "");
     setProdStock(String(p.stock));
-    setProdVariants(p.variants || "");
+    setProdVariantsEn(p.variantsEn || "");
+    setProdVariantsBn(p.variantsBn || "");
     setProdImageUrl(p.imageUrl || "");
-    setProdDesc(p.description || "");
+    setProdDescEn(p.descriptionEn || "");
+    setProdDescBn(p.descriptionBn || "");
     setProdFeatured(Boolean(p.featured));
     setProdActive(Boolean(p.active));
     setActiveSection("products");
@@ -242,14 +299,23 @@ export function MartAdminClient() {
     }
   }
 
+  function toggleProdCategorySlug(slug: string) {
+    setProdCategories((prev) =>
+      prev.includes(slug) ? prev.filter((s) => s !== slug) : [...prev, slug]
+    );
+  }
+
+  function toggleProdLabelSlug(slug: string) {
+    setProdLabels((prev) =>
+      prev.includes(slug) ? prev.filter((s) => s !== slug) : [...prev, slug]
+    );
+  }
+
   async function handleProductImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!data?.isLiveBackend) {
-      showNotice(
-        "error",
-        "Connect MART_SCRIPT_URL in environment variables to upload images to Google Drive."
-      );
+      showNotice("error", t.admin.products.errConnectBackend);
       e.target.value = "";
       return;
     }
@@ -264,12 +330,10 @@ export function MartAdminClient() {
         folderType: "products",
       });
       setProdImageUrl(uploaded.url);
-      showNotice("success", `Image uploaded to Google Drive (${uploaded.fileId}).`);
+      showNotice("success", `${t.admin.products.msgImageUploaded} (${uploaded.fileId})`);
     } catch (err) {
-      showNotice(
-        "error",
-        err instanceof Error ? err.message : "Failed to upload product image to Google Drive."
-      );
+      const apiErr = err as MartApiError;
+      showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
     } finally {
       setUploadingProdImg(false);
       e.target.value = "";
@@ -279,24 +343,28 @@ export function MartAdminClient() {
   async function handleSaveProduct(e: React.FormEvent) {
     e.preventDefault();
     if (!data?.isLiveBackend) {
-      showNotice("error", "Connect your Google Apps Script URL first to save products.");
+      showNotice("error", t.admin.products.errConnectBackend);
       return;
     }
-    if (!prodName.trim() || !prodPrice) {
-      showNotice("error", "Product name and selling price are required.");
+    if ((!prodNameEn.trim() && !prodNameBn.trim()) || !prodPrice) {
+      showNotice("error", t.admin.products.errMissingProdFields);
       return;
     }
 
     const payload = {
       sku: prodSku.trim() || `XM-${Date.now().toString().slice(-5)}`,
-      name: prodName.trim(),
-      category: prodCategory.trim() || "General",
+      nameEn: prodNameEn.trim() || prodNameBn.trim(),
+      nameBn: prodNameBn.trim(),
+      categories: prodCategories.join(","),
+      labels: prodLabels.join(","),
       price: Number(prodPrice) || 0,
       comparePrice: Number(prodComparePrice) || 0,
       stock: Math.max(0, Number(prodStock) || 0),
-      variants: prodVariants.trim(),
+      variantsEn: prodVariantsEn.trim(),
+      variantsBn: prodVariantsBn.trim(),
       imageUrl: prodImageUrl.trim(),
-      description: prodDesc.trim(),
+      descriptionEn: prodDescEn.trim(),
+      descriptionBn: prodDescBn.trim(),
       featured: prodFeatured,
       active: prodActive,
     };
@@ -315,7 +383,7 @@ export function MartAdminClient() {
               }
             : prev
         );
-        showNotice("success", `Product ${editingProductId} updated in Mart_Products.`);
+        showNotice("success", `${t.admin.products.msgSaved} (${editingProductId})`);
       } else {
         const res = await createMartRecord("Mart_Products", payload);
         setData((prev) =>
@@ -329,11 +397,12 @@ export function MartAdminClient() {
               }
             : prev
         );
-        showNotice("success", `Product ${res.id} published to Mart_Products.`);
+        showNotice("success", `${t.admin.products.msgCreated} (${res.id})`);
       }
       resetProductForm();
     } catch (err) {
-      showNotice("error", err instanceof Error ? err.message : "Failed to save product.");
+      const apiErr = err as MartApiError;
+      showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
     } finally {
       setSavingProduct(false);
     }
@@ -357,12 +426,10 @@ export function MartAdminClient() {
             }
           : prev
       );
-      showNotice(
-        "success",
-        `${p.name} marked ${field === "active" ? (nextVal ? "Active" : "Paused") : nextVal ? "Featured" : "Standard"}.`
-      );
+      showNotice("success", t.admin.products.msgFlagUpdated);
     } catch (err) {
-      showNotice("error", err instanceof Error ? err.message : "Failed to update product.");
+      const apiErr = err as MartApiError;
+      showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
     }
   }
 
@@ -382,7 +449,8 @@ export function MartAdminClient() {
           : prev
       );
     } catch (err) {
-      showNotice("error", err instanceof Error ? err.message : "Failed to update stock.");
+      const apiErr = err as MartApiError;
+      showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
     }
   }
 
@@ -398,9 +466,10 @@ export function MartAdminClient() {
       if (editingProductId === id) {
         resetProductForm();
       }
-      showNotice("success", `Product ${id} deleted from Mart_Products.`);
+      showNotice("success", `${t.admin.products.msgDeleted} (${id})`);
     } catch (err) {
-      showNotice("error", err instanceof Error ? err.message : "Failed to delete product.");
+      const apiErr = err as MartApiError;
+      showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
     }
   }
 
@@ -416,9 +485,13 @@ export function MartAdminClient() {
             }
           : prev
       );
-      showNotice("success", `Order ${orderId} updated to ${status}.`);
+      showNotice("success", `${orderId}: ${t.orderStatuses[status]}`);
     } catch (err) {
-      showNotice("error", err instanceof Error ? err.message : "Failed to update order status.");
+      const apiErr = err as MartApiError;
+      showNotice(
+        "error",
+        translateMartError(apiErr?.message, lang, apiErr?.code) || t.admin.orders.errOrderUpdate
+      );
     }
   }
 
@@ -426,10 +499,7 @@ export function MartAdminClient() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!data?.isLiveBackend) {
-      showNotice(
-        "error",
-        "Connect MART_SCRIPT_URL in environment variables to upload category images to Drive."
-      );
+      showNotice("error", t.admin.products.errConnectBackend);
       e.target.value = "";
       return;
     }
@@ -444,12 +514,10 @@ export function MartAdminClient() {
         folderType: "categories",
       });
       setCatImageUrl(uploaded.url);
-      showNotice("success", `Category image saved to Drive (${uploaded.fileId}).`);
+      showNotice("success", `${t.admin.taxonomy.msgCatImageUploaded} (${uploaded.fileId})`);
     } catch (err) {
-      showNotice(
-        "error",
-        err instanceof Error ? err.message : "Failed to upload category image to Google Drive."
-      );
+      const apiErr = err as MartApiError;
+      showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
     } finally {
       setUploadingCatImg(false);
       e.target.value = "";
@@ -459,19 +527,24 @@ export function MartAdminClient() {
   async function handleCreateCategory(e: React.FormEvent) {
     e.preventDefault();
     if (!data?.isLiveBackend) {
-      showNotice("error", "Connect Google Apps Script URL first to save categories.");
+      showNotice("error", t.admin.products.errConnectBackend);
       return;
     }
-    if (!catName.trim()) {
-      showNotice("error", "Category name is required.");
+    if (!catNameEn.trim() && !catNameBn.trim()) {
+      showNotice("error", t.admin.taxonomy.errCatNameReq);
       return;
     }
 
+    const baseEn = catNameEn.trim() || catNameBn.trim();
     const payload = {
-      name: catName.trim(),
-      slug: slugifyCategory(catName),
-      description: catDesc.trim(),
+      nameEn: baseEn,
+      nameBn: catNameBn.trim(),
+      slug: slugifyCategory(baseEn),
+      parentSlug: catParentSlug.trim(),
+      descriptionEn: catDescEn.trim(),
+      descriptionBn: catDescBn.trim(),
       imageUrl: catImageUrl.trim(),
+      sortOrder: Number(catSortOrder) || 0,
       active: true,
     };
 
@@ -485,16 +558,21 @@ export function MartAdminClient() {
               categories: [
                 { id: res.id, ...payload, createdAt: new Date().toISOString() },
                 ...prev.categories,
-              ],
+              ].sort((a, b) => a.sortOrder - b.sortOrder),
             }
           : prev
       );
-      setCatName("");
-      setCatDesc("");
+      setCatNameEn("");
+      setCatNameBn("");
+      setCatParentSlug("");
+      setCatSortOrder("0");
+      setCatDescEn("");
+      setCatDescBn("");
       setCatImageUrl("");
-      showNotice("success", `Category "${payload.name}" added to Mart_Categories.`);
+      showNotice("success", t.admin.taxonomy.msgCatCreated);
     } catch (err) {
-      showNotice("error", err instanceof Error ? err.message : "Failed to create category.");
+      const apiErr = err as MartApiError;
+      showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
     } finally {
       setSavingCategory(false);
     }
@@ -516,7 +594,8 @@ export function MartAdminClient() {
           : prev
       );
     } catch (err) {
-      showNotice("error", err instanceof Error ? err.message : "Failed to toggle category.");
+      const apiErr = err as MartApiError;
+      showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
     }
   }
 
@@ -529,16 +608,106 @@ export function MartAdminClient() {
           ? { ...prev, categories: prev.categories.filter((c) => c.id !== id) }
           : prev
       );
-      showNotice("success", `Category ${id} removed.`);
+      showNotice("success", t.admin.taxonomy.msgCatDeleted);
     } catch (err) {
-      showNotice("error", err instanceof Error ? err.message : "Failed to delete category.");
+      const apiErr = err as MartApiError;
+      showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
+    }
+  }
+
+  async function handleCreateLabel(e: React.FormEvent) {
+    e.preventDefault();
+    if (!data?.isLiveBackend) {
+      showNotice("error", t.admin.products.errConnectBackend);
+      return;
+    }
+    if (!lblNameEn.trim() && !lblNameBn.trim()) {
+      showNotice("error", t.admin.taxonomy.errLblNameReq);
+      return;
+    }
+
+    const baseEn = lblNameEn.trim() || lblNameBn.trim();
+    const payload = {
+      nameEn: baseEn,
+      nameBn: lblNameBn.trim(),
+      slug: slugifyCategory(baseEn),
+      descriptionEn: lblDescEn.trim(),
+      descriptionBn: lblDescBn.trim(),
+      tone: lblTone,
+      sortOrder: Number(lblSortOrder) || 0,
+      active: true,
+    };
+
+    setSavingLabel(true);
+    try {
+      const res = await createMartRecord("Mart_Labels", payload);
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              labels: [
+                { id: res.id, ...payload, createdAt: new Date().toISOString() },
+                ...(prev.labels || []),
+              ].sort((a, b) => a.sortOrder - b.sortOrder),
+            }
+          : prev
+      );
+      setLblNameEn("");
+      setLblNameBn("");
+      setLblTone("emerald");
+      setLblSortOrder("0");
+      setLblDescEn("");
+      setLblDescBn("");
+      showNotice("success", t.admin.taxonomy.msgLblCreated);
+    } catch (err) {
+      const apiErr = err as MartApiError;
+      showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
+    } finally {
+      setSavingLabel(false);
+    }
+  }
+
+  async function handleToggleLabel(lbl: MartLabel) {
+    if (!data?.isLiveBackend) return;
+    const nextActive = !lbl.active;
+    try {
+      await updateMartRecord("Mart_Labels", lbl.id, { active: nextActive });
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              labels: (prev.labels || []).map((l) =>
+                l.id === lbl.id ? { ...l, active: nextActive } : l
+              ),
+            }
+          : prev
+      );
+    } catch (err) {
+      const apiErr = err as MartApiError;
+      showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
+    }
+  }
+
+  async function handleDeleteLabel(id: string) {
+    if (!data?.isLiveBackend) return;
+    try {
+      await deleteMartRecord("Mart_Labels", id);
+      setData((prev) =>
+        prev
+          ? { ...prev, labels: (prev.labels || []).filter((l) => l.id !== id) }
+          : prev
+      );
+      showNotice("success", t.admin.taxonomy.msgLblDeleted);
+    } catch (err) {
+      const apiErr = err as MartApiError;
+      showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
     }
   }
 
   async function handleSaveSettings(e: React.FormEvent) {
     e.preventDefault();
     if (!data?.isLiveBackend) {
-      showNotice("error", "Connect Google Apps Script URL first to save store settings.");
+      showNotice("error", t.admin.products.errConnectBackend);
       return;
     }
     setSavingSettings(true);
@@ -546,9 +715,10 @@ export function MartAdminClient() {
       const updated = await updateMartStoreSettings(settingsForm);
       setSettingsForm(updated);
       setData((prev) => (prev ? { ...prev, settings: updated } : prev));
-      showNotice("success", "Store settings & delivery charges saved to Mart_Settings.");
+      showNotice("success", t.admin.settings.msgSaved);
     } catch (err) {
-      showNotice("error", err instanceof Error ? err.message : "Failed to save store settings.");
+      const apiErr = err as MartApiError;
+      showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
     } finally {
       setSavingSettings(false);
     }
@@ -556,7 +726,24 @@ export function MartAdminClient() {
 
   const products = useMemo(() => data?.products || [], [data]);
   const categories = useMemo(() => data?.categories || [], [data]);
+  const labels = useMemo(() => data?.labels || [], [data]);
   const orders = useMemo(() => data?.orders || [], [data]);
+
+  const categoryMap = useMemo(() => {
+    const map = new Map<string, MartCategory>();
+    categories.forEach((c) => {
+      if (c.slug) map.set(c.slug, c);
+    });
+    return map;
+  }, [categories]);
+
+  const labelMap = useMemo(() => {
+    const map = new Map<string, MartLabel>();
+    labels.forEach((l) => {
+      if (l.slug) map.set(l.slug, l);
+    });
+    return map;
+  }, [labels]);
 
   const analytics = useMemo(() => {
     const todayKey = new Date().toISOString().slice(0, 10);
@@ -585,6 +772,7 @@ export function MartAdminClient() {
 
     return {
       totalRevenue,
+      validOrdersCount: activeOrders.length,
       todaysOrders,
       pendingOrders,
       deliveredOrders,
@@ -610,13 +798,25 @@ export function MartAdminClient() {
   const filteredProducts = useMemo(() => {
     const q = productSearch.trim().toLowerCase();
     if (!q) return products;
-    return products.filter(
-      (p) =>
-        p.name.toLowerCase().includes(q) ||
-        p.sku.toLowerCase().includes(q) ||
-        p.category.toLowerCase().includes(q)
-    );
-  }, [products, productSearch]);
+    return products.filter((p) => {
+      const catNames = parseCsvSlugs(p.categories)
+        .map((s) => {
+          const c = categoryMap.get(s);
+          return c ? `${c.nameEn} ${c.nameBn} ${c.slug}` : s;
+        })
+        .join(" ");
+      const lblNames = parseCsvSlugs(p.labels)
+        .map((s) => {
+          const l = labelMap.get(s);
+          return l ? `${l.nameEn} ${l.nameBn} ${l.slug}` : s;
+        })
+        .join(" ");
+      return [p.nameEn, p.nameBn, p.sku, catNames, lblNames]
+        .join(" ")
+        .toLowerCase()
+        .includes(q);
+    });
+  }, [products, productSearch, categoryMap, labelMap]);
 
   const customers = useMemo(() => {
     const map = new Map<
@@ -669,26 +869,28 @@ export function MartAdminClient() {
   if (!authReady) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center text-sm text-slate-500">
-        Initializing Xeetrix Mart Admin...
+        {t.admin.initializing}
       </div>
     );
   }
 
-  // Separate Mart Admin Password Gate
+  // Bilingual Password Gate
   if (!authenticated) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col justify-center px-4 py-12">
         <div className="mx-auto w-full max-w-md space-y-6">
+          <div className="flex justify-end">
+            <MartLanguageSwitcher />
+          </div>
+
           <div className="text-center space-y-2">
             <Link href="/mart" className="inline-flex justify-center">
               <MartLogo />
             </Link>
             <h1 className="font-display text-2xl font-bold text-slate-900 pt-2">
-              Store Admin Console
+              {t.admin.portalTitle}
             </h1>
-            <p className="text-sm text-slate-600">
-              Sign in to manage products, inventory, orders, delivery rates, and customer analytics.
-            </p>
+            <p className="text-sm text-slate-600">{t.admin.portalSubtitle}</p>
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-white p-7 shadow-card">
@@ -702,7 +904,7 @@ export function MartAdminClient() {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Store Admin Passcode
+                  {t.admin.passcodeLabel}
                 </label>
                 <div className="relative">
                   <Lock className="h-4 w-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -711,13 +913,15 @@ export function MartAdminClient() {
                     required
                     value={passwordInput}
                     onChange={(e) => setPasswordInput(e.target.value)}
-                    placeholder="Enter store passcode"
+                    placeholder={t.admin.passcodePlaceholder}
                     className="input pl-10 pr-10"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword((prev) => !prev)}
-                    aria-label={showPassword ? "Hide passcode" : "Show passcode"}
+                    aria-label={
+                      showPassword ? t.admin.hidePasscodeAria : t.admin.showPasscodeAria
+                    }
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
                   >
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -730,16 +934,16 @@ export function MartAdminClient() {
                 disabled={authLoading}
                 className="btn-primary w-full py-3 text-sm disabled:opacity-60"
               >
-                {authLoading ? "Verifying Passcode..." : "Unlock Store Admin"}
+                {authLoading ? t.admin.verifying : t.admin.unlockBtn}
               </button>
             </form>
 
             <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
               <Link href="/mart" className="inline-flex items-center gap-1.5 hover:text-[#0B5336]">
                 <ArrowLeft className="h-3.5 w-3.5" />
-                <span>Back to Storefront</span>
+                <span>{t.admin.backToStore}</span>
               </Link>
-              <span>Independent Mart Portal</span>
+              <span>{t.admin.independentPortal}</span>
             </div>
           </div>
         </div>
@@ -752,11 +956,12 @@ export function MartAdminClient() {
     label: string;
     icon: React.ComponentType<{ className?: string }>;
   }[] = [
-    { id: "analytics", label: "Dashboard & KPIs", icon: LayoutDashboard },
-    { id: "orders", label: "Order Management", icon: ShoppingCart },
-    { id: "products", label: "Products & Inventory", icon: Package },
-    { id: "settings", label: "Categories & Settings", icon: SlidersHorizontal },
-    { id: "customers", label: "Customers & Reports", icon: Users },
+    { id: "analytics", label: t.admin.nav.analytics, icon: LayoutDashboard },
+    { id: "orders", label: t.admin.nav.orders, icon: ShoppingCart },
+    { id: "products", label: t.admin.nav.products, icon: Package },
+    { id: "taxonomy", label: t.admin.nav.taxonomy, icon: Tags },
+    { id: "settings", label: t.admin.nav.settings, icon: SlidersHorizontal },
+    { id: "customers", label: t.admin.nav.customers, icon: Users },
   ];
 
   return (
@@ -764,18 +969,21 @@ export function MartAdminClient() {
       {/* Sidebar (264px) */}
       <aside className="w-full lg:w-[264px] shrink-0 bg-slate-900 text-slate-200 border-b lg:border-b-0 lg:border-r border-slate-800 flex flex-col justify-between">
         <div className="p-5 space-y-6">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <Link href="/mart">
               <MartLogo inverted />
             </Link>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="lg:hidden inline-flex items-center gap-1.5 rounded-lg border border-slate-700 px-2.5 py-1.5 text-xs text-slate-300 hover:text-white"
-            >
-              <LogOut className="h-3.5 w-3.5" />
-              <span>Exit</span>
-            </button>
+            <div className="flex items-center gap-2 lg:hidden">
+              <MartLanguageSwitcher inverted />
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 px-2.5 py-1.5 text-xs text-slate-300 hover:text-white whitespace-nowrap"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                <span>{t.admin.exitBtn}</span>
+              </button>
+            </div>
           </div>
 
           <nav className="flex lg:flex-col gap-1 overflow-x-auto scrollbar-none pb-1 lg:pb-0">
@@ -802,32 +1010,39 @@ export function MartAdminClient() {
         </div>
 
         <div className="hidden lg:block p-5 border-t border-slate-800 space-y-3">
-          <div className="text-xs text-slate-400">
-            Store Sheet:{" "}
-            <span
-              className={
-                data?.isLiveBackend
-                  ? "text-emerald-400 font-semibold"
-                  : "text-gold-400 font-semibold"
-              }
-            >
-              {data?.isLiveBackend ? "Connected Live" : "Not Connected"}
-            </span>
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-xs text-slate-400">
+              {t.admin.sheetStatusLabel}:{" "}
+              <span
+                className={
+                  data?.isLiveBackend
+                    ? "text-emerald-400 font-semibold"
+                    : "text-gold-400 font-semibold"
+                }
+              >
+                {data?.isLiveBackend ? t.admin.connectedLive : t.admin.notConnected}
+              </span>
+            </div>
           </div>
+
+          <div className="flex items-center justify-between gap-2">
+            <MartLanguageSwitcher inverted />
+          </div>
+
           <div className="flex items-center gap-2">
             <Link
               href="/mart"
-              className="flex-1 rounded-lg border border-slate-700 px-3 py-2 text-center text-xs font-medium text-slate-300 hover:bg-slate-800 hover:text-white"
+              className="flex-1 rounded-lg border border-slate-700 px-3 py-2 text-center text-xs font-medium text-slate-300 hover:bg-slate-800 hover:text-white whitespace-nowrap"
             >
-              View Store
+              {t.admin.viewStoreBtn}
             </Link>
             <button
               type="button"
               onClick={handleLogout}
-              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-700 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800 hover:text-white"
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-700 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800 hover:text-white whitespace-nowrap"
             >
               <LogOut className="h-3.5 w-3.5" />
-              <span>Logout</span>
+              <span>{t.admin.logoutBtn}</span>
             </button>
           </div>
         </div>
@@ -838,7 +1053,7 @@ export function MartAdminClient() {
         <header className="bg-white border-b border-slate-200 px-6 py-4 flex flex-wrap items-center justify-between gap-4">
           <div>
             <div className="text-xs text-slate-500">
-              Xeetrix Mart Admin /{" "}
+              {t.admin.breadcrumbRoot} /{" "}
               <span className="text-slate-900 font-medium">
                 {navItems.find((n) => n.id === activeSection)?.label}
               </span>
@@ -848,15 +1063,17 @@ export function MartAdminClient() {
             </h1>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <MartLanguageSwitcher className="hidden lg:inline-flex" />
+
             <button
               type="button"
-              onClick={() => exportMartOrdersToCsv(orders)}
+              onClick={() => exportMartOrdersToCsv(orders, lang)}
               disabled={orders.length === 0}
               className="btn-outline px-4 py-2 text-xs gap-2 disabled:opacity-50"
             >
               <Download className="h-3.5 w-3.5" />
-              <span>Export CSV</span>
+              <span>{t.admin.exportCsv}</span>
             </button>
 
             <button
@@ -866,7 +1083,7 @@ export function MartAdminClient() {
               className="btn-primary px-4 py-2 text-xs gap-2"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-              <span>{loading ? "Syncing..." : "Refresh Store"}</span>
+              <span>{loading ? t.admin.syncing : t.admin.refreshStore}</span>
             </button>
           </div>
         </header>
@@ -888,8 +1105,12 @@ export function MartAdminClient() {
                 )}
                 <span>{toast.text}</span>
               </div>
-              <button type="button" onClick={() => setToast(null)} className="text-xs underline ml-4">
-                Dismiss
+              <button
+                type="button"
+                onClick={() => setToast(null)}
+                className="text-xs underline ml-4 whitespace-nowrap"
+              >
+                {t.admin.dismiss}
               </button>
             </div>
           </div>
@@ -898,11 +1119,7 @@ export function MartAdminClient() {
         <main className="p-6 space-y-8 flex-1">
           {!data?.isLiveBackend && !loading && (
             <div className="rounded-xl border border-gold-200 bg-gold-50 px-5 py-4 text-xs text-gold-900">
-              <strong>Standalone Backend Setup Required:</strong> Deploy{" "}
-              <span className="font-mono">backend/mart/Code.gs</span> inside your Google Sheet (run{" "}
-              <span className="font-mono">setupMartBackend</span>), then configure{" "}
-              <span className="font-mono">MART_SCRIPT_URL</span> in Vercel Environment Variables so
-              products, categories, orders, and Google Drive images sync live.
+              <strong>{t.admin.setupAlertTitle}</strong> {t.admin.setupAlertBody}
             </div>
           )}
 
@@ -911,42 +1128,55 @@ export function MartAdminClient() {
             <div className="space-y-6">
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                 <div className="rounded-2xl border border-slate-200 bg-white p-6">
-                  <div className="text-xs font-medium text-slate-500">Total Revenue (Active)</div>
+                  <div className="text-xs font-medium text-slate-500">
+                    {t.admin.analytics.totalRevenue}
+                  </div>
                   <div className="mt-2 font-mono text-2xl font-bold text-slate-900 tabular-nums">
-                    {formatMartBDT(analytics.totalRevenue)}
+                    {formatMartPrice(analytics.totalRevenue, lang)}
                   </div>
                   <div className="mt-1 text-xs text-slate-500 tabular-nums">
-                    Across {orders.filter((o) => o.status !== "Cancelled").length} valid orders
+                    {t.admin.analytics.validOrdersPrefix}{" "}
+                    {toLocalizedDigits(analytics.validOrdersCount, lang)}{" "}
+                    {t.admin.analytics.validOrdersSuffix}
                   </div>
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-white p-6">
-                  <div className="text-xs font-medium text-slate-500">Today&apos;s Orders</div>
+                  <div className="text-xs font-medium text-slate-500">
+                    {t.admin.analytics.todaysOrders}
+                  </div>
                   <div className="mt-2 font-mono text-2xl font-bold text-[#0B5336] tabular-nums">
-                    {analytics.todaysOrders}
+                    {toLocalizedDigits(analytics.todaysOrders, lang)}
                   </div>
                   <div className="mt-1 text-xs text-slate-500 tabular-nums">
-                    {orders.length} all-time orders recorded
+                    {toLocalizedDigits(orders.length, lang)} {t.admin.analytics.allTimeOrdersSuffix}
                   </div>
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-white p-6">
-                  <div className="text-xs font-medium text-slate-500">Pending &amp; Active</div>
+                  <div className="text-xs font-medium text-slate-500">
+                    {t.admin.analytics.pendingActive}
+                  </div>
                   <div className="mt-2 font-mono text-2xl font-bold text-gold-600 tabular-nums">
-                    {analytics.pendingOrders}
+                    {toLocalizedDigits(analytics.pendingOrders, lang)}
                   </div>
                   <div className="mt-1 text-xs text-slate-500">
-                    Pending, Confirmed &amp; Packaging
+                    {t.admin.analytics.pendingActiveDesc}
                   </div>
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-white p-6">
-                  <div className="text-xs font-medium text-slate-500">Delivered Orders</div>
+                  <div className="text-xs font-medium text-slate-500">
+                    {t.admin.analytics.deliveredOrders}
+                  </div>
                   <div className="mt-2 font-mono text-2xl font-bold text-slate-900 tabular-nums">
-                    {analytics.deliveredOrders}
+                    {toLocalizedDigits(analytics.deliveredOrders, lang)}
                   </div>
                   <div className="mt-1 text-xs text-slate-500 tabular-nums">
-                    {products.length} catalog SKUs · {categories.length} categories
+                    {toLocalizedDigits(products.length, lang)} {t.admin.analytics.catalogSkusSuffix}{" "}
+                    · {toLocalizedDigits(categories.length, lang)}{" "}
+                    {t.admin.analytics.categoriesSuffix} ·{" "}
+                    {toLocalizedDigits(labels.length, lang)} {t.admin.analytics.labelsSuffix}
                   </div>
                 </div>
               </div>
@@ -955,7 +1185,7 @@ export function MartAdminClient() {
                 {/* Order Pipeline Summary */}
                 <div className="lg:col-span-6 rounded-2xl border border-slate-200 bg-white p-6 space-y-4">
                   <h2 className="font-display text-base font-bold text-slate-900">
-                    Order Fulfillment Overview
+                    {t.admin.analytics.fulfillmentOverview}
                   </h2>
                   <div className="space-y-3">
                     {ORDER_STATUSES.map((status) => {
@@ -964,9 +1194,11 @@ export function MartAdminClient() {
                       return (
                         <div key={status} className="space-y-1">
                           <div className="flex justify-between text-xs">
-                            <span className="font-medium text-slate-700">{status}</span>
+                            <span className="font-medium text-slate-700">
+                              {t.orderStatuses[status]}
+                            </span>
                             <span className="font-mono text-slate-600 tabular-nums">
-                              {count} ({pct}%)
+                              {toLocalizedDigits(count, lang)} ({toLocalizedDigits(pct, lang)}%)
                             </span>
                           </div>
                           <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
@@ -992,31 +1224,36 @@ export function MartAdminClient() {
                   <div className="flex items-center justify-between">
                     <h2 className="font-display text-base font-bold text-slate-900 flex items-center gap-2">
                       <AlertTriangle className="h-4 w-4 text-gold-600" />
-                      <span>Low-Stock Alerts (≤ 5 units)</span>
+                      <span>{t.admin.analytics.lowStockTitle}</span>
                     </h2>
                     <button
                       type="button"
                       onClick={() => setActiveSection("products")}
-                      className="text-xs font-semibold text-[#0B5336] hover:underline"
+                      className="text-xs font-semibold text-[#0B5336] hover:underline whitespace-nowrap"
                     >
-                      Manage Inventory
+                      {t.admin.analytics.manageInventory}
                     </button>
                   </div>
 
                   {analytics.lowStockProducts.length === 0 ? (
                     <p className="text-xs text-slate-500 py-6 text-center">
                       {products.length === 0
-                        ? "No products added yet. Head to Products & Inventory to publish your first item."
-                        : "All products have healthy stock levels."}
+                        ? t.admin.analytics.noProductsLowStock
+                        : t.admin.analytics.allStockHealthy}
                     </p>
                   ) : (
                     <div className="divide-y divide-slate-100">
                       {analytics.lowStockProducts.slice(0, 6).map((p) => (
-                        <div key={p.id} className="py-2.5 flex items-center justify-between gap-3 text-xs">
+                        <div
+                          key={p.id}
+                          className="py-2.5 flex items-center justify-between gap-3 text-xs"
+                        >
                           <div className="min-w-0">
-                            <div className="font-semibold text-slate-900 truncate">{p.name}</div>
+                            <div className="font-semibold text-slate-900 truncate">
+                              {pickLocalized(p.nameEn, p.nameBn, lang, p.sku)}
+                            </div>
                             <div className="font-mono text-[11px] text-slate-400">
-                              SKU: {p.sku || p.id}
+                              {t.common.sku}: {p.sku || p.id}
                             </div>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
@@ -1025,14 +1262,14 @@ export function MartAdminClient() {
                                 p.stock === 0 ? "text-red-600" : "text-gold-700"
                               }`}
                             >
-                              {p.stock} left
+                              {toLocalizedDigits(p.stock, lang)} {t.admin.analytics.leftSuffix}
                             </span>
                             <button
                               type="button"
                               onClick={() => handleQuickStockAdjust(p, 5)}
-                              className="rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-semibold hover:bg-slate-50"
+                              className="rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-semibold hover:bg-slate-50 whitespace-nowrap"
                             >
-                              +5 Stock
+                              {t.admin.analytics.addFiveStock}
                             </button>
                           </div>
                         </div>
@@ -1060,7 +1297,7 @@ export function MartAdminClient() {
                           : "text-slate-600 hover:text-slate-900"
                       }`}
                     >
-                      {status}
+                      {status === "All" ? t.admin.orders.allFilter : t.orderStatuses[status]}
                     </button>
                   ))}
                 </div>
@@ -1071,7 +1308,7 @@ export function MartAdminClient() {
                     type="text"
                     value={orderSearch}
                     onChange={(e) => setOrderSearch(e.target.value)}
-                    placeholder="Search Order ID, customer, phone..."
+                    placeholder={t.admin.orders.searchPlaceholder}
                     className="input pl-10 text-xs"
                   />
                 </div>
@@ -1082,20 +1319,28 @@ export function MartAdminClient() {
                   <table className="w-full text-left text-xs">
                     <thead className="bg-slate-50 border-b border-slate-200 text-slate-500">
                       <tr>
-                        <th className="px-4 py-3 font-semibold">Order ID &amp; Date</th>
-                        <th className="px-4 py-3 font-semibold">Customer &amp; Delivery</th>
-                        <th className="px-4 py-3 font-semibold">Ordered Items</th>
-                        <th className="px-4 py-3 font-semibold">Payment</th>
-                        <th className="px-4 py-3 font-semibold text-right">Total</th>
-                        <th className="px-4 py-3 font-semibold">Status</th>
-                        <th className="px-4 py-3 font-semibold text-right">Invoice</th>
+                        <th className="px-4 py-3 font-semibold">{t.admin.orders.colOrderDate}</th>
+                        <th className="px-4 py-3 font-semibold">
+                          {t.admin.orders.colCustomerDelivery}
+                        </th>
+                        <th className="px-4 py-3 font-semibold">
+                          {t.admin.orders.colOrderedItems}
+                        </th>
+                        <th className="px-4 py-3 font-semibold">{t.admin.orders.colPayment}</th>
+                        <th className="px-4 py-3 font-semibold text-right">
+                          {t.admin.orders.colTotal}
+                        </th>
+                        <th className="px-4 py-3 font-semibold">{t.admin.orders.colStatus}</th>
+                        <th className="px-4 py-3 font-semibold text-right">
+                          {t.admin.orders.colInvoice}
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {filteredOrders.length === 0 ? (
                         <tr>
                           <td colSpan={7} className="px-4 py-10 text-center text-slate-500">
-                            No orders match your filter. Orders placed at /mart appear here live.
+                            {t.admin.orders.emptyOrders}
                           </td>
                         </tr>
                       ) : (
@@ -1106,9 +1351,7 @@ export function MartAdminClient() {
                               <td className="px-4 py-3">
                                 <div className="font-mono font-bold text-slate-900">{order.id}</div>
                                 <div className="text-[11px] text-slate-400 mt-0.5">
-                                  {order.createdAt
-                                    ? new Date(order.createdAt).toLocaleDateString()
-                                    : ""}
+                                  {formatMartDate(order.createdAt, lang)}
                                 </div>
                               </td>
                               <td className="px-4 py-3 max-w-xs">
@@ -1123,7 +1366,7 @@ export function MartAdminClient() {
                                 </div>
                                 {order.notes && (
                                   <div className="text-[11px] text-gold-700 mt-0.5">
-                                    Note: {order.notes}
+                                    {t.admin.orders.notePrefix}: {order.notes}
                                   </div>
                                 )}
                               </td>
@@ -1132,10 +1375,10 @@ export function MartAdminClient() {
                                   <ul className="space-y-0.5 text-slate-700">
                                     {parsedItems.map((it, idx) => (
                                       <li key={idx}>
-                                        {it.name}
+                                        {pickLocalized(it.nameEn || it.name, it.nameBn, lang)}
                                         {it.variant ? ` (${it.variant})` : ""}{" "}
                                         <span className="font-mono text-slate-500">
-                                          × {it.quantity}
+                                          × {toLocalizedDigits(it.quantity, lang)}
                                         </span>
                                       </li>
                                     ))}
@@ -1150,16 +1393,17 @@ export function MartAdminClient() {
                                 </div>
                                 {order.transactionId && (
                                   <div className="font-mono text-[11px] text-slate-500">
-                                    TrxID: {order.transactionId}
+                                    {t.admin.orders.trxPrefix}: {order.transactionId}
                                   </div>
                                 )}
                               </td>
                               <td className="px-4 py-3 text-right font-mono tabular-nums">
                                 <div className="font-bold text-slate-900">
-                                  {formatMartBDT(order.totalAmount)}
+                                  {formatMartPrice(order.totalAmount, lang)}
                                 </div>
                                 <div className="text-[11px] text-slate-400">
-                                  Del: {formatMartBDT(order.deliveryCharge)}
+                                  {t.admin.orders.deliveryPrefix}:{" "}
+                                  {formatMartPrice(order.deliveryCharge, lang)}
                                 </div>
                               </td>
                               <td className="px-4 py-3">
@@ -1175,7 +1419,7 @@ export function MartAdminClient() {
                                 >
                                   {ORDER_STATUSES.map((st) => (
                                     <option key={st} value={st}>
-                                      {st}
+                                      {t.orderStatuses[st]}
                                     </option>
                                   ))}
                                 </select>
@@ -1184,10 +1428,10 @@ export function MartAdminClient() {
                                 <button
                                   type="button"
                                   onClick={() => setInvoiceOrder(order)}
-                                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336]"
+                                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] whitespace-nowrap"
                                 >
                                   <Printer className="h-3.5 w-3.5" />
-                                  <span>Invoice</span>
+                                  <span>{t.admin.orders.invoiceBtn}</span>
                                 </button>
                               </td>
                             </tr>
@@ -1201,7 +1445,7 @@ export function MartAdminClient() {
             </div>
           )}
 
-          {/* 3. PRODUCTS & INVENTORY MANAGEMENT */}
+          {/* 3. PRODUCTS & INVENTORY MANAGEMENT (BILINGUAL + MULTI-CATEGORY + LABELS) */}
           {activeSection === "products" && (
             <div className="space-y-8">
               <div className="rounded-2xl border border-slate-200 bg-white p-6 space-y-5">
@@ -1210,8 +1454,8 @@ export function MartAdminClient() {
                     <Plus className="h-4 w-4 text-[#0B5336]" />
                     <span>
                       {editingProductId
-                        ? `Edit Product (${editingProductId})`
-                        : "Add New Product to Mart_Products"}
+                        ? `${t.admin.products.editTitle} (${editingProductId})`
+                        : t.admin.products.addTitle}
                     </span>
                   </h2>
                   {editingProductId && (
@@ -1220,63 +1464,56 @@ export function MartAdminClient() {
                       onClick={resetProductForm}
                       className="text-xs font-semibold text-slate-500 hover:text-slate-900 underline"
                     >
-                      Cancel Edit
+                      {t.admin.products.cancelEdit}
                     </button>
                   )}
                 </div>
 
-                <form onSubmit={handleSaveProduct} className="space-y-4">
+                <form onSubmit={handleSaveProduct} className="space-y-5">
+                  {/* Dual EN + BN Names + SKU + Stock */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                        Product Name *
+                        {t.admin.products.nameEnLabel}
                       </label>
                       <input
                         type="text"
-                        required
-                        value={prodName}
-                        onChange={(e) => setProdName(e.target.value)}
-                        placeholder="e.g. Wireless Noise-Canceling Headphones"
+                        value={prodNameEn}
+                        onChange={(e) => setProdNameEn(e.target.value)}
+                        placeholder={t.admin.products.nameEnPlaceholder}
                         className="input"
                       />
                     </div>
 
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                        SKU Code
+                        {t.admin.products.nameBnLabel}
+                      </label>
+                      <input
+                        type="text"
+                        value={prodNameBn}
+                        onChange={(e) => setProdNameBn(e.target.value)}
+                        placeholder={t.admin.products.nameBnPlaceholder}
+                        className="input"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                        {t.admin.products.skuLabel}
                       </label>
                       <input
                         type="text"
                         value={prodSku}
                         onChange={(e) => setProdSku(e.target.value.toUpperCase())}
-                        placeholder="e.g. XM-AUD-001"
+                        placeholder={t.admin.products.skuPlaceholder}
                         className="input font-mono uppercase"
                       />
                     </div>
 
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                        Category *
-                      </label>
-                      <input
-                        type="text"
-                        list="mart-category-options"
-                        required
-                        value={prodCategory}
-                        onChange={(e) => setProdCategory(e.target.value)}
-                        placeholder="Select or type category"
-                        className="input"
-                      />
-                      <datalist id="mart-category-options">
-                        {categories.map((c) => (
-                          <option key={c.id} value={c.name} />
-                        ))}
-                      </datalist>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                        Stock Quantity *
+                        {t.admin.products.stockLabel}
                       </label>
                       <input
                         type="number"
@@ -1289,10 +1526,11 @@ export function MartAdminClient() {
                     </div>
                   </div>
 
+                  {/* Prices + EN/BN Variants */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                        Selling / Discount Price (BDT ৳) *
+                        {t.admin.products.priceLabel}
                       </label>
                       <input
                         type="number"
@@ -1300,43 +1538,171 @@ export function MartAdminClient() {
                         required
                         value={prodPrice}
                         onChange={(e) => setProdPrice(e.target.value)}
-                        placeholder="2450"
+                        placeholder="1250"
                         className="input font-mono"
                       />
                     </div>
 
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                        Regular Price (BDT ৳)
+                        {t.admin.products.comparePriceLabel}
                       </label>
                       <input
                         type="number"
                         min={0}
                         value={prodComparePrice}
                         onChange={(e) => setProdComparePrice(e.target.value)}
-                        placeholder="3000"
+                        placeholder="1550"
                         className="input font-mono"
                       />
                     </div>
 
-                    <div className="sm:col-span-2">
+                    <div>
                       <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                        Variants / Sizes (Comma-separated, Optional)
+                        {t.admin.products.variantsEnLabel}
                       </label>
                       <input
                         type="text"
-                        value={prodVariants}
-                        onChange={(e) => setProdVariants(e.target.value)}
-                        placeholder="e.g. Matte Black, Silver or M, L, XL"
+                        value={prodVariantsEn}
+                        onChange={(e) => setProdVariantsEn(e.target.value)}
+                        placeholder={t.admin.products.variantsEnPlaceholder}
+                        className="input"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                        {t.admin.products.variantsBnLabel}
+                      </label>
+                      <input
+                        type="text"
+                        value={prodVariantsBn}
+                        onChange={(e) => setProdVariantsBn(e.target.value)}
+                        placeholder={t.admin.products.variantsBnPlaceholder}
                         className="input"
                       />
                     </div>
                   </div>
 
+                  {/* Multi-Category & Multi-Label Matrix */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 pt-1">
+                    {/* Categories Multi-Select */}
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <div className="text-xs font-bold text-slate-800">
+                            {t.admin.products.categoriesLabel}
+                          </div>
+                          <div className="text-[11px] text-slate-500">
+                            {t.admin.products.categoriesHint}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setActiveSection("taxonomy")}
+                          className="text-[11px] font-semibold text-[#0B5336] hover:underline whitespace-nowrap shrink-0"
+                        >
+                          {t.admin.products.goToTaxonomyBtn}
+                        </button>
+                      </div>
+
+                      {categories.length === 0 ? (
+                        <p className="text-xs text-slate-500 py-2">
+                          {t.admin.products.noCategoriesHint}
+                        </p>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {categories.map((cat) => {
+                            const checked = prodCategories.includes(cat.slug);
+                            const catLabel = pickLocalized(cat.nameEn, cat.nameBn, lang, cat.slug);
+                            const parent = cat.parentSlug
+                              ? categoryMap.get(cat.parentSlug)
+                              : null;
+                            return (
+                              <label
+                                key={cat.id}
+                                className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium cursor-pointer transition-colors ${
+                                  checked
+                                    ? "border-[#0B5336] bg-[#0B5336] text-white"
+                                    : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => toggleProdCategorySlug(cat.slug)}
+                                  className="sr-only"
+                                />
+                                <span>
+                                  {parent
+                                    ? `${pickLocalized(parent.nameEn, parent.nameBn, lang)} › ${catLabel}`
+                                    : catLabel}
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Labels / Collections Multi-Select */}
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <div className="text-xs font-bold text-slate-800">
+                            {t.admin.products.labelsLabel}
+                          </div>
+                          <div className="text-[11px] text-slate-500">
+                            {t.admin.products.labelsHint}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setActiveSection("taxonomy")}
+                          className="text-[11px] font-semibold text-[#0B5336] hover:underline whitespace-nowrap shrink-0"
+                        >
+                          {t.admin.products.goToTaxonomyBtn}
+                        </button>
+                      </div>
+
+                      {labels.length === 0 ? (
+                        <p className="text-xs text-slate-500 py-2">
+                          {t.admin.products.noLabelsHint}
+                        </p>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          {labels.map((lbl) => {
+                            const checked = prodLabels.includes(lbl.slug);
+                            const lblText = pickLocalized(lbl.nameEn, lbl.nameBn, lang, lbl.slug);
+                            return (
+                              <label
+                                key={lbl.id}
+                                className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium cursor-pointer transition-colors ${
+                                  checked
+                                    ? "border-gold-500 bg-gold-500 text-slate-950 font-semibold"
+                                    : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => toggleProdLabelSlug(lbl.slug)}
+                                  className="sr-only"
+                                />
+                                <span>{lblText}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Image Upload + URL */}
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-end">
                     <div className="lg:col-span-8">
                       <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                        Product Image URL (Auto-filled on Google Drive Upload)
+                        {t.admin.products.imageUrlLabel}
                       </label>
                       <input
                         type="text"
@@ -1351,7 +1717,9 @@ export function MartAdminClient() {
                       <label className="btn-outline w-full px-4 py-2.5 text-xs gap-2 cursor-pointer">
                         <Upload className="h-3.5 w-3.5 text-[#0B5336]" />
                         <span>
-                          {uploadingProdImg ? "Uploading to Drive..." : "Upload Image to Drive"}
+                          {uploadingProdImg
+                            ? t.admin.products.uploading
+                            : t.admin.products.uploadToDrive}
                         </span>
                         <input
                           type="file"
@@ -1364,17 +1732,32 @@ export function MartAdminClient() {
                     </div>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                      Product Description
-                    </label>
-                    <textarea
-                      rows={2}
-                      value={prodDesc}
-                      onChange={(e) => setProdDesc(e.target.value)}
-                      placeholder="Detailed specifications, materials, warranty terms..."
-                      className="input min-h-[76px] py-2"
-                    />
+                  {/* Dual EN + BN Descriptions */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                        {t.admin.products.descEnLabel}
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={prodDescEn}
+                        onChange={(e) => setProdDescEn(e.target.value)}
+                        placeholder={t.admin.products.descEnPlaceholder}
+                        className="input min-h-[76px] py-2"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                        {t.admin.products.descBnLabel}
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={prodDescBn}
+                        onChange={(e) => setProdDescBn(e.target.value)}
+                        placeholder={t.admin.products.descBnPlaceholder}
+                        className="input min-h-[76px] py-2"
+                      />
+                    </div>
                   </div>
 
                   <div className="flex flex-wrap items-center justify-between gap-4 pt-2">
@@ -1386,7 +1769,7 @@ export function MartAdminClient() {
                           onChange={(e) => setProdActive(e.target.checked)}
                           className="h-4 w-4 rounded border-slate-300 text-[#0B5336]"
                         />
-                        <span>Visible in Storefront</span>
+                        <span>{t.admin.products.visibleCheckbox}</span>
                       </label>
 
                       <label className="inline-flex items-center gap-2 cursor-pointer">
@@ -1396,7 +1779,7 @@ export function MartAdminClient() {
                           onChange={(e) => setProdFeatured(e.target.checked)}
                           className="h-4 w-4 rounded border-slate-300 text-[#0B5336]"
                         />
-                        <span>Featured Product</span>
+                        <span>{t.admin.products.featuredCheckbox}</span>
                       </label>
                     </div>
 
@@ -1406,10 +1789,10 @@ export function MartAdminClient() {
                       className="btn-primary px-6 py-2.5 text-xs"
                     >
                       {savingProduct
-                        ? "Saving Product..."
+                        ? t.admin.products.savingProduct
                         : editingProductId
-                        ? "Save Product Changes"
-                        : "Publish Product"}
+                        ? t.admin.products.saveChangesBtn
+                        : t.admin.products.publishProductBtn}
                     </button>
                   </div>
                 </form>
@@ -1419,7 +1802,8 @@ export function MartAdminClient() {
               <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
                 <div className="px-6 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-4">
                   <h3 className="font-display text-base font-bold text-slate-900">
-                    Inventory Catalog ({filteredProducts.length})
+                    {t.admin.products.catalogTableTitle} (
+                    {toLocalizedDigits(filteredProducts.length, lang)})
                   </h3>
                   <div className="relative w-full sm:w-64">
                     <Search className="h-3.5 w-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -1427,7 +1811,7 @@ export function MartAdminClient() {
                       type="text"
                       value={productSearch}
                       onChange={(e) => setProductSearch(e.target.value)}
-                      placeholder="Filter SKU, name, category..."
+                      placeholder={t.admin.products.filterPlaceholder}
                       className="input min-h-[38px] py-1.5 pl-9 text-xs"
                     />
                   </div>
@@ -1437,132 +1821,172 @@ export function MartAdminClient() {
                   <table className="w-full text-left text-xs">
                     <thead className="bg-slate-50 border-b border-slate-200 text-slate-500">
                       <tr>
-                        <th className="px-4 py-3 font-semibold">Product &amp; SKU</th>
-                        <th className="px-4 py-3 font-semibold">Category</th>
-                        <th className="px-4 py-3 font-semibold text-right">Price</th>
-                        <th className="px-4 py-3 font-semibold text-center">Stock</th>
-                        <th className="px-4 py-3 font-semibold">Flags</th>
-                        <th className="px-4 py-3 font-semibold text-right">Actions</th>
+                        <th className="px-4 py-3 font-semibold">
+                          {t.admin.products.colProductSku}
+                        </th>
+                        <th className="px-4 py-3 font-semibold">
+                          {t.admin.products.colTaxonomy}
+                        </th>
+                        <th className="px-4 py-3 font-semibold text-right">
+                          {t.admin.products.colPrice}
+                        </th>
+                        <th className="px-4 py-3 font-semibold text-center">
+                          {t.admin.products.colStock}
+                        </th>
+                        <th className="px-4 py-3 font-semibold">{t.admin.products.colFlags}</th>
+                        <th className="px-4 py-3 font-semibold text-right">
+                          {t.admin.products.colActions}
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {filteredProducts.length === 0 ? (
                         <tr>
                           <td colSpan={6} className="px-4 py-10 text-center text-slate-500">
-                            No products in Mart_Products yet. Use the form above to add your first
-                            SKU.
+                            {t.admin.products.emptyProducts}
                           </td>
                         </tr>
                       ) : (
-                        filteredProducts.map((p) => (
-                          <tr key={p.id} className="hover:bg-slate-50">
-                            <td className="px-4 py-3">
-                              <div className="flex items-center gap-3">
-                                <div className="h-10 w-10 rounded-lg bg-slate-100 overflow-hidden shrink-0 border border-slate-200">
-                                  {p.imageUrl ? (
-                                    // eslint-disable-next-line @next/next/no-img-element
-                                    <img
-                                      src={normalizeMartImageUrl(p.imageUrl)}
-                                      alt={p.name}
-                                      referrerPolicy="no-referrer"
-                                      className="h-full w-full object-cover"
-                                    />
-                                  ) : null}
-                                </div>
-                                <div>
-                                  <div className="font-semibold text-slate-900">{p.name}</div>
-                                  <div className="font-mono text-[11px] text-slate-400">
-                                    {p.sku || p.id}
-                                    {p.variants ? ` · ${p.variants}` : ""}
+                        filteredProducts.map((p) => {
+                          const catLabels = parseCsvSlugs(p.categories).map((slug) => {
+                            const c = categoryMap.get(slug);
+                            return c ? pickLocalized(c.nameEn, c.nameBn, lang, slug) : slug;
+                          });
+                          const lblNames = parseCsvSlugs(p.labels).map((slug) => {
+                            const l = labelMap.get(slug);
+                            return l ? pickLocalized(l.nameEn, l.nameBn, lang, slug) : slug;
+                          });
+                          const displayProdName = pickLocalized(
+                            p.nameEn,
+                            p.nameBn,
+                            lang,
+                            p.sku
+                          );
+
+                          return (
+                            <tr key={p.id} className="hover:bg-slate-50">
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-3">
+                                  <div className="h-10 w-10 rounded-lg bg-slate-100 overflow-hidden shrink-0 border border-slate-200">
+                                    {p.imageUrl ? (
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      <img
+                                        src={normalizeMartImageUrl(p.imageUrl)}
+                                        alt={displayProdName}
+                                        referrerPolicy="no-referrer"
+                                        className="h-full w-full object-cover"
+                                      />
+                                    ) : null}
+                                  </div>
+                                  <div>
+                                    <div className="font-semibold text-slate-900">
+                                      {displayProdName}
+                                    </div>
+                                    <div className="font-mono text-[11px] text-slate-400">
+                                      {p.sku || p.id}
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
-                            </td>
-                            <td className="px-4 py-3 text-slate-600">{p.category}</td>
-                            <td className="px-4 py-3 text-right font-mono tabular-nums">
-                              <div className="font-bold text-slate-900">
-                                {formatMartBDT(p.price)}
-                              </div>
-                              {p.comparePrice > p.price && (
-                                <div className="text-[11px] text-slate-400 line-through">
-                                  {formatMartBDT(p.comparePrice)}
+                              </td>
+                              <td className="px-4 py-3 text-slate-600 max-w-xs">
+                                <div className="font-medium text-slate-800">
+                                  {catLabels.length > 0
+                                    ? catLabels.join(" · ")
+                                    : t.catalog.generalFallback}
                                 </div>
-                              )}
-                            </td>
-                            <td className="px-4 py-3 text-center">
-                              <div className="inline-flex items-center gap-1.5">
-                                <button
-                                  type="button"
-                                  onClick={() => handleQuickStockAdjust(p, -1)}
-                                  className="rounded border border-slate-200 px-1.5 py-0.5 font-mono hover:bg-slate-100"
-                                >
-                                  -
-                                </button>
-                                <span
-                                  className={`font-mono font-bold tabular-nums w-8 text-center ${
-                                    p.stock <= 5 ? "text-red-600" : "text-slate-900"
-                                  }`}
-                                >
-                                  {p.stock}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleQuickStockAdjust(p, 1)}
-                                  className="rounded border border-slate-200 px-1.5 py-0.5 font-mono hover:bg-slate-100"
-                                >
-                                  +
-                                </button>
-                              </div>
-                            </td>
-                            <td className="px-4 py-3">
-                              <div className="flex items-center gap-1.5">
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleProductField(p, "active")}
-                                  className={`rounded-lg px-2 py-1 text-[11px] font-semibold border ${
-                                    p.active
-                                      ? "border-brand-200 bg-brand-50 text-[#0B5336]"
-                                      : "border-slate-200 bg-slate-100 text-slate-500"
-                                  }`}
-                                >
-                                  {p.active ? "Active" : "Paused"}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleProductField(p, "featured")}
-                                  title="Toggle Featured"
-                                  className={`rounded-lg p-1.5 border ${
-                                    p.featured
-                                      ? "border-gold-200 bg-gold-50 text-gold-600"
-                                      : "border-slate-200 bg-white text-slate-400"
-                                  }`}
-                                >
-                                  <Star className="h-3.5 w-3.5" />
-                                </button>
-                              </div>
-                            </td>
-                            <td className="px-4 py-3 text-right">
-                              <div className="inline-flex items-center gap-3">
-                                <button
-                                  type="button"
-                                  onClick={() => startEditProduct(p)}
-                                  className="inline-flex items-center gap-1 text-slate-700 hover:text-[#0B5336] font-medium"
-                                >
-                                  <Pencil className="h-3.5 w-3.5" />
-                                  <span>Edit</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteProduct(p.id)}
-                                  className="inline-flex items-center gap-1 text-red-600 hover:text-red-800 font-medium"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                  <span>Delete</span>
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))
+                                {lblNames.length > 0 && (
+                                  <div className="text-[11px] text-[#0B5336] font-medium mt-0.5">
+                                    {lblNames.join(" · ")}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-right font-mono tabular-nums">
+                                <div className="font-bold text-slate-900">
+                                  {formatMartPrice(p.price, lang)}
+                                </div>
+                                {p.comparePrice > p.price && (
+                                  <div className="text-[11px] text-slate-400 line-through">
+                                    {formatMartPrice(p.comparePrice, lang)}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <div className="inline-flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleQuickStockAdjust(p, -1)}
+                                    className="rounded border border-slate-200 px-1.5 py-0.5 font-mono hover:bg-slate-100"
+                                  >
+                                    -
+                                  </button>
+                                  <span
+                                    className={`font-mono font-bold tabular-nums w-8 text-center ${
+                                      p.stock <= 5 ? "text-red-600" : "text-slate-900"
+                                    }`}
+                                  >
+                                    {toLocalizedDigits(p.stock, lang)}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleQuickStockAdjust(p, 1)}
+                                    className="rounded border border-slate-200 px-1.5 py-0.5 font-mono hover:bg-slate-100"
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleProductField(p, "active")}
+                                    className={`rounded-lg px-2 py-1 text-[11px] font-semibold border whitespace-nowrap ${
+                                      p.active
+                                        ? "border-brand-200 bg-brand-50 text-[#0B5336]"
+                                        : "border-slate-200 bg-slate-100 text-slate-500"
+                                    }`}
+                                  >
+                                    {p.active
+                                      ? t.admin.products.activeFlag
+                                      : t.admin.products.pausedFlag}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleProductField(p, "featured")}
+                                    title={t.admin.products.featuredTitle}
+                                    className={`rounded-lg p-1.5 border ${
+                                      p.featured
+                                        ? "border-gold-200 bg-gold-50 text-gold-600"
+                                        : "border-slate-200 bg-white text-slate-400"
+                                    }`}
+                                  >
+                                    <Star className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                <div className="inline-flex items-center gap-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => startEditProduct(p)}
+                                    className="inline-flex items-center gap-1 text-slate-700 hover:text-[#0B5336] font-medium whitespace-nowrap"
+                                  >
+                                    <Pencil className="h-3.5 w-3.5" />
+                                    <span>{t.admin.products.editBtn}</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteProduct(p.id)}
+                                    className="inline-flex items-center gap-1 text-red-600 hover:text-red-800 font-medium whitespace-nowrap"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                    <span>{t.admin.products.deleteBtn}</span>
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
                       )}
                     </tbody>
                   </table>
@@ -1571,44 +1995,104 @@ export function MartAdminClient() {
             </div>
           )}
 
-          {/* 4. CATEGORIES & STORE SETTINGS */}
-          {activeSection === "settings" && (
+          {/* 4. CATEGORIES & LABELS MANAGEMENT */}
+          {activeSection === "taxonomy" && (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               {/* Categories Panel */}
-              <div className="lg:col-span-5 space-y-6">
+              <div className="lg:col-span-6 space-y-6">
                 <div className="rounded-2xl border border-slate-200 bg-white p-6 space-y-4">
                   <h2 className="font-display text-lg font-bold text-slate-900">
-                    Add Store Category (Mart_Categories)
+                    {t.admin.taxonomy.catAddTitle}
                   </h2>
                   <form onSubmit={handleCreateCategory} className="space-y-3">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Category Name *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={catName}
-                        onChange={(e) => setCatName(e.target.value)}
-                        placeholder="e.g. Electronics, Home Essentials"
-                        className="input"
-                      />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          {t.admin.taxonomy.catNameEnLabel}
+                        </label>
+                        <input
+                          type="text"
+                          value={catNameEn}
+                          onChange={(e) => setCatNameEn(e.target.value)}
+                          placeholder={t.admin.taxonomy.catNameEnPlaceholder}
+                          className="input"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          {t.admin.taxonomy.catNameBnLabel}
+                        </label>
+                        <input
+                          type="text"
+                          value={catNameBn}
+                          onChange={(e) => setCatNameBn(e.target.value)}
+                          placeholder={t.admin.taxonomy.catNameBnPlaceholder}
+                          className="input"
+                        />
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Short Description
-                      </label>
-                      <input
-                        type="text"
-                        value={catDesc}
-                        onChange={(e) => setCatDesc(e.target.value)}
-                        placeholder="Brief category subtitle"
-                        className="input"
-                      />
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          {t.admin.taxonomy.catParentLabel}
+                        </label>
+                        <select
+                          value={catParentSlug}
+                          onChange={(e) => setCatParentSlug(e.target.value)}
+                          className="input text-xs"
+                        >
+                          <option value="">{t.admin.taxonomy.catParentNone}</option>
+                          {categories.map((cat) => (
+                            <option key={cat.slug} value={cat.slug}>
+                              {pickLocalized(cat.nameEn, cat.nameBn, lang, cat.slug)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          {t.admin.taxonomy.catSortOrderLabel}
+                        </label>
+                        <input
+                          type="number"
+                          value={catSortOrder}
+                          onChange={(e) => setCatSortOrder(e.target.value)}
+                          className="input font-mono"
+                        />
+                      </div>
                     </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          {t.admin.taxonomy.catDescEnLabel}
+                        </label>
+                        <input
+                          type="text"
+                          value={catDescEn}
+                          onChange={(e) => setCatDescEn(e.target.value)}
+                          placeholder={t.admin.taxonomy.catDescEnPlaceholder}
+                          className="input"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          {t.admin.taxonomy.catDescBnLabel}
+                        </label>
+                        <input
+                          type="text"
+                          value={catDescBn}
+                          onChange={(e) => setCatDescBn(e.target.value)}
+                          placeholder={t.admin.taxonomy.catDescBnPlaceholder}
+                          className="input"
+                        />
+                      </div>
+                    </div>
+
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Category Image URL (Auto-filled on Drive Upload)
+                        {t.admin.taxonomy.catImageLabel}
                       </label>
                       <div className="flex flex-col sm:flex-row gap-2">
                         <input
@@ -1620,7 +2104,11 @@ export function MartAdminClient() {
                         />
                         <label className="btn-outline px-3.5 py-2 text-xs gap-1.5 cursor-pointer whitespace-nowrap shrink-0">
                           <Upload className="h-3.5 w-3.5 text-[#0B5336]" />
-                          <span>{uploadingCatImg ? "Uploading..." : "Drive Upload"}</span>
+                          <span>
+                            {uploadingCatImg
+                              ? t.admin.taxonomy.uploadingBtn
+                              : t.admin.taxonomy.driveUploadBtn}
+                          </span>
                           <input
                             type="file"
                             accept="image/*"
@@ -1631,12 +2119,15 @@ export function MartAdminClient() {
                         </label>
                       </div>
                     </div>
+
                     <button
                       type="submit"
                       disabled={savingCategory}
                       className="btn-primary w-full py-2.5 text-xs"
                     >
-                      {savingCategory ? "Creating Category..." : "Create Category"}
+                      {savingCategory
+                        ? t.admin.taxonomy.catCreatingBtn
+                        : t.admin.taxonomy.catCreateBtn}
                     </button>
                   </form>
                 </div>
@@ -1644,57 +2135,229 @@ export function MartAdminClient() {
                 <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
                   <div className="px-6 py-4 border-b border-slate-200">
                     <h3 className="font-display text-sm font-bold text-slate-900">
-                      Categories ({categories.length})
+                      {t.admin.taxonomy.catListTitle} ({toLocalizedDigits(categories.length, lang)})
                     </h3>
                   </div>
                   <div className="divide-y divide-slate-100">
                     {categories.length === 0 ? (
                       <div className="p-6 text-center text-xs text-slate-500">
-                        No categories created yet.
+                        {t.admin.taxonomy.catEmpty}
                       </div>
                     ) : (
-                      categories.map((cat) => (
+                      categories.map((cat) => {
+                        const parent = cat.parentSlug
+                          ? categoryMap.get(cat.parentSlug)
+                          : null;
+                        return (
+                          <div
+                            key={cat.id}
+                            className="px-6 py-3 flex items-center justify-between gap-3 text-xs"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="h-9 w-9 rounded-lg bg-slate-100 border border-slate-200 overflow-hidden shrink-0">
+                                {cat.imageUrl ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    src={normalizeMartImageUrl(cat.imageUrl)}
+                                    alt={pickLocalized(cat.nameEn, cat.nameBn, lang)}
+                                    referrerPolicy="no-referrer"
+                                    className="h-full w-full object-cover"
+                                  />
+                                ) : null}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="font-semibold text-slate-900 truncate">
+                                  {cat.nameEn}
+                                  {cat.nameBn ? ` · ${cat.nameBn}` : ""}
+                                </div>
+                                <div className="font-mono text-[11px] text-slate-400 truncate">
+                                  /{cat.slug}
+                                  {parent
+                                    ? ` · ${t.admin.taxonomy.catParentPrefix} ${pickLocalized(
+                                        parent.nameEn,
+                                        parent.nameBn,
+                                        lang
+                                      )}`
+                                    : ""}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => handleToggleCategory(cat)}
+                                className={`rounded-lg px-2 py-1 text-[11px] font-semibold border whitespace-nowrap ${
+                                  cat.active
+                                    ? "border-brand-200 bg-brand-50 text-[#0B5336]"
+                                    : "border-slate-200 bg-slate-100 text-slate-500"
+                                }`}
+                              >
+                                {cat.active
+                                  ? t.admin.taxonomy.catVisible
+                                  : t.admin.taxonomy.catHidden}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteCategory(cat.id)}
+                                aria-label={cat.slug}
+                                className="text-red-600 hover:text-red-800 p-1"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Labels / Collections Panel */}
+              <div className="lg:col-span-6 space-y-6">
+                <div className="rounded-2xl border border-slate-200 bg-white p-6 space-y-4">
+                  <h2 className="font-display text-lg font-bold text-slate-900">
+                    {t.admin.taxonomy.lblAddTitle}
+                  </h2>
+                  <form onSubmit={handleCreateLabel} className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          {t.admin.taxonomy.lblNameEnLabel}
+                        </label>
+                        <input
+                          type="text"
+                          value={lblNameEn}
+                          onChange={(e) => setLblNameEn(e.target.value)}
+                          placeholder={t.admin.taxonomy.lblNameEnPlaceholder}
+                          className="input"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          {t.admin.taxonomy.lblNameBnLabel}
+                        </label>
+                        <input
+                          type="text"
+                          value={lblNameBn}
+                          onChange={(e) => setLblNameBn(e.target.value)}
+                          placeholder={t.admin.taxonomy.lblNameBnPlaceholder}
+                          className="input"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          {t.admin.taxonomy.lblToneLabel}
+                        </label>
+                        <select
+                          value={lblTone}
+                          onChange={(e) => setLblTone(e.target.value as MartLabelTone)}
+                          className="input text-xs"
+                        >
+                          <option value="emerald">{t.admin.taxonomy.lblToneEmerald}</option>
+                          <option value="gold">{t.admin.taxonomy.lblToneGold}</option>
+                          <option value="slate">{t.admin.taxonomy.lblToneSlate}</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          {t.admin.taxonomy.lblSortOrderLabel}
+                        </label>
+                        <input
+                          type="number"
+                          value={lblSortOrder}
+                          onChange={(e) => setLblSortOrder(e.target.value)}
+                          className="input font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          {t.admin.taxonomy.lblDescEnLabel}
+                        </label>
+                        <input
+                          type="text"
+                          value={lblDescEn}
+                          onChange={(e) => setLblDescEn(e.target.value)}
+                          placeholder={t.admin.taxonomy.lblDescEnPlaceholder}
+                          className="input"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          {t.admin.taxonomy.lblDescBnLabel}
+                        </label>
+                        <input
+                          type="text"
+                          value={lblDescBn}
+                          onChange={(e) => setLblDescBn(e.target.value)}
+                          placeholder={t.admin.taxonomy.lblDescBnPlaceholder}
+                          className="input"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={savingLabel}
+                      className="btn-primary w-full py-2.5 text-xs"
+                    >
+                      {savingLabel
+                        ? t.admin.taxonomy.lblCreatingBtn
+                        : t.admin.taxonomy.lblCreateBtn}
+                    </button>
+                  </form>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+                  <div className="px-6 py-4 border-b border-slate-200">
+                    <h3 className="font-display text-sm font-bold text-slate-900">
+                      {t.admin.taxonomy.lblListTitle} ({toLocalizedDigits(labels.length, lang)})
+                    </h3>
+                  </div>
+                  <div className="divide-y divide-slate-100">
+                    {labels.length === 0 ? (
+                      <div className="p-6 text-center text-xs text-slate-500">
+                        {t.admin.taxonomy.lblEmpty}
+                      </div>
+                    ) : (
+                      labels.map((lbl) => (
                         <div
-                          key={cat.id}
+                          key={lbl.id}
                           className="px-6 py-3 flex items-center justify-between gap-3 text-xs"
                         >
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div className="h-9 w-9 rounded-lg bg-slate-100 border border-slate-200 overflow-hidden shrink-0">
-                              {cat.imageUrl ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                  src={normalizeMartImageUrl(cat.imageUrl)}
-                                  alt={cat.name}
-                                  referrerPolicy="no-referrer"
-                                  className="h-full w-full object-cover"
-                                />
-                              ) : null}
+                          <div className="min-w-0">
+                            <div className="font-semibold text-slate-900 truncate">
+                              {lbl.nameEn}
+                              {lbl.nameBn ? ` · ${lbl.nameBn}` : ""}
                             </div>
-                            <div className="min-w-0">
-                              <div className="font-semibold text-slate-900 truncate">
-                                {cat.name}
-                              </div>
-                              <div className="font-mono text-[11px] text-slate-400 truncate">
-                                /{cat.slug}
-                              </div>
+                            <div className="font-mono text-[11px] text-slate-400 truncate">
+                              #{lbl.slug} · {lbl.tone}
                             </div>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
                             <button
                               type="button"
-                              onClick={() => handleToggleCategory(cat)}
-                              className={`rounded-lg px-2 py-1 text-[11px] font-semibold border ${
-                                cat.active
+                              onClick={() => handleToggleLabel(lbl)}
+                              className={`rounded-lg px-2 py-1 text-[11px] font-semibold border whitespace-nowrap ${
+                                lbl.active
                                   ? "border-brand-200 bg-brand-50 text-[#0B5336]"
                                   : "border-slate-200 bg-slate-100 text-slate-500"
                               }`}
                             >
-                              {cat.active ? "Active" : "Hidden"}
+                              {lbl.active
+                                ? t.admin.taxonomy.catVisible
+                                : t.admin.taxonomy.catHidden}
                             </button>
                             <button
                               type="button"
-                              onClick={() => handleDeleteCategory(cat.id)}
-                              aria-label={`Delete ${cat.name}`}
+                              onClick={() => handleDeleteLabel(lbl.id)}
+                              aria-label={lbl.slug}
                               className="text-red-600 hover:text-red-800 p-1"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
@@ -1706,162 +2369,217 @@ export function MartAdminClient() {
                   </div>
                 </div>
               </div>
+            </div>
+          )}
 
-              {/* Storefront Banner & Delivery Charges */}
-              <div className="lg:col-span-7 rounded-2xl border border-slate-200 bg-white p-6 space-y-5 h-fit">
-                <div>
-                  <h2 className="font-display text-lg font-bold text-slate-900">
-                    Storefront Hero &amp; Delivery Settings (Mart_Settings)
-                  </h2>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Control live promotional banners, delivery fees, and mobile banking instructions.
-                  </p>
+          {/* 5. BILINGUAL STORE SETTINGS */}
+          {activeSection === "settings" && (
+            <div className="max-w-4xl rounded-2xl border border-slate-200 bg-white p-6 space-y-5">
+              <div>
+                <h2 className="font-display text-lg font-bold text-slate-900">
+                  {t.admin.settings.title}
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">{t.admin.settings.subtitle}</p>
+              </div>
+
+              <form onSubmit={handleSaveSettings} className="space-y-4">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      {t.admin.settings.promoEnLabel}
+                    </label>
+                    <input
+                      type="text"
+                      value={settingsForm.promoTextEn}
+                      onChange={(e) =>
+                        setSettingsForm({ ...settingsForm, promoTextEn: e.target.value })
+                      }
+                      className="input"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      {t.admin.settings.promoBnLabel}
+                    </label>
+                    <input
+                      type="text"
+                      value={settingsForm.promoTextBn}
+                      onChange={(e) =>
+                        setSettingsForm({ ...settingsForm, promoTextBn: e.target.value })
+                      }
+                      className="input"
+                    />
+                  </div>
                 </div>
 
-                <form onSubmit={handleSaveSettings} className="space-y-4">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Top Announcement Banner Text
+                      {t.admin.settings.heroTitleEnLabel}
                     </label>
                     <input
                       type="text"
-                      value={settingsForm.promoText}
+                      value={settingsForm.heroTitleEn}
                       onChange={(e) =>
-                        setSettingsForm({ ...settingsForm, promoText: e.target.value })
+                        setSettingsForm({ ...settingsForm, heroTitleEn: e.target.value })
                       }
                       className="input"
                     />
                   </div>
-
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Hero Headline
+                      {t.admin.settings.heroTitleBnLabel}
                     </label>
                     <input
                       type="text"
-                      value={settingsForm.heroTitle}
+                      value={settingsForm.heroTitleBn}
                       onChange={(e) =>
-                        setSettingsForm({ ...settingsForm, heroTitle: e.target.value })
+                        setSettingsForm({ ...settingsForm, heroTitleBn: e.target.value })
                       }
                       className="input"
                     />
                   </div>
+                </div>
 
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Hero Subtitle
+                      {t.admin.settings.heroSubtitleEnLabel}
                     </label>
                     <textarea
                       rows={2}
-                      value={settingsForm.heroSubtitle}
+                      value={settingsForm.heroSubtitleEn}
                       onChange={(e) =>
-                        setSettingsForm({ ...settingsForm, heroSubtitle: e.target.value })
+                        setSettingsForm({ ...settingsForm, heroSubtitleEn: e.target.value })
                       }
                       className="input min-h-[72px] py-2"
                     />
                   </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Hero CTA Text
-                      </label>
-                      <input
-                        type="text"
-                        value={settingsForm.heroCtaText}
-                        onChange={(e) =>
-                          setSettingsForm({ ...settingsForm, heroCtaText: e.target.value })
-                        }
-                        className="input"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Inside Dhaka Charge (৳)
-                      </label>
-                      <input
-                        type="number"
-                        min={0}
-                        value={settingsForm.insideDhakaCharge}
-                        onChange={(e) =>
-                          setSettingsForm({
-                            ...settingsForm,
-                            insideDhakaCharge: e.target.value,
-                          })
-                        }
-                        className="input font-mono"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Outside Dhaka Charge (৳)
-                      </label>
-                      <input
-                        type="number"
-                        min={0}
-                        value={settingsForm.outsideDhakaCharge}
-                        onChange={(e) =>
-                          setSettingsForm({
-                            ...settingsForm,
-                            outsideDhakaCharge: e.target.value,
-                          })
-                        }
-                        className="input font-mono"
-                      />
-                    </div>
-                  </div>
-
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Mobile Banking Merchant / Receiver Number (Optional)
+                      {t.admin.settings.heroSubtitleBnLabel}
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={settingsForm.heroSubtitleBn}
+                      onChange={(e) =>
+                        setSettingsForm({ ...settingsForm, heroSubtitleBn: e.target.value })
+                      }
+                      className="input min-h-[72px] py-2"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      {t.admin.settings.heroCtaEnLabel}
                     </label>
                     <input
                       type="text"
-                      value={settingsForm.mobileBankingNumber}
+                      value={settingsForm.heroCtaTextEn}
+                      onChange={(e) =>
+                        setSettingsForm({ ...settingsForm, heroCtaTextEn: e.target.value })
+                      }
+                      className="input"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      {t.admin.settings.heroCtaBnLabel}
+                    </label>
+                    <input
+                      type="text"
+                      value={settingsForm.heroCtaTextBn}
+                      onChange={(e) =>
+                        setSettingsForm({ ...settingsForm, heroCtaTextBn: e.target.value })
+                      }
+                      className="input"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      {t.admin.settings.insideDhakaLabel}
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={settingsForm.insideDhakaCharge}
                       onChange={(e) =>
                         setSettingsForm({
                           ...settingsForm,
-                          mobileBankingNumber: e.target.value,
+                          insideDhakaCharge: e.target.value,
                         })
                       }
-                      placeholder="e.g. 017XXXXXXXX (bKash / Nagad Personal or Merchant)"
                       className="input font-mono"
                     />
                   </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      {t.admin.settings.outsideDhakaLabel}
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={settingsForm.outsideDhakaCharge}
+                      onChange={(e) =>
+                        setSettingsForm({
+                          ...settingsForm,
+                          outsideDhakaCharge: e.target.value,
+                        })
+                      }
+                      className="input font-mono"
+                    />
+                  </div>
+                </div>
 
-                  <button
-                    type="submit"
-                    disabled={savingSettings}
-                    className="btn-primary px-6 py-2.5 text-xs"
-                  >
-                    {savingSettings ? "Saving Settings..." : "Save Store Settings"}
-                  </button>
-                </form>
-              </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    {t.admin.settings.mobileBankingLabel}
+                  </label>
+                  <input
+                    type="text"
+                    value={settingsForm.mobileBankingNumber}
+                    onChange={(e) =>
+                      setSettingsForm({
+                        ...settingsForm,
+                        mobileBankingNumber: e.target.value,
+                      })
+                    }
+                    placeholder={t.admin.settings.mobileBankingPlaceholder}
+                    className="input font-mono"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={savingSettings}
+                  className="btn-primary px-6 py-2.5 text-xs"
+                >
+                  {savingSettings ? t.admin.settings.savingBtn : t.admin.settings.saveBtn}
+                </button>
+              </form>
             </div>
           )}
 
-          {/* 5. CUSTOMER CRM & SALES REPORT */}
+          {/* 6. CUSTOMER CRM & SALES REPORT */}
           {activeSection === "customers" && (
             <div className="space-y-6">
               <div className="rounded-2xl border border-slate-200 bg-white p-6 flex flex-wrap items-center justify-between gap-4">
                 <div>
                   <h2 className="font-display text-lg font-bold text-slate-900">
-                    Customer CRM &amp; Sales Export
+                    {t.admin.customers.title}
                   </h2>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Unique buyers aggregated from Mart_Orders with lifetime BDT spend and CSV
-                    download.
-                  </p>
+                  <p className="text-xs text-slate-500 mt-0.5">{t.admin.customers.subtitle}</p>
                 </div>
                 <button
                   type="button"
-                  onClick={() => exportMartOrdersToCsv(orders)}
+                  onClick={() => exportMartOrdersToCsv(orders, lang)}
                   disabled={orders.length === 0}
                   className="btn-primary px-5 py-2.5 text-xs gap-2 disabled:opacity-50"
                 >
                   <Download className="h-4 w-4" />
-                  <span>Download Sales Report (CSV)</span>
+                  <span>{t.admin.customers.downloadCsvBtn}</span>
                 </button>
               </div>
 
@@ -1870,19 +2588,25 @@ export function MartAdminClient() {
                   <table className="w-full text-left text-xs">
                     <thead className="bg-slate-50 border-b border-slate-200 text-slate-500">
                       <tr>
-                        <th className="px-4 py-3 font-semibold">Customer</th>
-                        <th className="px-4 py-3 font-semibold">Phone</th>
-                        <th className="px-4 py-3 font-semibold">Latest Delivery Address</th>
-                        <th className="px-4 py-3 font-semibold text-right">Orders</th>
-                        <th className="px-4 py-3 font-semibold text-right">Total Spend</th>
-                        <th className="px-4 py-3 font-semibold text-right">History</th>
+                        <th className="px-4 py-3 font-semibold">{t.admin.customers.colCustomer}</th>
+                        <th className="px-4 py-3 font-semibold">{t.admin.customers.colPhone}</th>
+                        <th className="px-4 py-3 font-semibold">{t.admin.customers.colAddress}</th>
+                        <th className="px-4 py-3 font-semibold text-right">
+                          {t.admin.customers.colOrders}
+                        </th>
+                        <th className="px-4 py-3 font-semibold text-right">
+                          {t.admin.customers.colSpend}
+                        </th>
+                        <th className="px-4 py-3 font-semibold text-right">
+                          {t.admin.customers.colHistory}
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {customers.length === 0 ? (
                         <tr>
                           <td colSpan={6} className="px-4 py-10 text-center text-slate-500">
-                            No customer records yet. Completed checkout orders appear here.
+                            {t.admin.customers.emptyCustomers}
                           </td>
                         </tr>
                       ) : (
@@ -1894,18 +2618,18 @@ export function MartAdminClient() {
                               {cust.address}
                             </td>
                             <td className="px-4 py-3 text-right font-mono font-semibold tabular-nums">
-                              {cust.orderCount}
+                              {toLocalizedDigits(cust.orderCount, lang)}
                             </td>
                             <td className="px-4 py-3 text-right font-mono font-bold text-[#0B5336] tabular-nums">
-                              {formatMartBDT(cust.totalSpend)}
+                              {formatMartPrice(cust.totalSpend, lang)}
                             </td>
                             <td className="px-4 py-3 text-right">
                               <button
                                 type="button"
                                 onClick={() => setSelectedCustomerPhone(cust.phone)}
-                                className="rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336]"
+                                className="rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] whitespace-nowrap"
                               >
-                                View Orders
+                                {t.admin.customers.viewOrdersBtn}
                               </button>
                             </td>
                           </tr>
@@ -1930,7 +2654,7 @@ export function MartAdminClient() {
           <div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 bg-slate-50 print:hidden">
               <h2 className="font-display text-base font-bold text-slate-900">
-                Order Invoice · {invoiceOrder.id}
+                {t.admin.invoice.titlePrefix} · {invoiceOrder.id}
               </h2>
               <div className="flex items-center gap-2">
                 <button
@@ -1939,11 +2663,12 @@ export function MartAdminClient() {
                   className="btn-primary px-3.5 py-1.5 text-xs gap-1.5 min-h-[34px]"
                 >
                   <Printer className="h-3.5 w-3.5" />
-                  <span>Print</span>
+                  <span>{t.common.print}</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setInvoiceOrder(null)}
+                  aria-label={t.common.close}
                   className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-200"
                 >
                   <X className="h-5 w-5" />
@@ -1956,7 +2681,7 @@ export function MartAdminClient() {
                 <div>
                   <MartLogo />
                   <div className="text-slate-500 mt-2">
-                    Email: mart@xeetrix.com · Helpline: +880 965 803 6631
+                    {MART_CONTACT_EMAIL} · {MART_CONTACT_PHONE}
                   </div>
                 </div>
                 <div className="text-right">
@@ -1964,29 +2689,38 @@ export function MartAdminClient() {
                     {invoiceOrder.id}
                   </div>
                   <div className="text-slate-500">
-                    {invoiceOrder.createdAt
-                      ? new Date(invoiceOrder.createdAt).toLocaleString()
-                      : ""}
+                    {formatMartDateTime(invoiceOrder.createdAt, lang)}
                   </div>
                   <div className="mt-1">
-                    Status: <StatusLabel status={invoiceOrder.status} />
+                    <StatusLabel
+                      status={invoiceOrder.status}
+                      label={t.orderStatuses[invoiceOrder.status] || invoiceOrder.status}
+                    />
                   </div>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <div className="text-slate-500 font-semibold mb-1">Bill / Ship To</div>
+                  <div className="text-slate-500 font-semibold mb-1">{t.admin.invoice.billTo}</div>
                   <div className="font-semibold text-slate-900">{invoiceOrder.customerName}</div>
                   <div className="font-mono text-slate-700">{invoiceOrder.phone}</div>
                   <div className="text-slate-600 mt-0.5">{invoiceOrder.address}</div>
                 </div>
                 <div className="sm:text-right">
-                  <div className="text-slate-500 font-semibold mb-1">Fulfillment &amp; Payment</div>
-                  <div>Area: {invoiceOrder.deliveryArea}</div>
-                  <div>Payment: {invoiceOrder.paymentMethod}</div>
+                  <div className="text-slate-500 font-semibold mb-1">
+                    {t.admin.invoice.fulfillmentPayment}
+                  </div>
+                  <div>
+                    {t.admin.invoice.areaLabel}: {invoiceOrder.deliveryArea}
+                  </div>
+                  <div>
+                    {t.admin.invoice.paymentLabel}: {invoiceOrder.paymentMethod}
+                  </div>
                   {invoiceOrder.transactionId && (
-                    <div className="font-mono">TrxID: {invoiceOrder.transactionId}</div>
+                    <div className="font-mono">
+                      {t.admin.invoice.trxIdLabel}: {invoiceOrder.transactionId}
+                    </div>
                   )}
                 </div>
               </div>
@@ -1995,9 +2729,9 @@ export function MartAdminClient() {
                 <table className="w-full text-left">
                   <thead className="border-b border-slate-200 text-slate-500">
                     <tr>
-                      <th className="py-2 font-semibold">Item</th>
-                      <th className="py-2 font-semibold text-center">Qty</th>
-                      <th className="py-2 font-semibold text-right">Amount</th>
+                      <th className="py-2 font-semibold">{t.admin.invoice.itemCol}</th>
+                      <th className="py-2 font-semibold text-center">{t.admin.invoice.qtyCol}</th>
+                      <th className="py-2 font-semibold text-right">{t.admin.invoice.amountCol}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -2005,25 +2739,29 @@ export function MartAdminClient() {
                       parseOrderItems(invoiceOrder.itemsJson).map((item, idx) => (
                         <tr key={idx}>
                           <td className="py-2">
-                            <div className="font-semibold text-slate-900">{item.name}</div>
+                            <div className="font-semibold text-slate-900">
+                              {pickLocalized(item.nameEn || item.name, item.nameBn, lang)}
+                            </div>
                             {item.variant && (
                               <div className="text-slate-500">{item.variant}</div>
                             )}
                           </td>
                           <td className="py-2 text-center font-mono tabular-nums">
-                            {item.quantity}
+                            {toLocalizedDigits(item.quantity, lang)}
                           </td>
                           <td className="py-2 text-right font-mono font-semibold tabular-nums">
-                            {formatMartBDT(item.lineTotal)}
+                            {formatMartPrice(item.lineTotal, lang)}
                           </td>
                         </tr>
                       ))
                     ) : (
                       <tr>
                         <td className="py-2">{invoiceOrder.itemsSummary}</td>
-                        <td className="py-2 text-center font-mono">{invoiceOrder.totalItems}</td>
+                        <td className="py-2 text-center font-mono">
+                          {toLocalizedDigits(invoiceOrder.totalItems, lang)}
+                        </td>
                         <td className="py-2 text-right font-mono">
-                          {formatMartBDT(invoiceOrder.subtotal)}
+                          {formatMartPrice(invoiceOrder.subtotal, lang)}
                         </td>
                       </tr>
                     )}
@@ -2033,21 +2771,23 @@ export function MartAdminClient() {
 
               <div className="border-t border-slate-200 pt-3 space-y-1.5">
                 <div className="flex justify-between text-slate-600">
-                  <span>Subtotal</span>
+                  <span>{t.admin.invoice.subtotalLabel}</span>
                   <span className="font-mono tabular-nums">
-                    {formatMartBDT(invoiceOrder.subtotal)}
+                    {formatMartPrice(invoiceOrder.subtotal, lang)}
                   </span>
                 </div>
                 <div className="flex justify-between text-slate-600">
-                  <span>Delivery ({invoiceOrder.deliveryArea})</span>
+                  <span>
+                    {t.admin.invoice.deliveryPrefix} ({invoiceOrder.deliveryArea})
+                  </span>
                   <span className="font-mono tabular-nums">
-                    {formatMartBDT(invoiceOrder.deliveryCharge)}
+                    {formatMartPrice(invoiceOrder.deliveryCharge, lang)}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm font-bold text-slate-900 pt-2 border-t border-slate-200">
-                  <span>Total Amount</span>
+                  <span>{t.admin.invoice.totalAmountLabel}</span>
                   <span className="font-mono text-[#0B5336] tabular-nums">
-                    {formatMartBDT(invoiceOrder.totalAmount)}
+                    {formatMartPrice(invoiceOrder.totalAmount, lang)}
                   </span>
                 </div>
               </div>
@@ -2074,6 +2814,7 @@ export function MartAdminClient() {
               <button
                 type="button"
                 onClick={() => setSelectedCustomerPhone(null)}
+                aria-label={t.admin.customers.ordersModalCloseAria}
                 className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-200"
               >
                 <X className="h-5 w-5" />
@@ -2087,15 +2828,16 @@ export function MartAdminClient() {
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-mono font-bold text-slate-900">{ord.id}</span>
-                    <StatusLabel status={ord.status} />
+                    <StatusLabel
+                      status={ord.status}
+                      label={t.orderStatuses[ord.status] || ord.status}
+                    />
                   </div>
                   <div className="text-slate-600">{ord.itemsSummary}</div>
                   <div className="flex justify-between font-mono text-slate-500 pt-1">
-                    <span>
-                      {ord.createdAt ? new Date(ord.createdAt).toLocaleDateString() : ""}
-                    </span>
+                    <span>{formatMartDate(ord.createdAt, lang)}</span>
                     <span className="font-bold text-slate-900 tabular-nums">
-                      {formatMartBDT(ord.totalAmount)}
+                      {formatMartPrice(ord.totalAmount, lang)}
                     </span>
                   </div>
                 </div>

@@ -2,41 +2,73 @@
 // Zero dependencies on parent holding or travel modules so this folder
 // can be extracted to a standalone e-commerce domain with zero code edits.
 
-export const MART_BRAND_NAME = "Xeetrix Mart";
+import { MART_DICTIONARY, MartLang, slugifyTaxonomy } from "./martI18n";
+
 export const MART_CONTACT_EMAIL = "mart@xeetrix.com";
 export const MART_CONTACT_PHONE = "+880 965 803 6631";
 export const MART_CONTACT_TEL = "tel:+8809658036631";
-export const MART_ADDRESS = "Dhaka, Bangladesh";
 export const MART_CURRENCY = "৳";
 
 export type MartSheetName =
   | "Mart_Products"
   | "Mart_Categories"
+  | "Mart_Labels"
   | "Mart_Orders"
   | "Mart_Settings";
 
 export interface MartProduct {
   id: string;
   sku: string;
-  name: string;
-  category: string;
+  nameEn: string;
+  nameBn: string;
+  categories: string; // Comma-separated category slugs, e.g. "baby,clothing"
+  labels: string; // Comma-separated label slugs, e.g. "winter-collection,featured"
   price: number;
   comparePrice: number;
   stock: number;
-  variants: string; // Comma-separated sizes/colors, e.g. "Black, Silver" or "M, L, XL"
+  variantsEn: string;
+  variantsBn: string;
   imageUrl: string;
-  description: string;
+  descriptionEn: string;
+  descriptionBn: string;
   featured: boolean;
   active: boolean;
   createdAt: string;
+  // Optional legacy keys tolerated during migration
+  name?: string;
+  category?: string;
+  variants?: string;
+  description?: string;
 }
 
 export interface MartCategory {
   id: string;
-  name: string;
   slug: string;
-  description: string;
+  parentSlug: string;
+  nameEn: string;
+  nameBn: string;
+  descriptionEn: string;
+  descriptionBn: string;
   imageUrl: string;
+  sortOrder: number;
+  active: boolean;
+  createdAt: string;
+  // Optional legacy keys tolerated during migration
+  name?: string;
+  description?: string;
+}
+
+export type MartLabelTone = "emerald" | "gold" | "slate";
+
+export interface MartLabel {
+  id: string;
+  slug: string;
+  nameEn: string;
+  nameBn: string;
+  descriptionEn: string;
+  descriptionBn: string;
+  tone: MartLabelTone | string;
+  sortOrder: number;
   active: boolean;
   createdAt: string;
 }
@@ -56,6 +88,8 @@ export interface MartOrderItem {
   productId: string;
   sku: string;
   name: string;
+  nameEn?: string;
+  nameBn?: string;
   variant: string;
   unitPrice: number;
   quantity: number;
@@ -83,21 +117,35 @@ export interface MartOrder {
 }
 
 export interface MartSettings {
-  heroTitle: string;
-  heroSubtitle: string;
-  heroCtaText: string;
-  promoText: string;
+  heroTitleEn: string;
+  heroTitleBn: string;
+  heroSubtitleEn: string;
+  heroSubtitleBn: string;
+  heroCtaTextEn: string;
+  heroCtaTextBn: string;
+  promoTextEn: string;
+  promoTextBn: string;
   insideDhakaCharge: string;
   outsideDhakaCharge: string;
   mobileBankingNumber: string;
+  // Legacy single-language read fallback keys
+  heroTitle?: string;
+  heroSubtitle?: string;
+  heroCtaText?: string;
+  promoText?: string;
 }
 
 export const DEFAULT_MART_SETTINGS: MartSettings = {
-  heroTitle: "Everyday Essentials & Authentic Electronics",
-  heroSubtitle:
+  heroTitleEn: "Everyday Essentials & Authentic Electronics",
+  heroTitleBn: "প্রতিদিনের নিত্যপ্রয়োজনীয় ও আসল ইলেকট্রনিক্স",
+  heroSubtitleEn:
     "Verified quality products delivered nationwide across Bangladesh with transparent BDT pricing and flexible Cash on Delivery.",
-  heroCtaText: "Shop Collection",
-  promoText: "Nationwide Delivery · Cash on Delivery & Mobile Banking Available",
+  heroSubtitleBn:
+    "স্বচ্ছ টাকা (৳) মূল্যে ও ক্যাশ অন ডেলিভারি সুবিধাসহ সারাদেশে যাচাইকৃত মানসম্মত পণ্য দ্রুত পৌঁছে দেওয়া হয়।",
+  heroCtaTextEn: "Shop Collection",
+  heroCtaTextBn: "কালেকশন দেখুন",
+  promoTextEn: "Nationwide Delivery · Cash on Delivery & Mobile Banking Available",
+  promoTextBn: "সারাদেশে ডেলিভারি · ক্যাশ অন ডেলিভারি ও মোবাইল ব্যাংকিং সুবিধা",
   insideDhakaCharge: "70",
   outsideDhakaCharge: "130",
   mobileBankingNumber: "",
@@ -105,25 +153,100 @@ export const DEFAULT_MART_SETTINGS: MartSettings = {
 
 function mergeMartSettings(partial?: Partial<MartSettings>): MartSettings {
   return {
-    heroTitle: partial?.heroTitle || DEFAULT_MART_SETTINGS.heroTitle,
-    heroSubtitle: partial?.heroSubtitle || DEFAULT_MART_SETTINGS.heroSubtitle,
-    heroCtaText: partial?.heroCtaText || DEFAULT_MART_SETTINGS.heroCtaText,
-    promoText: partial?.promoText || DEFAULT_MART_SETTINGS.promoText,
+    heroTitleEn: partial?.heroTitleEn || partial?.heroTitle || DEFAULT_MART_SETTINGS.heroTitleEn,
+    heroTitleBn: partial?.heroTitleBn || DEFAULT_MART_SETTINGS.heroTitleBn,
+    heroSubtitleEn:
+      partial?.heroSubtitleEn || partial?.heroSubtitle || DEFAULT_MART_SETTINGS.heroSubtitleEn,
+    heroSubtitleBn: partial?.heroSubtitleBn || DEFAULT_MART_SETTINGS.heroSubtitleBn,
+    heroCtaTextEn:
+      partial?.heroCtaTextEn || partial?.heroCtaText || DEFAULT_MART_SETTINGS.heroCtaTextEn,
+    heroCtaTextBn: partial?.heroCtaTextBn || DEFAULT_MART_SETTINGS.heroCtaTextBn,
+    promoTextEn: partial?.promoTextEn || partial?.promoText || DEFAULT_MART_SETTINGS.promoTextEn,
+    promoTextBn: partial?.promoTextBn || DEFAULT_MART_SETTINGS.promoTextBn,
     insideDhakaCharge: partial?.insideDhakaCharge || DEFAULT_MART_SETTINGS.insideDhakaCharge,
     outsideDhakaCharge: partial?.outsideDhakaCharge || DEFAULT_MART_SETTINGS.outsideDhakaCharge,
     mobileBankingNumber: partial?.mobileBankingNumber ?? DEFAULT_MART_SETTINGS.mobileBankingNumber,
   };
 }
 
+function normalizeProductRecord(raw: Partial<MartProduct>): MartProduct {
+  const legacyCat = (raw.category || "").trim();
+  const cats =
+    (raw.categories || "").trim() || (legacyCat ? slugifyTaxonomy(legacyCat) : "");
+  return {
+    id: String(raw.id || ""),
+    sku: String(raw.sku || ""),
+    nameEn: String(raw.nameEn || raw.name || ""),
+    nameBn: String(raw.nameBn || ""),
+    categories: cats,
+    labels: String(raw.labels || ""),
+    price: Number(raw.price) || 0,
+    comparePrice: Number(raw.comparePrice) || 0,
+    stock: Number(raw.stock) || 0,
+    variantsEn: String(raw.variantsEn || raw.variants || ""),
+    variantsBn: String(raw.variantsBn || ""),
+    imageUrl: String(raw.imageUrl || ""),
+    descriptionEn: String(raw.descriptionEn || raw.description || ""),
+    descriptionBn: String(raw.descriptionBn || ""),
+    featured: Boolean(raw.featured),
+    active: raw.active !== false,
+    createdAt: String(raw.createdAt || ""),
+  };
+}
+
+function normalizeCategoryRecord(raw: Partial<MartCategory>): MartCategory {
+  const nameEn = String(raw.nameEn || raw.name || "");
+  const nameBn = String(raw.nameBn || "");
+  return {
+    id: String(raw.id || ""),
+    slug: String(raw.slug || slugifyTaxonomy(nameEn || nameBn || raw.id || "")),
+    parentSlug: String(raw.parentSlug || ""),
+    nameEn,
+    nameBn,
+    descriptionEn: String(raw.descriptionEn || raw.description || ""),
+    descriptionBn: String(raw.descriptionBn || ""),
+    imageUrl: String(raw.imageUrl || ""),
+    sortOrder: Number(raw.sortOrder) || 0,
+    active: raw.active !== false,
+    createdAt: String(raw.createdAt || ""),
+  };
+}
+
+function normalizeLabelRecord(raw: Partial<MartLabel>): MartLabel {
+  const nameEn = String(raw.nameEn || "");
+  const nameBn = String(raw.nameBn || "");
+  return {
+    id: String(raw.id || ""),
+    slug: String(raw.slug || slugifyTaxonomy(nameEn || nameBn || raw.id || "")),
+    nameEn,
+    nameBn,
+    descriptionEn: String(raw.descriptionEn || ""),
+    descriptionBn: String(raw.descriptionBn || ""),
+    tone: String(raw.tone || "emerald"),
+    sortOrder: Number(raw.sortOrder) || 0,
+    active: raw.active !== false,
+    createdAt: String(raw.createdAt || ""),
+  };
+}
+
 export interface MartPublicBundle {
   products: MartProduct[];
   categories: MartCategory[];
+  labels: MartLabel[];
   settings: MartSettings;
   isLiveBackend: boolean;
 }
 
 export interface MartAdminBundle extends MartPublicBundle {
   orders: MartOrder[];
+}
+
+export class MartApiError extends Error {
+  code?: string;
+  constructor(message: string, code?: string) {
+    super(message);
+    this.code = code;
+  }
 }
 
 export function formatMartBDT(amount: number): string {
@@ -149,15 +272,10 @@ export function parseOrderItems(itemsJson?: string): MartOrderItem[] {
 }
 
 export function slugifyCategory(text: string): string {
-  return text
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-");
+  return slugifyTaxonomy(text);
 }
 
-const MART_PUBLIC_CACHE_KEY = "xeetrix_mart_public_snapshot_v1";
+const MART_PUBLIC_CACHE_KEY = "xeetrix_mart_public_snapshot_v2";
 const MART_ADMIN_PASS_KEY = "xeetrix_mart_admin_pass_v1";
 
 export function getCachedMartPublicSnapshot(): MartPublicBundle | null {
@@ -170,8 +288,9 @@ export function getCachedMartPublicSnapshot(): MartPublicBundle | null {
       return null;
     }
     return {
-      products: parsed.products,
-      categories: parsed.categories,
+      products: parsed.products.map(normalizeProductRecord),
+      categories: parsed.categories.map(normalizeCategoryRecord),
+      labels: Array.isArray(parsed.labels) ? parsed.labels.map(normalizeLabelRecord) : [],
       settings: mergeMartSettings(parsed.settings),
       isLiveBackend: Boolean(parsed.isLiveBackend),
     };
@@ -219,7 +338,7 @@ export function clearStoredMartAdminPass(): void {
 export async function verifyMartAdminPassword(password: string): Promise<void> {
   const clean = password.trim();
   if (!clean) {
-    throw new Error("Please enter your store admin passcode.");
+    throw new MartApiError("Please enter your store admin passcode.", "MISSING_FIELDS");
   }
 
   const res = await fetch("/api/mart/admin", {
@@ -229,9 +348,12 @@ export async function verifyMartAdminPassword(password: string): Promise<void> {
     cache: "no-store",
   });
 
-  const json = (await res.json()) as { ok: boolean; error?: string };
+  const json = (await res.json()) as { ok: boolean; error?: string; code?: string };
   if (!res.ok || !json.ok) {
-    throw new Error(json.error || "Invalid Mart Admin passcode. Please try again.");
+    throw new MartApiError(
+      json.error || "Invalid Mart Admin passcode.",
+      res.status === 401 ? "UNAUTHORIZED" : json.code
+    );
   }
 
   if (typeof window !== "undefined") {
@@ -266,7 +388,7 @@ export function normalizeMartImageUrl(url?: string): string {
 
 async function postToMartAdminApi<T = Record<string, unknown>>(
   payload: Record<string, unknown>
-): Promise<{ ok: boolean; error?: string } & T> {
+): Promise<{ ok: boolean; error?: string; code?: string } & T> {
   const pass = getStoredMartAdminPass();
   const res = await fetch("/api/mart/admin", {
     method: "POST",
@@ -278,12 +400,13 @@ async function postToMartAdminApi<T = Record<string, unknown>>(
     cache: "no-store",
   });
 
-  const json = (await res.json()) as { ok: boolean; error?: string } & T;
+  const json = (await res.json()) as { ok: boolean; error?: string; code?: string } & T;
   if (!res.ok || !json.ok) {
     if (res.status === 401) {
       clearStoredMartAdminPass();
+      throw new MartApiError(json.error || "Unauthorized Mart Admin session.", "UNAUTHORIZED");
     }
-    throw new Error(json.error || `Store backend HTTP ${res.status}`);
+    throw new MartApiError(json.error || `Store backend HTTP ${res.status}`, json.code);
   }
 
   clearMartPublicSnapshot();
@@ -291,8 +414,8 @@ async function postToMartAdminApi<T = Record<string, unknown>>(
 }
 
 /**
- * Fetches live public products, categories, and settings via Next.js server proxy + cache.
- * Strictly returns empty arrays (no dummy products or categories) when empty or unconfigured.
+ * Fetches live public products, categories, labels, and settings via Next.js server proxy + cache.
+ * Strictly returns empty arrays (no dummy products, categories, or labels) when empty or unconfigured.
  */
 export async function fetchMartPublicData(forceFresh = false): Promise<MartPublicBundle> {
   try {
@@ -310,8 +433,9 @@ export async function fetchMartPublicData(forceFresh = false): Promise<MartPubli
       ok: boolean;
       isLiveBackend?: boolean;
       data?: {
-        products?: MartProduct[];
-        categories?: MartCategory[];
+        products?: Partial<MartProduct>[];
+        categories?: Partial<MartCategory>[];
+        labels?: Partial<MartLabel>[];
         settings?: Partial<MartSettings>;
       };
     };
@@ -321,8 +445,15 @@ export async function fetchMartPublicData(forceFresh = false): Promise<MartPubli
     }
 
     const bundle: MartPublicBundle = {
-      products: Array.isArray(json.data.products) ? json.data.products : [],
-      categories: Array.isArray(json.data.categories) ? json.data.categories : [],
+      products: Array.isArray(json.data.products)
+        ? json.data.products.map(normalizeProductRecord)
+        : [],
+      categories: Array.isArray(json.data.categories)
+        ? json.data.categories.map(normalizeCategoryRecord)
+        : [],
+      labels: Array.isArray(json.data.labels)
+        ? json.data.labels.map(normalizeLabelRecord)
+        : [],
       settings: mergeMartSettings(json.data.settings),
       isLiveBackend: Boolean(json.isLiveBackend),
     };
@@ -336,6 +467,7 @@ export async function fetchMartPublicData(forceFresh = false): Promise<MartPubli
     return {
       products: [],
       categories: [],
+      labels: [],
       settings: DEFAULT_MART_SETTINGS,
       isLiveBackend: false,
     };
@@ -355,13 +487,12 @@ export async function trackMartOrder(orderId: string, phone: string): Promise<Ma
   const json = (await res.json()) as {
     ok: boolean;
     error?: string;
+    code?: string;
     order?: MartOrder;
   };
 
   if (!res.ok || !json.ok || !json.order) {
-    throw new Error(
-      json.error || "No matching order found. Check your Order ID and phone number."
-    );
+    throw new MartApiError(json.error || "Order not found.", json.code || "NOT_FOUND");
   }
   return json.order;
 }
@@ -389,14 +520,15 @@ export async function placeMartOrder(payload: {
   const json = (await res.json()) as {
     ok: boolean;
     error?: string;
+    code?: string;
     id?: string;
     record?: MartOrder;
   };
 
   if (!res.ok || !json.ok || !json.id) {
-    throw new Error(
-      json.error ||
-        "Store checkout is currently being connected. Please call +880 965 803 6631 or email mart@xeetrix.com to complete your order."
+    throw new MartApiError(
+      json.error || "Failed to place order.",
+      json.code || (res.status === 503 ? "BACKEND_UNCONFIGURED" : "GENERIC_NETWORK")
     );
   }
 
@@ -418,9 +550,11 @@ export async function fetchMartAdminData(): Promise<MartAdminBundle> {
     ok: boolean;
     isLiveBackend?: boolean;
     error?: string;
+    code?: string;
     data?: {
-      products?: MartProduct[];
-      categories?: MartCategory[];
+      products?: Partial<MartProduct>[];
+      categories?: Partial<MartCategory>[];
+      labels?: Partial<MartLabel>[];
       orders?: MartOrder[];
       settings?: Partial<MartSettings>;
     };
@@ -429,13 +563,24 @@ export async function fetchMartAdminData(): Promise<MartAdminBundle> {
   if (!res.ok || !json.ok || !json.data) {
     if (res.status === 401) {
       clearStoredMartAdminPass();
+      throw new MartApiError(json.error || "Unauthorized Mart Admin session.", "UNAUTHORIZED");
     }
-    throw new Error(json.error || "Failed to load Mart Admin data from Google Sheets.");
+    throw new MartApiError(
+      json.error || "Failed to load Mart Admin data from Google Sheets.",
+      json.code
+    );
   }
 
   return {
-    products: Array.isArray(json.data.products) ? json.data.products : [],
-    categories: Array.isArray(json.data.categories) ? json.data.categories : [],
+    products: Array.isArray(json.data.products)
+      ? json.data.products.map(normalizeProductRecord)
+      : [],
+    categories: Array.isArray(json.data.categories)
+      ? json.data.categories.map(normalizeCategoryRecord)
+      : [],
+    labels: Array.isArray(json.data.labels)
+      ? json.data.labels.map(normalizeLabelRecord)
+      : [],
     orders: Array.isArray(json.data.orders) ? json.data.orders : [],
     settings: mergeMartSettings(json.data.settings),
     isLiveBackend: Boolean(json.isLiveBackend),
@@ -523,24 +668,8 @@ export function fileToMartBase64(file: File): Promise<string> {
   });
 }
 
-export function exportMartOrdersToCsv(orders: MartOrder[]): void {
-  const headers = [
-    "Order ID",
-    "Date",
-    "Customer Name",
-    "Phone",
-    "Delivery Area",
-    "Address",
-    "Items",
-    "Total Items",
-    "Subtotal (BDT)",
-    "Delivery Charge (BDT)",
-    "Total Amount (BDT)",
-    "Payment Method",
-    "Transaction ID",
-    "Notes",
-    "Status",
-  ];
+export function exportMartOrdersToCsv(orders: MartOrder[], lang: MartLang = "en"): void {
+  const headers = MART_DICTIONARY[lang].admin.csvHeaders;
 
   const escapeCsv = (val: unknown) => {
     const str = String(val ?? "").replace(/"/g, '""');

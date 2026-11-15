@@ -21,6 +21,7 @@ const ALLOWED_MUTATION_ACTIONS = new Set([
 const ALLOWED_MUTATION_SHEETS = new Set([
   "Mart_Products",
   "Mart_Categories",
+  "Mart_Labels",
   "Mart_Orders",
 ]);
 
@@ -47,6 +48,7 @@ export async function GET(req: NextRequest) {
         data: {
           products: [],
           categories: [],
+          labels: [],
           orders: [],
           settings: DEFAULT_MART_SETTINGS,
         },
@@ -78,6 +80,7 @@ export async function GET(req: NextRequest) {
       data?: {
         products?: unknown[];
         categories?: unknown[];
+        labels?: unknown[];
         orders?: unknown[];
         settings?: Record<string, string>;
       };
@@ -94,6 +97,7 @@ export async function GET(req: NextRequest) {
         data: {
           products: Array.isArray(json.data.products) ? json.data.products : [],
           categories: Array.isArray(json.data.categories) ? json.data.categories : [],
+          labels: Array.isArray(json.data.labels) ? json.data.labels : [],
           orders: Array.isArray(json.data.orders) ? json.data.orders : [],
           settings: {
             ...DEFAULT_MART_SETTINGS,

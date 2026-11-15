@@ -4,19 +4,22 @@ import React from "react";
 import Link from "next/link";
 import { Mail, Phone, MapPin, Lock, PackageSearch } from "lucide-react";
 import { MartLogo } from "./MartLogo";
+import { useMartI18n } from "./MartI18nProvider";
 import {
-  MART_ADDRESS,
-  MART_BRAND_NAME,
   MART_CONTACT_EMAIL,
   MART_CONTACT_PHONE,
   MART_CONTACT_TEL,
 } from "@/lib/martApi";
+import { toLocalizedDigits } from "@/lib/martI18n";
 
 interface MartFooterProps {
   onOpenTrackOrder?: () => void;
 }
 
 export function MartFooter({ onOpenTrackOrder }: MartFooterProps) {
+  const { lang, t } = useMartI18n();
+  const year = toLocalizedDigits(new Date().getFullYear(), lang);
+
   return (
     <footer className="border-t border-slate-200 bg-slate-900 text-slate-300">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
@@ -25,20 +28,19 @@ export function MartFooter({ onOpenTrackOrder }: MartFooterProps) {
           <div className="space-y-4">
             <MartLogo inverted />
             <p className="text-sm text-slate-400 leading-relaxed max-w-sm">
-              Your trusted destination for authentic electronics, daily essentials, and verified
-              lifestyle products with fast Cash on Delivery across Bangladesh.
+              {t.footer.description}
             </p>
           </div>
 
           {/* Customer Navigation */}
           <div>
             <h3 className="font-display text-sm font-semibold text-white mb-4">
-              Customer Service
+              {t.footer.customerServiceTitle}
             </h3>
             <ul className="space-y-2.5 text-sm">
               <li>
                 <Link href="/mart#mart-catalog" className="hover:text-white transition-colors">
-                  Browse All Products
+                  {t.footer.browseAllProducts}
                 </Link>
               </li>
               {onOpenTrackOrder && (
@@ -49,7 +51,7 @@ export function MartFooter({ onOpenTrackOrder }: MartFooterProps) {
                     className="inline-flex items-center gap-1.5 hover:text-white transition-colors"
                   >
                     <PackageSearch className="h-3.5 w-3.5 text-gold-400" />
-                    <span>Track Your Order</span>
+                    <span>{t.footer.trackYourOrder}</span>
                   </button>
                 </li>
               )}
@@ -59,7 +61,7 @@ export function MartFooter({ onOpenTrackOrder }: MartFooterProps) {
                   className="inline-flex items-center gap-1.5 text-slate-400 hover:text-white transition-colors"
                 >
                   <Lock className="h-3.5 w-3.5" />
-                  <span>Store Admin Portal</span>
+                  <span>{t.footer.storeAdminPortal}</span>
                 </Link>
               </li>
             </ul>
@@ -68,12 +70,12 @@ export function MartFooter({ onOpenTrackOrder }: MartFooterProps) {
           {/* Direct Store Contact */}
           <div>
             <h3 className="font-display text-sm font-semibold text-white mb-4">
-              Store Support Desk
+              {t.footer.supportDeskTitle}
             </h3>
             <ul className="space-y-3 text-sm">
               <li className="flex items-start gap-2.5 text-slate-300">
                 <MapPin className="h-4 w-4 text-gold-400 shrink-0 mt-0.5" />
-                <span>{MART_ADDRESS}</span>
+                <span>{t.footer.address}</span>
               </li>
               <li>
                 <a
@@ -98,9 +100,11 @@ export function MartFooter({ onOpenTrackOrder }: MartFooterProps) {
         </div>
 
         <div className="mt-10 pt-6 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400">
-          <p>© {new Date().getFullYear()} {MART_BRAND_NAME}. All rights reserved.</p>
           <p>
-            Customer Helpline:{" "}
+            © {year} {t.common.brandPrimary} {t.common.brandAccent}. {t.footer.allRightsReserved}
+          </p>
+          <p>
+            {t.footer.helplineLabel}:{" "}
             <span className="font-mono text-slate-300 tabular-nums">{MART_CONTACT_PHONE}</span>
           </p>
         </div>

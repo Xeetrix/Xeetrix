@@ -1,15 +1,15 @@
 /**
- * Xeetrix Mart — Standalone E-Commerce Google Apps Script Backend (backend/mart/Code.gs)
+ * Xeetrix Mart — Standalone Bilingual & Multi-Taxonomy Google Apps Script Backend
  *
  * Designed to be attached directly inside a dedicated "Xeetrix Mart Database" Google Sheet.
  *
- * FIRST-TIME ONE-CLICK SETUP:
+ * FIRST-TIME & UPGRADE ONE-CLICK SETUP:
  *   1. Open your Google Sheet -> Extensions -> Apps Script -> paste this file -> Save.
  *   2. Select "setupMartBackend" in the top function dropdown and click Run.
  *   3. Authorize Google Sheets & Google Drive access.
- *      This single run automatically creates:
- *        - 4 Tabs with bold frozen Row 1 headers:
- *          Mart_Products, Mart_Categories, Mart_Orders, Mart_Settings (ZERO dummy items)
+ *      This single run automatically creates OR non-destructively upgrades:
+ *        - 5 Tabs with bold frozen Row 1 headers (ZERO dummy items):
+ *          Mart_Products, Mart_Categories, Mart_Labels, Mart_Orders, Mart_Settings
  *        - Google Drive folders:
  *          Xeetrix_Mart_Storage/Products  &  Xeetrix_Mart_Storage/Categories
  *        - Cached Drive Folder IDs in Script Properties + warmed CacheService
@@ -24,24 +24,44 @@ var MART_SCHEMA = {
   Mart_Products: [
     "id",
     "sku",
-    "name",
-    "category",
+    "nameEn",
+    "nameBn",
+    "categories",
+    "labels",
     "price",
     "comparePrice",
     "stock",
-    "variants",
+    "variantsEn",
+    "variantsBn",
     "imageUrl",
-    "description",
+    "descriptionEn",
+    "descriptionBn",
     "featured",
     "active",
     "createdAt"
   ],
   Mart_Categories: [
     "id",
-    "name",
     "slug",
-    "description",
+    "parentSlug",
+    "nameEn",
+    "nameBn",
+    "descriptionEn",
+    "descriptionBn",
     "imageUrl",
+    "sortOrder",
+    "active",
+    "createdAt"
+  ],
+  Mart_Labels: [
+    "id",
+    "slug",
+    "nameEn",
+    "nameBn",
+    "descriptionEn",
+    "descriptionBn",
+    "tone",
+    "sortOrder",
     "active",
     "createdAt"
   ],
@@ -67,11 +87,16 @@ var MART_SCHEMA = {
 };
 
 var MART_DEFAULT_SETTINGS = {
-  heroTitle: "Everyday Essentials & Authentic Electronics",
-  heroSubtitle:
+  heroTitleEn: "Everyday Essentials & Authentic Electronics",
+  heroTitleBn: "প্রতিদিনের নিত্যপ্রয়োজনীয় ও আসল ইলেকট্রনিক্স",
+  heroSubtitleEn:
     "Verified quality products delivered nationwide across Bangladesh with transparent BDT pricing and flexible Cash on Delivery.",
-  heroCtaText: "Shop Collection",
-  promoText: "Nationwide Delivery · Cash on Delivery & Mobile Banking Available",
+  heroSubtitleBn:
+    "স্বচ্ছ টাকা (৳) মূল্যে ও ক্যাশ অন ডেলিভারি সুবিধাসহ সারাদেশে যাচাইকৃত মানসম্মত পণ্য দ্রুত পৌঁছে দেওয়া হয়।",
+  heroCtaTextEn: "Shop Collection",
+  heroCtaTextBn: "কালেকশন দেখুন",
+  promoTextEn: "Nationwide Delivery · Cash on Delivery & Mobile Banking Available",
+  promoTextBn: "সারাদেশে ডেলিভারি · ক্যাশ অন ডেলিভারি ও মোবাইল ব্যাংকিং সুবিধা",
   insideDhakaCharge: "70",
   outsideDhakaCharge: "130",
   mobileBankingNumber: ""
@@ -85,7 +110,7 @@ var PROP_DRIVE_ROOT_ID = "MART_DRIVE_ROOT_ID";
 var PROP_DRIVE_PRODUCTS_ID = "MART_DRIVE_PRODUCTS_ID";
 var PROP_DRIVE_CATEGORIES_ID = "MART_DRIVE_CATEGORIES_ID";
 
-var CACHE_PUBLIC_KEY = "xeetrix_mart_public_v1";
+var CACHE_PUBLIC_KEY = "xeetrix_mart_public_v2";
 var CACHE_TTL_SECONDS = 600; // 10 minutes; automatically busted on every mutation
 
 function jsonOut(payload) {
@@ -117,6 +142,15 @@ function isAuthorizedMartAdmin(providedToken) {
   var configured = getConfiguredApiToken();
   if (!configured) return true;
   return String(providedToken || "") === String(configured);
+}
+
+function slugifyText(text) {
+  return String(text || "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-");
 }
 
 function getOrCreateFolderByName(parent, name) {
@@ -188,6 +222,16 @@ function ensureDriveFoldersReady() {
   };
 }
 
+function styleHeaderRange(range) {
+  range.setFontWeight("bold");
+  range.setBackground("#0B5336");
+  range.setFontColor("#FFFFFF");
+}
+
+/**
+ * Ensures the sheet exists and non-destructively appends any missing schema columns
+ * to Row 1 so existing spreadsheets upgrade safely without losing data.
+ */
 function ensureMartSheet(ss, sheetName) {
   var headers = MART_SCHEMA[sheetName];
   if (!headers) {
@@ -200,22 +244,49 @@ function ensureMartSheet(ss, sheetName) {
   if (sheet.getLastRow() === 0) {
     var headerRange = sheet.getRange(1, 1, 1, headers.length);
     headerRange.setValues([headers]);
-    headerRange.setFontWeight("bold");
-    headerRange.setBackground("#0B5336");
-    headerRange.setFontColor("#FFFFFF");
+    styleHeaderRange(headerRange);
     sheet.setFrozenRows(1);
     for (var c = 1; c <= headers.length; c++) {
       sheet.setColumnWidth(c, 150);
     }
+    return sheet;
   }
+
+  // Non-destructive column upgrade for existing spreadsheets
+  var lastCol = Math.max(1, sheet.getLastColumn());
+  var rawHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var existingSet = {};
+  for (var i = 0; i < rawHeaders.length; i++) {
+    var h = String(rawHeaders[i] || "").trim();
+    if (h) existingSet[h] = true;
+  }
+
+  var missingHeaders = [];
+  for (var j = 0; j < headers.length; j++) {
+    if (!existingSet[headers[j]]) {
+      missingHeaders.push(headers[j]);
+    }
+  }
+
+  if (missingHeaders.length > 0) {
+    var startCol = lastCol + 1;
+    var addRange = sheet.getRange(1, startCol, 1, missingHeaders.length);
+    addRange.setValues([missingHeaders]);
+    styleHeaderRange(addRange);
+    for (var m = 0; m < missingHeaders.length; m++) {
+      sheet.setColumnWidth(startCol + m, 150);
+    }
+    sheet.setFrozenRows(1);
+  }
+
   return sheet;
 }
 
 /**
- * ONE-CLICK INITIALIZER:
- * Run this once inside your bound Google Sheet's Apps Script Editor.
- * Sets up all 4 Mart sheets + headers, baseline Mart_Settings, Drive folders,
- * and pre-warms CacheService (with ZERO dummy products, categories, or orders).
+ * ONE-CLICK INITIALIZER / UPGRADER:
+ * Run inside your bound Google Sheet's Apps Script Editor.
+ * Builds/upgrades all 5 Mart tabs, baseline bilingual Mart_Settings,
+ * Drive folders (Products & Categories), and pre-warms CacheService (ZERO dummy items).
  */
 function setupMartBackend() {
   var ss = getBoundSpreadsheet();
@@ -224,7 +295,7 @@ function setupMartBackend() {
     ensureMartSheet(ss, tabNames[i]);
   }
 
-  // Seed ONLY store configuration keys (no dummy products, categories, or orders)
+  // Seed ONLY bilingual store configuration keys (no dummy products, categories, labels, or orders)
   var settingsSheet = ss.getSheetByName("Mart_Settings");
   var existingSettings = readSettingsMap(settingsSheet);
   var now = new Date().toISOString();
@@ -244,9 +315,9 @@ function setupMartBackend() {
   buildAndCachePublicBundle(ss);
 
   return (
-    "Xeetrix Mart backend ready! Sheet: " +
+    "Xeetrix Mart bilingual multi-taxonomy backend ready! Sheet: " +
     ss.getName() +
-    " | Drive Folder: " +
+    " | Drive Root: " +
     folders.rootFolder.getName() +
     " (Products ID: " +
     folders.productsFolder.getId() +
@@ -258,7 +329,9 @@ function setupMartBackend() {
 
 function invalidateMartCache() {
   try {
-    CacheService.getScriptCache().remove(CACHE_PUBLIC_KEY);
+    var cache = CacheService.getScriptCache();
+    cache.remove(CACHE_PUBLIC_KEY);
+    cache.remove("xeetrix_mart_public_v1");
   } catch (err) {
     // Ignore cache eviction error
   }
@@ -277,12 +350,13 @@ function normalizeMartCell(header, val) {
     header === "totalItems" ||
     header === "subtotal" ||
     header === "deliveryCharge" ||
-    header === "totalAmount"
+    header === "totalAmount" ||
+    header === "sortOrder"
   ) {
     var num = Number(val);
     return isNaN(num) ? 0 : num;
   }
-  return val === null || val === undefined ? "" : val;
+  return val === null || val === undefined ? "" : String(val);
 }
 
 function readMartRows(sheet, sheetName) {
@@ -318,9 +392,50 @@ function readMartRows(sheet, sheetName) {
     for (var h = 0; h < headers.length; h++) {
       var header = headers[h];
       var idx = colMap[header];
-      var cellVal = idx !== undefined ? row[idx] : row[h];
+      var cellVal = idx !== undefined ? row[idx] : "";
       obj[header] = normalizeMartCell(header, cellVal);
     }
+
+    // Legacy compatibility mapping if migrating from single-language schema
+    if (sheetName === "Mart_Products") {
+      if (!obj.nameEn && colMap["name"] !== undefined) {
+        obj.nameEn = String(row[colMap["name"]] || "");
+      }
+      if (!obj.categories && colMap["category"] !== undefined) {
+        var legacyCat = String(row[colMap["category"]] || "").trim();
+        if (legacyCat) {
+          obj.categories = slugifyText(legacyCat) || legacyCat;
+        }
+      }
+      if (!obj.variantsEn && colMap["variants"] !== undefined) {
+        obj.variantsEn = String(row[colMap["variants"]] || "");
+      }
+      if (!obj.descriptionEn && colMap["description"] !== undefined) {
+        obj.descriptionEn = String(row[colMap["description"]] || "");
+      }
+    }
+
+    if (sheetName === "Mart_Categories") {
+      if (!obj.nameEn && colMap["name"] !== undefined) {
+        obj.nameEn = String(row[colMap["name"]] || "");
+      }
+      if (!obj.descriptionEn && colMap["description"] !== undefined) {
+        obj.descriptionEn = String(row[colMap["description"]] || "");
+      }
+      if (!obj.slug) {
+        obj.slug = slugifyText(obj.nameEn || obj.nameBn || obj.id);
+      }
+    }
+
+    if (sheetName === "Mart_Labels") {
+      if (!obj.tone) {
+        obj.tone = "emerald";
+      }
+      if (!obj.slug) {
+        obj.slug = slugifyText(obj.nameEn || obj.nameBn || obj.id);
+      }
+    }
+
     rows.push(obj);
   }
   return rows.reverse();
@@ -349,6 +464,12 @@ function mergeSettings(actual) {
     merged[dk] =
       actual[dk] !== undefined && actual[dk] !== "" ? actual[dk] : MART_DEFAULT_SETTINGS[dk];
   }
+  // Legacy settings key fallback
+  if (!actual.heroTitleEn && actual.heroTitle) merged.heroTitleEn = actual.heroTitle;
+  if (!actual.heroSubtitleEn && actual.heroSubtitle) merged.heroSubtitleEn = actual.heroSubtitle;
+  if (!actual.heroCtaTextEn && actual.heroCtaText) merged.heroCtaTextEn = actual.heroCtaText;
+  if (!actual.promoTextEn && actual.promoText) merged.promoTextEn = actual.promoText;
+
   var actKeys = Object.keys(actual);
   for (var j = 0; j < actKeys.length; j++) {
     var ak = actKeys[j];
@@ -359,22 +480,37 @@ function mergeSettings(actual) {
   return merged;
 }
 
+function sortTaxonomyByOrder(list) {
+  return list.sort(function (a, b) {
+    return (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0);
+  });
+}
+
 function buildAndCachePublicBundle(ss) {
   var prodSheet = ensureMartSheet(ss, "Mart_Products");
   var catSheet = ensureMartSheet(ss, "Mart_Categories");
+  var labelSheet = ensureMartSheet(ss, "Mart_Labels");
   var setSheet = ensureMartSheet(ss, "Mart_Settings");
 
   var activeProducts = readMartRows(prodSheet, "Mart_Products").filter(function (p) {
     return p.active === true;
   });
-  var activeCategories = readMartRows(catSheet, "Mart_Categories").filter(function (c) {
-    return c.active === true;
-  });
+  var activeCategories = sortTaxonomyByOrder(
+    readMartRows(catSheet, "Mart_Categories").filter(function (c) {
+      return c.active === true;
+    })
+  );
+  var activeLabels = sortTaxonomyByOrder(
+    readMartRows(labelSheet, "Mart_Labels").filter(function (l) {
+      return l.active === true;
+    })
+  );
   var settings = mergeSettings(readSettingsMap(setSheet));
 
   var payload = {
     products: activeProducts,
     categories: activeCategories,
+    labels: activeLabels,
     settings: settings
   };
 
@@ -394,6 +530,7 @@ function generateMartId(sheetName) {
   var prefixMap = {
     Mart_Products: "PRD",
     Mart_Categories: "CAT",
+    Mart_Labels: "LBL",
     Mart_Orders: "XM"
   };
   var prefix = prefixMap[sheetName] || "XM";
@@ -466,7 +603,7 @@ function doGet(e) {
       var folders = ensureDriveFoldersReady();
       return jsonOut({
         ok: true,
-        service: "Xeetrix Mart Standalone Backend",
+        service: "Xeetrix Mart Bilingual Multi-Taxonomy Backend",
         spreadsheetName: ss.getName(),
         driveRootFolder: folders.rootFolder.getName()
       });
@@ -536,6 +673,7 @@ function doGet(e) {
       }
       var prodSheet = ensureMartSheet(ss, "Mart_Products");
       var catSheet = ensureMartSheet(ss, "Mart_Categories");
+      var labelSheet = ensureMartSheet(ss, "Mart_Labels");
       var ordAdminSheet = ensureMartSheet(ss, "Mart_Orders");
       var setSheet = ensureMartSheet(ss, "Mart_Settings");
 
@@ -543,7 +681,8 @@ function doGet(e) {
         ok: true,
         data: {
           products: readMartRows(prodSheet, "Mart_Products"),
-          categories: readMartRows(catSheet, "Mart_Categories"),
+          categories: sortTaxonomyByOrder(readMartRows(catSheet, "Mart_Categories")),
+          labels: sortTaxonomyByOrder(readMartRows(labelSheet, "Mart_Labels")),
           orders: readMartRows(ordAdminSheet, "Mart_Orders"),
           settings: mergeSettings(readSettingsMap(setSheet))
         }
@@ -631,7 +770,6 @@ function doPost(e) {
       var recordId = payload.id ? String(payload.id) : generateMartId(sheetName);
 
       var record = {};
-      var rowValues = [];
       for (var i = 0; i < headers.length; i++) {
         var col = headers[i];
         var val;
@@ -645,12 +783,22 @@ function doPost(e) {
           val = true;
         } else if (col === "featured" && payload.featured === undefined) {
           val = false;
+        } else if (col === "tone" && (payload.tone === undefined || payload.tone === "")) {
+          val = "emerald";
+        } else if (col === "sortOrder" && payload.sortOrder === undefined) {
+          val = 0;
         } else {
           val = payload[col] !== undefined ? payload[col] : "";
         }
-        val = normalizeMartCell(col, val);
-        record[col] = val;
-        rowValues.push(val);
+        record[col] = normalizeMartCell(col, val);
+      }
+
+      // Align values dynamically to actual Row 1 headers (supports legacy + upgraded sheets cleanly)
+      var actualHeaders = sheet.getRange(1, 1, 1, Math.max(1, sheet.getLastColumn())).getValues()[0];
+      var rowValues = [];
+      for (var ah = 0; ah < actualHeaders.length; ah++) {
+        var headerName = String(actualHeaders[ah] || "").trim();
+        rowValues.push(record[headerName] !== undefined ? record[headerName] : "");
       }
 
       sheet.appendRow(rowValues);
@@ -684,7 +832,9 @@ function doPost(e) {
       }
 
       var rawHeaders = updSheet.getRange(1, 1, 1, updSheet.getLastColumn()).getValues()[0];
-      var ids = updSheet.getRange(2, 1, lastRow - 1, 1).getValues();
+      var idColIdx = rawHeaders.indexOf("id");
+      if (idColIdx === -1) idColIdx = 0;
+      var ids = updSheet.getRange(2, idColIdx + 1, lastRow - 1, 1).getValues();
       var foundRowIndex = -1;
       for (var r = 0; r < ids.length; r++) {
         if (String(ids[r][0]) === targetId) {
@@ -737,7 +887,10 @@ function doPost(e) {
         return jsonOut({ ok: false, error: "Record not found." });
       }
 
-      var delIds = delSheet.getRange(2, 1, delLastRow - 1, 1).getValues();
+      var delHeaders = delSheet.getRange(1, 1, 1, delSheet.getLastColumn()).getValues()[0];
+      var delIdCol = delHeaders.indexOf("id");
+      if (delIdCol === -1) delIdCol = 0;
+      var delIds = delSheet.getRange(2, delIdCol + 1, delLastRow - 1, 1).getValues();
       for (var d = 0; d < delIds.length; d++) {
         if (String(delIds[d][0]) === delId) {
           delSheet.deleteRow(d + 2);

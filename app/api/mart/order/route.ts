@@ -21,6 +21,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           ok: false,
+          code: "BACKEND_UNCONFIGURED",
           error:
             "Store checkout is currently being connected. Please call +880 965 803 6631 or email mart@xeetrix.com to complete your order.",
         },
@@ -53,6 +54,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           ok: false,
+          code: "MISSING_FIELDS",
           error: "Order items, customer name, phone number, and delivery address are required.",
         },
         { status: 400 }
@@ -106,6 +108,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         ok: false,
+        code: "GENERIC_NETWORK",
         error:
           err instanceof Error
             ? err.message

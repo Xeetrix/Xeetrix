@@ -5,6 +5,7 @@
 export interface MartServerPublicPayload {
   products: unknown[];
   categories: unknown[];
+  labels: unknown[];
   settings: Record<string, string>;
 }
 

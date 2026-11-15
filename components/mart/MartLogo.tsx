@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { useMartI18n } from "./MartI18nProvider";
 
 interface MartLogoProps {
   inverted?: boolean;
@@ -8,10 +9,12 @@ interface MartLogoProps {
 }
 
 /**
- * Standalone custom Shopping Bag/Cart SVG emblem + Xeetrix Mart typography.
- * Completely independent from the parent company's globe emblem.
+ * Standalone custom Shopping Bag/Cart SVG emblem + bilingual Xeetrix Mart wordmark.
+ * Completely independent from any parent or affiliate branding.
  */
 export function MartLogo({ inverted = false, className = "" }: MartLogoProps) {
+  const { t } = useMartI18n();
+
   return (
     <span className={`inline-flex items-center gap-2.5 whitespace-nowrap shrink-0 ${className}`}>
       <span
@@ -56,14 +59,14 @@ export function MartLogo({ inverted = false, className = "" }: MartLogoProps) {
             inverted ? "text-white" : "text-slate-900"
           }`}
         >
-          Xeetrix
+          {t.common.brandPrimary}
         </span>
         <span
           className={`font-display text-xl font-bold tracking-tight ${
             inverted ? "text-gold-400" : "text-[#0B5336]"
           }`}
         >
-          Mart
+          {t.common.brandAccent}
         </span>
       </span>
     </span>

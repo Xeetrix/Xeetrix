@@ -1,8 +1,17 @@
 import type { Metadata } from "next";
+import { Noto_Sans_Bengali } from "next/font/google";
+import { MartI18nProvider } from "@/components/mart/MartI18nProvider";
+
+const notoSansBengali = Noto_Sans_Bengali({
+  subsets: ["bengali", "latin"],
+  variable: "--font-noto-bengali",
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: {
-    default: "Xeetrix Mart | Everyday Essentials & Electronics",
+    default: "Xeetrix Mart | Everyday Essentials & Authentic Electronics",
     template: "%s | Xeetrix Mart",
   },
   description:
@@ -36,5 +45,11 @@ export default function MartLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  return <>{children}</>;
+  return (
+    <div
+      className={`${notoSansBengali.variable} [font-family:var(--font-dm-sans),var(--font-noto-bengali),sans-serif]`}
+    >
+      <MartI18nProvider>{children}</MartI18nProvider>
+    </div>
+  );
 }

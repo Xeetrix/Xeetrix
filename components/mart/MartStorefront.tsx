@@ -22,19 +22,22 @@ import {
   PackageSearch,
   Clock,
   Check,
+  RotateCw,
 } from "lucide-react";
 import { MartHeader } from "./MartHeader";
 import { MartFooter } from "./MartFooter";
+import { useMartI18n } from "./MartI18nProvider";
 import {
   DEFAULT_MART_SETTINGS,
   fetchMartPublicData,
-  formatMartBDT,
   getCachedMartPublicSnapshot,
   MART_CONTACT_EMAIL,
   MART_CONTACT_PHONE,
   MART_CONTACT_TEL,
+  MartApiError,
   MartCategory,
   MartDeliveryArea,
+  MartLabel,
   MartOrder,
   MartOrderItem,
   MartOrderStatus,
@@ -47,14 +50,24 @@ import {
   placeMartOrder,
   trackMartOrder,
 } from "@/lib/martApi";
+import {
+  formatMartDate,
+  formatMartDateTime,
+  formatMartPrice,
+  parseCsvSlugs,
+  pickLocalized,
+  toLocalizedDigits,
+  translateMartError,
+} from "@/lib/martI18n";
 
-const CART_STORAGE_KEY = "xeetrix_mart_cart_v1";
+const CART_STORAGE_KEY = "xeetrix_mart_cart_v2";
 
 interface CartItem {
   key: string;
   productId: string;
   sku: string;
-  name: string;
+  nameEn: string;
+  nameBn: string;
   variant: string;
   unitPrice: number;
   maxStock: number;
@@ -100,14 +113,18 @@ const ORDER_STEPS: MartOrderStatus[] = [
 ];
 
 export function MartStorefront() {
+  const { lang, t } = useMartI18n();
+
   const [products, setProducts] = useState<MartProduct[]>([]);
   const [categories, setCategories] = useState<MartCategory[]>([]);
+  const [labels, setLabels] = useState<MartLabel[]>([]);
   const [settings, setSettings] = useState<MartSettings>(DEFAULT_MART_SETTINGS);
   const [loading, setLoading] = useState(true);
 
-  // Filter & Sort State
+  // Multi-Category, Label & Search Filter State
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("All");
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<SortOption>("featured");
 
   // Cart & Drawer State
@@ -162,6 +179,7 @@ export function MartStorefront() {
     if (cached) {
       setProducts(cached.products);
       setCategories(cached.categories);
+      setLabels(cached.labels || []);
       setSettings(cached.settings);
       setLoading(false);
     }
@@ -171,6 +189,7 @@ export function MartStorefront() {
         if (!mounted) return;
         setProducts(res.products);
         setCategories(res.categories);
+        setLabels(res.labels || []);
         setSettings(res.settings);
       })
       .finally(() => {
@@ -206,24 +225,153 @@ export function MartStorefront() {
     }
   }, [cart, cartHydrated]);
 
-  const categoryTabs = useMemo(() => {
-    const fromCategoriesTab = categories.map((c) => c.name).filter(Boolean);
-    const fromProducts = products.map((p) => p.category).filter(Boolean);
-    const merged = Array.from(new Set([...fromCategoriesTab, ...fromProducts]));
-    return ["All", ...merged];
+  // Taxonomy Lookup Maps
+  const categoryMap = useMemo(() => {
+    const map = new Map<string, MartCategory>();
+    categories.forEach((c) => {
+      if (c.slug) map.set(c.slug, c);
+    });
+    return map;
+  }, [categories]);
+
+  const labelMap = useMemo(() => {
+    const map = new Map<string, MartLabel>();
+    labels.forEach((l) => {
+      if (l.slug) map.set(l.slug, l);
+    });
+    return map;
+  }, [labels]);
+
+  // Combine registered active categories with any category slugs attached to products
+  const visibleCategories = useMemo(() => {
+    const map = new Map<string, MartCategory>();
+    categories.forEach((c) => map.set(c.slug, c));
+    products.forEach((p) => {
+      parseCsvSlugs(p.categories).forEach((slug) => {
+        if (!map.has(slug)) {
+          map.set(slug, {
+            id: slug,
+            slug,
+            parentSlug: "",
+            nameEn: slug,
+            nameBn: slug,
+            descriptionEn: "",
+            descriptionBn: "",
+            imageUrl: "",
+            sortOrder: 999,
+            active: true,
+            createdAt: "",
+          });
+        }
+      });
+    });
+    return Array.from(map.values()).sort((a, b) => a.sortOrder - b.sortOrder);
   }, [categories, products]);
+
+  const visibleLabels = useMemo(() => {
+    const map = new Map<string, MartLabel>();
+    labels.forEach((l) => map.set(l.slug, l));
+    products.forEach((p) => {
+      parseCsvSlugs(p.labels).forEach((slug) => {
+        if (!map.has(slug)) {
+          map.set(slug, {
+            id: slug,
+            slug,
+            nameEn: slug,
+            nameBn: slug,
+            descriptionEn: "",
+            descriptionBn: "",
+            tone: "emerald",
+            sortOrder: 999,
+            active: true,
+            createdAt: "",
+          });
+        }
+      });
+    });
+    return Array.from(map.values()).sort((a, b) => a.sortOrder - b.sortOrder);
+  }, [labels, products]);
+
+  // Parent-child expansion so selecting a parent category matches child categories as well
+  const expandedSelectedCategories = useMemo(() => {
+    if (selectedCategories.length === 0) return new Set<string>();
+    const allowed = new Set<string>(selectedCategories);
+    let added = true;
+    while (added) {
+      added = false;
+      visibleCategories.forEach((cat) => {
+        if (cat.parentSlug && allowed.has(cat.parentSlug) && !allowed.has(cat.slug)) {
+          allowed.add(cat.slug);
+          added = true;
+        }
+      });
+    }
+    return allowed;
+  }, [selectedCategories, visibleCategories]);
+
+  function toggleCategoryFilter(slug: string) {
+    setSelectedCategories((prev) =>
+      prev.includes(slug) ? prev.filter((s) => s !== slug) : [...prev, slug]
+    );
+  }
+
+  function toggleLabelFilter(slug: string) {
+    setSelectedLabels((prev) =>
+      prev.includes(slug) ? prev.filter((s) => s !== slug) : [...prev, slug]
+    );
+  }
+
+  function resetAllFilters() {
+    setSelectedCategories([]);
+    setSelectedLabels([]);
+    setSearchQuery("");
+  }
 
   const filteredProducts = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const list = products.filter((p) => {
-      const catOk = selectedCategory === "All" || p.category === selectedCategory;
-      const searchOk =
-        !q ||
-        p.name.toLowerCase().includes(q) ||
-        p.category.toLowerCase().includes(q) ||
-        p.sku.toLowerCase().includes(q) ||
-        p.description.toLowerCase().includes(q);
-      return catOk && searchOk;
+      const prodCats = parseCsvSlugs(p.categories);
+      const prodLabels = parseCsvSlugs(p.labels);
+
+      const catOk =
+        expandedSelectedCategories.size === 0 ||
+        prodCats.some((cSlug) => expandedSelectedCategories.has(cSlug));
+
+      const labelOk =
+        selectedLabels.length === 0 ||
+        prodLabels.some((lSlug) => selectedLabels.includes(lSlug));
+
+      let searchOk = true;
+      if (q) {
+        const catTexts = prodCats
+          .map((slug) => {
+            const c = categoryMap.get(slug);
+            return c ? `${c.nameEn} ${c.nameBn} ${c.slug}` : slug;
+          })
+          .join(" ");
+        const lblTexts = prodLabels
+          .map((slug) => {
+            const l = labelMap.get(slug);
+            return l ? `${l.nameEn} ${l.nameBn} ${l.slug}` : slug;
+          })
+          .join(" ");
+
+        const haystack = [
+          p.nameEn,
+          p.nameBn,
+          p.sku,
+          p.descriptionEn,
+          p.descriptionBn,
+          catTexts,
+          lblTexts,
+        ]
+          .join(" ")
+          .toLowerCase();
+
+        searchOk = haystack.includes(q);
+      }
+
+      return catOk && labelOk && searchOk;
     });
 
     if (sortBy === "price_asc") {
@@ -237,9 +385,16 @@ export function MartStorefront() {
         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
     }
-    // featured first
     return [...list].sort((a, b) => Number(b.featured) - Number(a.featured));
-  }, [products, selectedCategory, searchQuery, sortBy]);
+  }, [
+    products,
+    expandedSelectedCategories,
+    selectedLabels,
+    searchQuery,
+    sortBy,
+    categoryMap,
+    labelMap,
+  ]);
 
   const cartCount = useMemo(
     () => cart.reduce((sum, item) => sum + item.quantity, 0),
@@ -261,11 +416,21 @@ export function MartStorefront() {
       : outsideDhakaFee;
   const grandTotal = cartSubtotal + deliveryFee;
 
+  // Bilingual Settings Resolution
+  const activePromoText = pickLocalized(settings.promoTextEn, settings.promoTextBn, lang);
+  const activeHeroTitle = pickLocalized(settings.heroTitleEn, settings.heroTitleBn, lang);
+  const activeHeroSubtitle = pickLocalized(settings.heroSubtitleEn, settings.heroSubtitleBn, lang);
+  const activeHeroCta = pickLocalized(settings.heroCtaTextEn, settings.heroCtaTextBn, lang);
+
   function addToCart(product: MartProduct, variantChoice = "", qtyToAdd = 1, openDrawer = false) {
     if (product.stock <= 0) return;
-    const variants = parseProductVariants(product.variants);
-    const chosenVariant = variantChoice || (variants.length > 0 ? variants[0] : "");
+    const localizedVariants = parseProductVariants(
+      pickLocalized(product.variantsEn, product.variantsBn, lang)
+    );
+    const chosenVariant =
+      variantChoice || (localizedVariants.length > 0 ? localizedVariants[0] : "");
     const itemKey = `${product.id}__${chosenVariant}`;
+    const displayName = pickLocalized(product.nameEn, product.nameBn, lang, product.sku);
 
     setCart((prev) => {
       const existing = prev.find((i) => i.key === itemKey);
@@ -282,7 +447,8 @@ export function MartStorefront() {
           key: itemKey,
           productId: product.id,
           sku: product.sku,
-          name: product.name,
+          nameEn: product.nameEn || product.nameBn,
+          nameBn: product.nameBn || product.nameEn,
           variant: chosenVariant,
           unitPrice: product.price,
           maxStock: Math.max(1, product.stock),
@@ -293,9 +459,10 @@ export function MartStorefront() {
     });
 
     setConfirmedInvoice(null);
-    setAddedBanner(`${product.name} added to cart`);
+    const bannerMsg = `${displayName} — ${t.catalog.addedToCartSuffix}`;
+    setAddedBanner(bannerMsg);
     setTimeout(() => {
-      setAddedBanner((prev) => (prev === `${product.name} added to cart` ? null : prev));
+      setAddedBanner((prev) => (prev === bannerMsg ? null : prev));
     }, 3000);
 
     if (openDrawer) {
@@ -321,7 +488,9 @@ export function MartStorefront() {
   }
 
   function openQuickView(product: MartProduct) {
-    const variants = parseProductVariants(product.variants);
+    const variants = parseProductVariants(
+      pickLocalized(product.variantsEn, product.variantsBn, lang)
+    );
     setQuickViewProduct(product);
     setQuickViewVariant(variants.length > 0 ? variants[0] : "");
     setQuickViewQty(1);
@@ -332,18 +501,20 @@ export function MartStorefront() {
     setCheckoutError(null);
 
     if (cart.length === 0) {
-      setCheckoutError("Your shopping cart is empty.");
+      setCheckoutError(t.cart.errEmptyCart);
       return;
     }
     if (!customerName.trim() || !phone.trim() || !address.trim()) {
-      setCheckoutError("Please enter your full name, phone number, and delivery address.");
+      setCheckoutError(t.cart.errMissingDetails);
       return;
     }
 
     const orderItems: MartOrderItem[] = cart.map((item) => ({
       productId: item.productId,
       sku: item.sku,
-      name: item.name,
+      name: pickLocalized(item.nameEn, item.nameBn, lang),
+      nameEn: item.nameEn,
+      nameBn: item.nameBn,
       variant: item.variant,
       unitPrice: item.unitPrice,
       quantity: item.quantity,
@@ -353,8 +524,8 @@ export function MartStorefront() {
 
     const paymentLabel =
       paymentMethod === "Mobile Banking"
-        ? `Mobile Banking (${mobileChannel})`
-        : "Cash on Delivery";
+        ? `${t.cart.mobileBankingOption} (${mobileChannel})`
+        : t.cart.codOption;
 
     setSubmittingOrder(true);
     try {
@@ -390,7 +561,6 @@ export function MartStorefront() {
         createdAt: new Date().toISOString(),
       });
 
-      // Reset cart & form
       setCart([]);
       setCustomerName("");
       setPhone("");
@@ -398,19 +568,18 @@ export function MartStorefront() {
       setNotes("");
       setTransactionId("");
 
-      // Sync updated product stock immediately in background
       fetchMartPublicData(true)
         .then((fresh) => {
           setProducts(fresh.products);
           setCategories(fresh.categories);
+          setLabels(fresh.labels || []);
           setSettings(fresh.settings);
         })
         .catch(() => {});
     } catch (err) {
+      const apiErr = err as MartApiError;
       setCheckoutError(
-        err instanceof Error
-          ? err.message
-          : "Order could not be placed. Please try again or call +880 965 803 6631."
+        translateMartError(apiErr?.message, lang, apiErr?.code) || t.cart.errOrderFailed
       );
     } finally {
       setSubmittingOrder(false);
@@ -422,7 +591,7 @@ export function MartStorefront() {
     setTrackingError(null);
     setTrackedOrder(null);
     if (!trackOrderId.trim() || !trackPhone.trim()) {
-      setTrackingError("Please enter both your Order ID and phone number.");
+      setTrackingError(t.track.errMissingFields);
       return;
     }
 
@@ -431,21 +600,25 @@ export function MartStorefront() {
       const order = await trackMartOrder(trackOrderId.trim(), trackPhone.trim());
       setTrackedOrder(order);
     } catch (err) {
+      const apiErr = err as MartApiError;
       setTrackingError(
-        err instanceof Error ? err.message : "Unable to retrieve order status right now."
+        translateMartError(apiErr?.message, lang, apiErr?.code) || t.track.errNotFound
       );
     } finally {
       setTrackingLoading(false);
     }
   }
 
+  const hasActiveFilters =
+    selectedCategories.length > 0 || selectedLabels.length > 0 || searchQuery.trim().length > 0;
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
-      {/* Slim Top Promo Bar (<= 40px) */}
-      {settings.promoText && (
+      {/* Slim Top Promo Bar */}
+      {activePromoText && (
         <div className="bg-slate-900 text-white text-xs py-2 px-4 text-center font-medium">
           <div className="mx-auto max-w-7xl flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
-            <span>{settings.promoText}</span>
+            <span>{activePromoText}</span>
             <span aria-hidden="true" className="text-slate-500 hidden sm:inline">
               ·
             </span>
@@ -453,7 +626,7 @@ export function MartStorefront() {
               href={MART_CONTACT_TEL}
               className="font-mono text-gold-400 hover:text-white transition-colors tabular-nums hidden sm:inline"
             >
-              Helpline: {MART_CONTACT_PHONE}
+              {t.common.helplineLabel}: {MART_CONTACT_PHONE}
             </a>
           </div>
         </div>
@@ -463,9 +636,10 @@ export function MartStorefront() {
       <MartHeader
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
-        categories={categoryTabs}
-        selectedCategory={selectedCategory}
-        onSelectCategory={setSelectedCategory}
+        categories={visibleCategories}
+        selectedCategories={selectedCategories}
+        onToggleCategory={toggleCategoryFilter}
+        onClearCategories={() => setSelectedCategories([])}
         cartCount={cartCount}
         onOpenCart={() => setCartOpen(true)}
         onOpenTrackOrder={() => {
@@ -482,9 +656,9 @@ export function MartStorefront() {
           <button
             type="button"
             onClick={() => setCartOpen(true)}
-            className="text-[#0B5336] underline font-bold ml-1"
+            className="text-[#0B5336] underline font-bold ml-1 whitespace-nowrap"
           >
-            View Cart
+            {t.catalog.viewCart}
           </button>
         </div>
       )}
@@ -495,25 +669,25 @@ export function MartStorefront() {
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12 lg:py-16">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
               <div className="lg:col-span-8 space-y-5">
-                <div className="text-xs font-semibold uppercase tracking-widest text-gold-400">
-                  Xeetrix Mart · Official Online Store
+                <div className="text-xs font-semibold tracking-wide text-gold-400">
+                  {t.hero.kicker}
                 </div>
                 <h1
-                  className="font-display text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-white leading-[1.12]"
+                  className="font-display text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-white leading-[1.15]"
                   style={{ textWrap: "balance" }}
                 >
-                  {settings.heroTitle}
+                  {activeHeroTitle}
                 </h1>
                 <p className="text-base text-slate-300 max-w-2xl leading-relaxed">
-                  {settings.heroSubtitle}
+                  {activeHeroSubtitle}
                 </p>
 
                 <div className="flex flex-wrap items-center gap-3 pt-1">
                   <a
                     href="#mart-catalog"
-                    className="inline-flex items-center gap-2 rounded-xl bg-[#0B5336] px-6 py-3 text-sm font-semibold text-white hover:bg-[#08412A] transition-colors"
+                    className="inline-flex items-center gap-2 rounded-xl bg-[#0B5336] px-6 py-3 text-sm font-semibold text-white hover:bg-[#08412A] transition-colors whitespace-nowrap shrink-0"
                   >
-                    <span>{settings.heroCtaText}</span>
+                    <span>{activeHeroCta}</span>
                     <ArrowRight className="h-4 w-4" />
                   </a>
                   <button
@@ -522,34 +696,34 @@ export function MartStorefront() {
                       setTrackOpen(true);
                       setTrackingError(null);
                     }}
-                    className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800/70 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 transition-colors"
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800/70 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 transition-colors whitespace-nowrap shrink-0"
                   >
                     <PackageSearch className="h-4 w-4 text-gold-400" />
-                    <span>Track Existing Order</span>
+                    <span>{t.hero.trackExistingOrder}</span>
                   </button>
                 </div>
               </div>
 
               {/* Delivery Charge Transparent Summary Box */}
               <div className="lg:col-span-4 rounded-2xl border border-slate-800 bg-slate-800/60 p-6 space-y-4">
-                <div className="text-xs font-semibold uppercase tracking-wider text-gold-400">
-                  Transparent Delivery Rates
+                <div className="text-xs font-semibold tracking-wide text-gold-400">
+                  {t.hero.deliveryCardTitle}
                 </div>
                 <div className="space-y-3 text-sm">
                   <div className="flex items-center justify-between pb-3 border-b border-slate-700">
-                    <span className="text-slate-300">Inside Dhaka Metro</span>
+                    <span className="text-slate-300">{t.hero.insideDhakaLabel}</span>
                     <span className="font-mono font-bold text-white tabular-nums">
-                      {formatMartBDT(insideDhakaFee)}
+                      {formatMartPrice(insideDhakaFee, lang)}
                     </span>
                   </div>
                   <div className="flex items-center justify-between pb-3 border-b border-slate-700">
-                    <span className="text-slate-300">Outside Dhaka (Nationwide)</span>
+                    <span className="text-slate-300">{t.hero.outsideDhakaLabel}</span>
                     <span className="font-mono font-bold text-white tabular-nums">
-                      {formatMartBDT(outsideDhakaFee)}
+                      {formatMartPrice(outsideDhakaFee, lang)}
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
-                    <span>Direct Store Helpline</span>
+                    <span>{t.hero.directHelplineLabel}</span>
                     <a
                       href={MART_CONTACT_TEL}
                       className="font-mono font-semibold text-emerald-300 hover:text-white tabular-nums"
@@ -572,10 +746,10 @@ export function MartStorefront() {
                   <Truck className="h-5 w-5" />
                 </div>
                 <div>
-                  <div className="text-sm font-semibold text-slate-900">Fast Delivery</div>
-                  <div className="text-xs text-slate-500 mt-0.5">
-                    24–48h inside Dhaka, 2–4 days nationwide
+                  <div className="text-sm font-semibold text-slate-900">
+                    {t.trust.fastDeliveryTitle}
                   </div>
+                  <div className="text-xs text-slate-500 mt-0.5">{t.trust.fastDeliveryDesc}</div>
                 </div>
               </div>
 
@@ -584,12 +758,8 @@ export function MartStorefront() {
                   <Banknote className="h-5 w-5" />
                 </div>
                 <div>
-                  <div className="text-sm font-semibold text-slate-900">
-                    Cash on Delivery (COD)
-                  </div>
-                  <div className="text-xs text-slate-500 mt-0.5">
-                    Pay at doorstep or via Mobile Banking
-                  </div>
+                  <div className="text-sm font-semibold text-slate-900">{t.trust.codTitle}</div>
+                  <div className="text-xs text-slate-500 mt-0.5">{t.trust.codDesc}</div>
                 </div>
               </div>
 
@@ -599,11 +769,9 @@ export function MartStorefront() {
                 </div>
                 <div>
                   <div className="text-sm font-semibold text-slate-900">
-                    100% Authentic Products
+                    {t.trust.authenticTitle}
                   </div>
-                  <div className="text-xs text-slate-500 mt-0.5">
-                    Quality checked prior to courier dispatch
-                  </div>
+                  <div className="text-xs text-slate-500 mt-0.5">{t.trust.authenticDesc}</div>
                 </div>
               </div>
 
@@ -612,10 +780,10 @@ export function MartStorefront() {
                   <RotateCcw className="h-5 w-5" />
                 </div>
                 <div>
-                  <div className="text-sm font-semibold text-slate-900">Easy Return</div>
-                  <div className="text-xs text-slate-500 mt-0.5">
-                    7-day hassle-free replacement policy
+                  <div className="text-sm font-semibold text-slate-900">
+                    {t.trust.easyReturnTitle}
                   </div>
+                  <div className="text-xs text-slate-500 mt-0.5">{t.trust.easyReturnDesc}</div>
                 </div>
               </div>
             </div>
@@ -625,41 +793,137 @@ export function MartStorefront() {
         {/* Main Store Catalog Section */}
         <section id="mart-catalog" className="py-10 lg:py-14">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-8">
-            {/* Filter Toolbar */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div className="flex flex-wrap items-center gap-1.5 p-1 bg-white border border-slate-200 rounded-xl">
-                {categoryTabs.map((cat) => (
-                  <button
-                    key={cat}
-                    type="button"
-                    onClick={() => setSelectedCategory(cat)}
-                    className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 min-h-[36px] ${
-                      selectedCategory === cat
-                        ? "bg-[#0B5336] text-white"
-                        : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
-                    }`}
+            {/* Combined Multi-Category & Label Filter Toolbar */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 space-y-4">
+              {/* Row 1: Categories + Sort + Count */}
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div className="space-y-2 flex-1 min-w-0">
+                  <div className="text-xs font-semibold text-slate-500">
+                    {t.catalog.categoriesTitle}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCategories([])}
+                      className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 min-h-[36px] border ${
+                        selectedCategories.length === 0
+                          ? "bg-[#0B5336] border-[#0B5336] text-white"
+                          : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
+                      }`}
+                    >
+                      {t.catalog.allCategories}
+                    </button>
+                    {visibleCategories.map((cat) => {
+                      const active = selectedCategories.includes(cat.slug);
+                      return (
+                        <button
+                          key={cat.slug}
+                          type="button"
+                          onClick={() => toggleCategoryFilter(cat.slug)}
+                          className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 min-h-[36px] border ${
+                            active
+                              ? "bg-[#0B5336] border-[#0B5336] text-white"
+                              : "bg-white border-slate-200 text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336]"
+                          }`}
+                        >
+                          {pickLocalized(cat.nameEn, cat.nameBn, lang, cat.slug)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 shrink-0 self-start lg:self-end">
+                  <span className="text-xs text-slate-500 font-mono tabular-nums whitespace-nowrap">
+                    {toLocalizedDigits(filteredProducts.length, lang)}{" "}
+                    {filteredProducts.length === 1
+                      ? t.catalog.productSingular
+                      : t.catalog.productPlural}
+                  </span>
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as SortOption)}
+                    aria-label={t.catalog.sortAria}
+                    className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 outline-none focus:border-[#0B5336] min-h-[40px]"
                   >
-                    {cat}
-                  </button>
-                ))}
+                    <option value="featured">{t.catalog.sortFeatured}</option>
+                    <option value="price_asc">{t.catalog.sortPriceAsc}</option>
+                    <option value="price_desc">{t.catalog.sortPriceDesc}</option>
+                    <option value="newest">{t.catalog.sortNewest}</option>
+                  </select>
+                </div>
               </div>
 
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-slate-500 font-mono tabular-nums whitespace-nowrap">
-                  {filteredProducts.length} product{filteredProducts.length === 1 ? "" : "s"}
-                </span>
-                <select
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value as SortOption)}
-                  aria-label="Sort products"
-                  className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 outline-none focus:border-[#0B5336] min-h-[40px]"
-                >
-                  <option value="featured">Sort: Featured</option>
-                  <option value="price_asc">Price: Low to High</option>
-                  <option value="price_desc">Price: High to Low</option>
-                  <option value="newest">Sort: Newest First</option>
-                </select>
-              </div>
+              {/* Row 2: Collections & Labels */}
+              {visibleLabels.length > 0 && (
+                <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
+                  <div className="space-y-2 flex-1 min-w-0">
+                    <div className="text-xs font-semibold text-slate-500">
+                      {t.catalog.labelsTitle}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedLabels([])}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 min-h-[34px] border ${
+                          selectedLabels.length === 0
+                            ? "bg-slate-900 border-slate-900 text-white"
+                            : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
+                        }`}
+                      >
+                        {t.catalog.allLabels}
+                      </button>
+                      {visibleLabels.map((lbl) => {
+                        const active = selectedLabels.includes(lbl.slug);
+                        const activeClass =
+                          lbl.tone === "gold"
+                            ? "bg-gold-500 border-gold-500 text-slate-950"
+                            : lbl.tone === "slate"
+                            ? "bg-slate-900 border-slate-900 text-white"
+                            : "bg-[#0B5336] border-[#0B5336] text-white";
+                        return (
+                          <button
+                            key={lbl.slug}
+                            type="button"
+                            onClick={() => toggleLabelFilter(lbl.slug)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 min-h-[34px] border ${
+                              active
+                                ? activeClass
+                                : "bg-white border-slate-200 text-slate-700 hover:border-slate-400"
+                            }`}
+                          >
+                            {pickLocalized(lbl.nameEn, lbl.nameBn, lang, lbl.slug)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {hasActiveFilters && (
+                    <button
+                      type="button"
+                      onClick={resetAllFilters}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 whitespace-nowrap shrink-0 self-end"
+                    >
+                      <RotateCw className="h-3.5 w-3.5" />
+                      <span>{t.catalog.clearFilters}</span>
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {visibleLabels.length === 0 && hasActiveFilters && (
+                <div className="pt-2 border-t border-slate-100 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={resetAllFilters}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 whitespace-nowrap"
+                  >
+                    <RotateCw className="h-3.5 w-3.5" />
+                    <span>{t.catalog.clearFilters}</span>
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Catalog Loading / Empty / Product Grid */}
@@ -679,16 +943,14 @@ export function MartStorefront() {
                   <Package className="h-7 w-7" />
                 </div>
                 <div className="space-y-2">
-                  <div className="text-xs font-semibold uppercase tracking-widest text-gold-600">
-                    Store Launching Soon
+                  <div className="text-xs font-semibold tracking-wide text-gold-600">
+                    {t.catalog.emptyStoreKicker}
                   </div>
                   <h2 className="font-display text-2xl font-bold text-slate-900">
-                    New Products Arriving Soon
+                    {t.catalog.emptyStoreTitle}
                   </h2>
                   <p className="text-sm text-slate-600 max-w-lg mx-auto leading-relaxed">
-                    Our curated catalog is currently being stocked with verified essentials and
-                    electronics. Please check back shortly or reach out directly for wholesale and
-                    early order inquiries.
+                    {t.catalog.emptyStoreDesc}
                   </p>
                 </div>
 
@@ -713,20 +975,15 @@ export function MartStorefront() {
               <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center space-y-3">
                 <Package className="h-10 w-10 text-slate-300 mx-auto" />
                 <h2 className="font-display text-lg font-semibold text-slate-900">
-                  No Matching Products Found
+                  {t.catalog.noMatchTitle}
                 </h2>
-                <p className="text-sm text-slate-500">
-                  Try clearing your search query or selecting another category.
-                </p>
+                <p className="text-sm text-slate-500">{t.catalog.noMatchDesc}</p>
                 <button
                   type="button"
-                  onClick={() => {
-                    setSelectedCategory("All");
-                    setSearchQuery("");
-                  }}
+                  onClick={resetAllFilters}
                   className="btn-outline px-4 py-2 text-xs"
                 >
-                  Reset Filters
+                  {t.catalog.resetFiltersBtn}
                 </button>
               </div>
             ) : (
@@ -735,7 +992,30 @@ export function MartStorefront() {
                   const hasDiscount =
                     product.comparePrice > 0 && product.comparePrice > product.price;
                   const outOfStock = product.stock <= 0;
-                  const variants = parseProductVariants(product.variants);
+                  const prodName = pickLocalized(
+                    product.nameEn,
+                    product.nameBn,
+                    lang,
+                    product.sku
+                  );
+                  const prodDesc = pickLocalized(product.descriptionEn, product.descriptionBn, lang);
+                  const variants = parseProductVariants(
+                    pickLocalized(product.variantsEn, product.variantsBn, lang)
+                  );
+
+                  const catNames = parseCsvSlugs(product.categories).map((slug) => {
+                    const c = categoryMap.get(slug);
+                    return c ? pickLocalized(c.nameEn, c.nameBn, lang, slug) : slug;
+                  });
+                  const labelNames = parseCsvSlugs(product.labels).map((slug) => {
+                    const l = labelMap.get(slug);
+                    return l ? pickLocalized(l.nameEn, l.nameBn, lang, slug) : slug;
+                  });
+
+                  const kickerParts = [
+                    ...(catNames.length > 0 ? catNames : [t.catalog.generalFallback]),
+                    ...labelNames.slice(0, 1),
+                  ];
 
                   return (
                     <article
@@ -750,19 +1030,20 @@ export function MartStorefront() {
                         >
                           <ProductMedia
                             src={product.imageUrl}
-                            alt={product.name}
+                            alt={prodName}
                             className="transition-transform duration-200 group-hover:scale-[1.03]"
                           />
                         </button>
 
                         <div className="p-6 space-y-2.5">
                           <div className="flex items-center justify-between gap-2 text-xs text-slate-500">
-                            <span className="font-semibold uppercase tracking-wider text-[#0B5336] truncate">
-                              {product.category || "General"}
-                              {product.featured ? " · Featured" : ""}
+                            <span className="font-semibold text-[#0B5336] truncate">
+                              {kickerParts.join(" · ")}
                             </span>
                             <span className="font-mono tabular-nums whitespace-nowrap shrink-0">
-                              {outOfStock ? "Out of stock" : `${product.stock} in stock`}
+                              {outOfStock
+                                ? t.catalog.outOfStock
+                                : `${toLocalizedDigits(product.stock, lang)} ${t.catalog.inStockSuffix}`}
                             </span>
                           </div>
 
@@ -772,19 +1053,21 @@ export function MartStorefront() {
                               onClick={() => openQuickView(product)}
                               className="text-left hover:text-[#0B5336] transition-colors"
                             >
-                              {product.name}
+                              {prodName}
                             </button>
                           </h2>
 
                           {variants.length > 0 && (
                             <div className="text-xs text-slate-500">
-                              Options: {variants.join(" · ")}
+                              {t.catalog.optionsPrefix}: {variants.join(" · ")}
                             </div>
                           )}
 
-                          <p className="text-sm text-slate-600 line-clamp-2 leading-relaxed">
-                            {product.description}
-                          </p>
+                          {prodDesc && (
+                            <p className="text-sm text-slate-600 line-clamp-2 leading-relaxed">
+                              {prodDesc}
+                            </p>
+                          )}
                         </div>
                       </div>
 
@@ -792,17 +1075,17 @@ export function MartStorefront() {
                         <div>
                           <div className="flex items-baseline gap-2">
                             <span className="font-mono text-xl font-bold text-slate-900 tabular-nums">
-                              {formatMartBDT(product.price)}
+                              {formatMartPrice(product.price, lang)}
                             </span>
                             {hasDiscount && (
                               <span className="font-mono text-xs text-slate-400 line-through tabular-nums">
-                                {formatMartBDT(product.comparePrice)}
+                                {formatMartPrice(product.comparePrice, lang)}
                               </span>
                             )}
                           </div>
                           {product.sku && (
                             <div className="font-mono text-[11px] text-slate-400">
-                              SKU: {product.sku}
+                              {t.common.sku}: {product.sku}
                             </div>
                           )}
                         </div>
@@ -811,7 +1094,7 @@ export function MartStorefront() {
                           <button
                             type="button"
                             onClick={() => openQuickView(product)}
-                            aria-label={`Quick view ${product.name}`}
+                            aria-label={`${t.catalog.quickViewAria} ${prodName}`}
                             className="inline-flex items-center justify-center rounded-xl border border-slate-200 p-2.5 text-slate-600 hover:border-[#0B5336] hover:text-[#0B5336] transition-colors min-h-[40px] min-w-[40px]"
                           >
                             <Eye className="h-4 w-4" />
@@ -824,7 +1107,7 @@ export function MartStorefront() {
                             className="inline-flex items-center gap-1.5 rounded-xl bg-[#0B5336] px-4 py-2.5 text-xs font-semibold text-white hover:bg-[#08412A] disabled:opacity-50 transition-colors min-h-[40px] whitespace-nowrap"
                           >
                             <ShoppingCart className="h-3.5 w-3.5" />
-                            <span>{outOfStock ? "Sold Out" : "Add to Cart"}</span>
+                            <span>{outOfStock ? t.catalog.soldOut : t.catalog.addToCart}</span>
                           </button>
                         </div>
                       </div>
@@ -855,13 +1138,24 @@ export function MartStorefront() {
           <div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 bg-slate-50">
               <div className="text-xs font-semibold text-slate-500">
-                {quickViewProduct.category}
-                {quickViewProduct.sku ? ` · SKU ${quickViewProduct.sku}` : ""}
+                {[
+                  ...parseCsvSlugs(quickViewProduct.categories).map((slug) => {
+                    const c = categoryMap.get(slug);
+                    return c ? pickLocalized(c.nameEn, c.nameBn, lang, slug) : slug;
+                  }),
+                  ...parseCsvSlugs(quickViewProduct.labels).map((slug) => {
+                    const l = labelMap.get(slug);
+                    return l ? pickLocalized(l.nameEn, l.nameBn, lang, slug) : slug;
+                  }),
+                ].join(" · ")}
+                {quickViewProduct.sku
+                  ? ` · ${t.common.sku} ${quickViewProduct.sku}`
+                  : ""}
               </div>
               <button
                 type="button"
                 onClick={() => setQuickViewProduct(null)}
-                aria-label="Close product quick view"
+                aria-label={t.quickView.closeAria}
                 className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-200 hover:text-slate-900"
               >
                 <X className="h-5 w-5" />
@@ -870,7 +1164,10 @@ export function MartStorefront() {
 
             <div className="overflow-y-auto p-6 grid grid-cols-1 md:grid-cols-12 gap-6">
               <div className="md:col-span-6 aspect-[4/3] rounded-xl bg-slate-100 overflow-hidden border border-slate-200">
-                <ProductMedia src={quickViewProduct.imageUrl} alt={quickViewProduct.name} />
+                <ProductMedia
+                  src={quickViewProduct.imageUrl}
+                  alt={pickLocalized(quickViewProduct.nameEn, quickViewProduct.nameBn, lang)}
+                />
               </div>
 
               <div className="md:col-span-6 flex flex-col justify-between space-y-5">
@@ -879,22 +1176,22 @@ export function MartStorefront() {
                     id="quick-view-title"
                     className="font-display text-2xl font-bold text-slate-900 leading-snug"
                   >
-                    {quickViewProduct.name}
+                    {pickLocalized(quickViewProduct.nameEn, quickViewProduct.nameBn, lang)}
                   </h2>
 
                   <div className="flex items-baseline gap-3">
                     <span className="font-mono text-2xl font-bold text-[#0B5336] tabular-nums">
-                      {formatMartBDT(quickViewProduct.price)}
+                      {formatMartPrice(quickViewProduct.price, lang)}
                     </span>
                     {quickViewProduct.comparePrice > quickViewProduct.price && (
                       <span className="font-mono text-sm text-slate-400 line-through tabular-nums">
-                        {formatMartBDT(quickViewProduct.comparePrice)}
+                        {formatMartPrice(quickViewProduct.comparePrice, lang)}
                       </span>
                     )}
                   </div>
 
                   <div className="text-xs font-mono text-slate-600 tabular-nums">
-                    Availability:{" "}
+                    {t.quickView.availabilityLabel}:{" "}
                     <span
                       className={
                         quickViewProduct.stock > 0
@@ -903,22 +1200,35 @@ export function MartStorefront() {
                       }
                     >
                       {quickViewProduct.stock > 0
-                        ? `${quickViewProduct.stock} units in stock`
-                        : "Out of stock"}
+                        ? `${toLocalizedDigits(quickViewProduct.stock, lang)} ${t.quickView.unitsInStockSuffix}`
+                        : t.quickView.outOfStock}
                     </span>
                   </div>
 
                   <p className="text-sm text-slate-600 leading-relaxed pt-1">
-                    {quickViewProduct.description || "Verified product from Xeetrix Mart."}
+                    {pickLocalized(
+                      quickViewProduct.descriptionEn,
+                      quickViewProduct.descriptionBn,
+                      lang,
+                      t.quickView.defaultDesc
+                    )}
                   </p>
 
-                  {parseProductVariants(quickViewProduct.variants).length > 0 && (
+                  {parseProductVariants(
+                    pickLocalized(quickViewProduct.variantsEn, quickViewProduct.variantsBn, lang)
+                  ).length > 0 && (
                     <div className="pt-2 space-y-2">
                       <label className="block text-xs font-semibold text-slate-700">
-                        Select Variant / Size
+                        {t.quickView.selectVariant}
                       </label>
                       <div className="flex flex-wrap gap-2">
-                        {parseProductVariants(quickViewProduct.variants).map((variant) => (
+                        {parseProductVariants(
+                          pickLocalized(
+                            quickViewProduct.variantsEn,
+                            quickViewProduct.variantsBn,
+                            lang
+                          )
+                        ).map((variant) => (
                           <button
                             key={variant}
                             type="button"
@@ -939,18 +1249,20 @@ export function MartStorefront() {
 
                 <div className="space-y-3 pt-4 border-t border-slate-200">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-slate-700">Quantity</span>
+                    <span className="text-xs font-semibold text-slate-700">
+                      {t.quickView.quantity}
+                    </span>
                     <div className="inline-flex items-center rounded-xl border border-slate-200 bg-slate-50">
                       <button
                         type="button"
                         onClick={() => setQuickViewQty((q) => Math.max(1, q - 1))}
-                        aria-label="Decrease quantity"
+                        aria-label={t.quickView.decreaseQtyAria}
                         className="p-2 text-slate-600 hover:text-slate-900"
                       >
                         <Minus className="h-3.5 w-3.5" />
                       </button>
                       <span className="w-10 text-center font-mono text-sm font-bold tabular-nums">
-                        {quickViewQty}
+                        {toLocalizedDigits(quickViewQty, lang)}
                       </span>
                       <button
                         type="button"
@@ -959,7 +1271,7 @@ export function MartStorefront() {
                             Math.min(Math.max(1, quickViewProduct.stock), q + 1)
                           )
                         }
-                        aria-label="Increase quantity"
+                        aria-label={t.quickView.increaseQtyAria}
                         className="p-2 text-slate-600 hover:text-slate-900"
                       >
                         <Plus className="h-3.5 w-3.5" />
@@ -978,7 +1290,7 @@ export function MartStorefront() {
                       className="btn-outline py-3 text-xs gap-1.5 disabled:opacity-50"
                     >
                       <ShoppingCart className="h-4 w-4" />
-                      <span>Add to Cart</span>
+                      <span>{t.quickView.addToCart}</span>
                     </button>
 
                     <button
@@ -990,7 +1302,7 @@ export function MartStorefront() {
                       }}
                       className="btn-primary py-3 text-xs disabled:opacity-50"
                     >
-                      {quickViewProduct.stock <= 0 ? "Sold Out" : "Buy Now"}
+                      {quickViewProduct.stock <= 0 ? t.quickView.soldOut : t.quickView.buyNow}
                     </button>
                   </div>
                 </div>
@@ -1012,18 +1324,20 @@ export function MartStorefront() {
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50">
               <div>
                 <h2 id="cart-drawer-title" className="font-display text-lg font-bold text-slate-900">
-                  {confirmedInvoice ? "Order Invoice" : `Shopping Cart (${cartCount})`}
+                  {confirmedInvoice
+                    ? t.cart.invoiceTitle
+                    : `${t.cart.drawerTitle} (${toLocalizedDigits(cartCount, lang)})`}
                 </h2>
                 <p className="text-xs text-slate-500">
                   {confirmedInvoice
-                    ? `Reference: ${confirmedInvoice.orderId}`
-                    : "Review items & complete delivery checkout"}
+                    ? `${t.cart.invoiceRefPrefix}: ${confirmedInvoice.orderId}`
+                    : t.cart.drawerSubtitle}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setCartOpen(false)}
-                aria-label="Close cart drawer"
+                aria-label={t.cart.closeAria}
                 className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-200 hover:text-slate-900"
               >
                 <X className="h-5 w-5" />
@@ -1032,17 +1346,14 @@ export function MartStorefront() {
 
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
               {confirmedInvoice ? (
-                /* Post-Order Printable Invoice Summary */
                 <div className="space-y-5">
                   <div className="rounded-2xl border border-brand-200 bg-brand-50 p-5 flex items-start gap-3">
                     <CheckCircle2 className="h-6 w-6 text-[#0B5336] shrink-0 mt-0.5" />
                     <div>
                       <h3 className="font-display text-base font-bold text-slate-900">
-                        Order Placed Successfully
+                        {t.cart.orderSuccessTitle}
                       </h3>
-                      <p className="text-xs text-slate-600 mt-0.5">
-                        Save your Order ID below to track live fulfillment status anytime.
-                      </p>
+                      <p className="text-xs text-slate-600 mt-0.5">{t.cart.orderSuccessDesc}</p>
                     </div>
                   </div>
 
@@ -1053,14 +1364,14 @@ export function MartStorefront() {
                     <div className="flex items-center justify-between border-b border-slate-200 pb-3">
                       <div>
                         <div className="font-display text-base font-bold text-slate-900">
-                          Xeetrix Mart Invoice
+                          {t.cart.invoiceHeader}
                         </div>
                         <div className="text-slate-500">
-                          {new Date(confirmedInvoice.createdAt).toLocaleString()}
+                          {formatMartDateTime(confirmedInvoice.createdAt, lang)}
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className="text-slate-500">Order ID</div>
+                        <div className="text-slate-500">{t.cart.orderIdLabel}</div>
                         <div className="font-mono text-sm font-bold text-[#0B5336]">
                           {confirmedInvoice.orderId}
                         </div>
@@ -1077,173 +1388,221 @@ export function MartStorefront() {
                       </div>
                       <div className="sm:text-right">
                         <div>
-                          Delivery:{" "}
-                          <span className="font-semibold">{confirmedInvoice.deliveryArea}</span>
+                          {t.cart.deliveryPrefix}:{" "}
+                          <span className="font-semibold">
+                            {confirmedInvoice.deliveryArea === "Inside Dhaka"
+                              ? t.cart.insideDhaka
+                              : t.cart.outsideDhaka}
+                          </span>
                         </div>
                         <div>
-                          Payment:{" "}
+                          {t.cart.paymentPrefix}:{" "}
                           <span className="font-semibold">{confirmedInvoice.paymentMethod}</span>
                         </div>
                         {confirmedInvoice.transactionId && (
                           <div className="font-mono text-slate-600">
-                            TrxID: {confirmedInvoice.transactionId}
+                            {t.cart.trxIdPrefix}: {confirmedInvoice.transactionId}
                           </div>
                         )}
                       </div>
                     </div>
 
-                    <div className="border-t border-slate-200 pt-3 space-y-2">
-                      {confirmedInvoice.items.map((item, idx) => (
-                        <div key={idx} className="flex items-center justify-between gap-2">
-                          <div>
-                            <span className="font-semibold text-slate-900">{item.name}</span>
-                            {item.variant && (
-                              <span className="text-slate-500"> ({item.variant})</span>
-                            )}
-                            <span className="font-mono text-slate-500"> × {item.quantity}</span>
-                          </div>
-                          <span className="font-mono font-semibold text-slate-900 tabular-nums">
-                            {formatMartBDT(item.lineTotal)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
+                    <table className="w-full text-left border-t border-slate-200">
+                      <thead className="border-b border-slate-200 text-slate-500">
+                        <tr>
+                          <th className="py-2 font-semibold">{t.cart.itemCol}</th>
+                          <th className="py-2 font-semibold text-center">{t.cart.qtyCol}</th>
+                          <th className="py-2 font-semibold text-right">{t.cart.amountCol}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {confirmedInvoice.items.map((it, idx) => (
+                          <tr key={idx}>
+                            <td className="py-2">
+                              <div className="font-medium text-slate-900">
+                                {pickLocalized(it.nameEn || it.name, it.nameBn, lang)}
+                              </div>
+                              {it.variant && (
+                                <div className="text-[11px] text-slate-500">{it.variant}</div>
+                              )}
+                            </td>
+                            <td className="py-2 text-center font-mono tabular-nums">
+                              {toLocalizedDigits(it.quantity, lang)}
+                            </td>
+                            <td className="py-2 text-right font-mono font-semibold tabular-nums">
+                              {formatMartPrice(it.lineTotal, lang)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
 
                     <div className="border-t border-slate-200 pt-3 space-y-1.5">
                       <div className="flex justify-between text-slate-600">
-                        <span>Subtotal</span>
+                        <span>{t.cart.subtotal}</span>
                         <span className="font-mono tabular-nums">
-                          {formatMartBDT(confirmedInvoice.subtotal)}
+                          {formatMartPrice(confirmedInvoice.subtotal, lang)}
                         </span>
                       </div>
                       <div className="flex justify-between text-slate-600">
-                        <span>Delivery ({confirmedInvoice.deliveryArea})</span>
+                        <span>{t.cart.deliveryFee}</span>
                         <span className="font-mono tabular-nums">
-                          {formatMartBDT(confirmedInvoice.deliveryCharge)}
+                          {formatMartPrice(confirmedInvoice.deliveryCharge, lang)}
                         </span>
                       </div>
-                      <div className="flex justify-between font-bold text-sm text-slate-900 pt-1.5 border-t border-slate-100">
-                        <span>Total Payable</span>
+                      <div className="flex justify-between text-sm font-bold text-slate-900 pt-1.5 border-t border-slate-200">
+                        <span>{t.cart.totalPayable}</span>
                         <span className="font-mono text-[#0B5336] tabular-nums">
-                          {formatMartBDT(confirmedInvoice.totalAmount)}
+                          {formatMartPrice(confirmedInvoice.totalAmount, lang)}
                         </span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="flex flex-wrap gap-3">
                     <button
                       type="button"
                       onClick={() => window.print()}
-                      className="btn-outline py-2.5 text-xs gap-2"
+                      className="btn-outline flex-1 py-2.5 text-xs gap-2"
                     >
                       <Printer className="h-4 w-4" />
-                      <span>Print Receipt</span>
+                      <span>{t.cart.printInvoice}</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => {
-                        setTrackOrderId(confirmedInvoice.orderId);
-                        setTrackPhone(confirmedInvoice.phone);
+                        setConfirmedInvoice(null);
                         setCartOpen(false);
-                        setTrackOpen(true);
                       }}
-                      className="btn-primary py-2.5 text-xs gap-2"
+                      className="btn-primary flex-1 py-2.5 text-xs"
                     >
-                      <PackageSearch className="h-4 w-4" />
-                      <span>Track Order Status</span>
+                      {t.cart.continueShopping}
                     </button>
                   </div>
                 </div>
               ) : cart.length === 0 ? (
-                <div className="py-16 text-center space-y-4">
+                <div className="py-16 text-center space-y-3">
                   <ShoppingCart className="h-12 w-12 text-slate-300 mx-auto" />
-                  <div>
-                    <h3 className="font-display text-lg font-semibold text-slate-900">
-                      Your Cart Is Empty
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-1">
-                      Add products from the catalog to calculate delivery charges and check out.
-                    </p>
-                  </div>
+                  <h3 className="font-display text-lg font-semibold text-slate-900">
+                    {t.cart.emptyTitle}
+                  </h3>
+                  <p className="text-sm text-slate-500 max-w-xs mx-auto">{t.cart.emptyDesc}</p>
                   <button
                     type="button"
                     onClick={() => setCartOpen(false)}
-                    className="btn-primary px-6 py-2.5 text-xs"
+                    className="btn-primary px-6 py-2.5 text-xs mt-2"
                   >
-                    Browse Products
+                    {t.cart.browseProducts}
                   </button>
                 </div>
               ) : (
                 <>
                   {/* Cart Items List */}
                   <div className="space-y-3">
-                    {cart.map((item) => (
-                      <div
-                        key={item.key}
-                        className="flex items-center gap-3.5 rounded-xl border border-slate-200 p-3 bg-white"
-                      >
-                        <div className="h-16 w-16 rounded-lg bg-slate-100 overflow-hidden shrink-0 border border-slate-100">
-                          <ProductMedia src={item.imageUrl} alt={item.name} />
-                        </div>
-
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-semibold text-slate-900 truncate">
-                            {item.name}
+                    {cart.map((item) => {
+                      const itemTitle = pickLocalized(item.nameEn, item.nameBn, lang);
+                      return (
+                        <div
+                          key={item.key}
+                          className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3"
+                        >
+                          <div className="h-16 w-16 rounded-lg bg-white border border-slate-200 overflow-hidden shrink-0">
+                            <ProductMedia src={item.imageUrl} alt={itemTitle} />
                           </div>
-                          <div className="text-xs text-slate-500">
-                            {item.variant ? `${item.variant} · ` : ""}
-                            <span className="font-mono tabular-nums">
-                              {formatMartBDT(item.unitPrice)} each
-                            </span>
-                          </div>
-
-                          <div className="mt-2 flex items-center justify-between gap-2">
-                            <div className="inline-flex items-center rounded-lg border border-slate-200 bg-slate-50">
-                              <button
-                                type="button"
-                                onClick={() => updateCartQuantity(item.key, -1)}
-                                aria-label="Decrease item quantity"
-                                className="p-1.5 text-slate-600 hover:text-slate-900"
-                              >
-                                <Minus className="h-3 w-3" />
-                              </button>
-                              <span className="w-8 text-center font-mono text-xs font-bold tabular-nums">
-                                {item.quantity}
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-semibold text-slate-900 truncate">
+                              {itemTitle}
+                            </div>
+                            <div className="text-xs text-slate-500">
+                              {item.variant ? `${item.variant} · ` : ""}
+                              <span className="font-mono tabular-nums">
+                                {formatMartPrice(item.unitPrice, lang)}
                               </span>
-                              <button
-                                type="button"
-                                onClick={() => updateCartQuantity(item.key, 1)}
-                                aria-label="Increase item quantity"
-                                className="p-1.5 text-slate-600 hover:text-slate-900"
-                              >
-                                <Plus className="h-3 w-3" />
-                              </button>
                             </div>
 
-                            <div className="flex items-center gap-3">
-                              <span className="font-mono text-sm font-bold text-slate-900 tabular-nums">
-                                {formatMartBDT(item.unitPrice * item.quantity)}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => removeCartItem(item.key)}
-                                aria-label={`Remove ${item.name}`}
-                                className="text-slate-400 hover:text-red-600"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
+                            <div className="flex items-center justify-between mt-2">
+                              <div className="inline-flex items-center rounded-lg border border-slate-200 bg-white">
+                                <button
+                                  type="button"
+                                  onClick={() => updateCartQuantity(item.key, -1)}
+                                  className="px-2 py-1 text-slate-600 hover:text-slate-900"
+                                >
+                                  <Minus className="h-3 w-3" />
+                                </button>
+                                <span className="w-7 text-center font-mono text-xs font-bold tabular-nums">
+                                  {toLocalizedDigits(item.quantity, lang)}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => updateCartQuantity(item.key, 1)}
+                                  className="px-2 py-1 text-slate-600 hover:text-slate-900"
+                                >
+                                  <Plus className="h-3 w-3" />
+                                </button>
+                              </div>
+
+                              <div className="flex items-center gap-3">
+                                <span className="font-mono text-xs font-bold text-slate-900 tabular-nums">
+                                  {formatMartPrice(item.unitPrice * item.quantity, lang)}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => removeCartItem(item.key)}
+                                  aria-label={`${t.cart.removeItemAria} ${itemTitle}`}
+                                  className="text-slate-400 hover:text-red-600"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
 
-                  {/* Checkout Form */}
-                  <form onSubmit={handleCheckoutSubmit} className="space-y-4 pt-4 border-t border-slate-200">
-                    <h3 className="font-display text-base font-bold text-slate-900">
-                      Delivery &amp; Payment Details
+                  {/* Delivery Zone Selector */}
+                  <div className="space-y-2">
+                    <label className="block text-xs font-semibold text-slate-700">
+                      {t.cart.deliveryZone}
+                    </label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setDeliveryArea("Inside Dhaka")}
+                        className={`rounded-xl border p-3 text-left transition-colors ${
+                          deliveryArea === "Inside Dhaka"
+                            ? "border-[#0B5336] bg-brand-50 text-slate-900"
+                            : "border-slate-200 bg-white text-slate-600"
+                        }`}
+                      >
+                        <div className="text-xs font-semibold">{t.cart.insideDhaka}</div>
+                        <div className="font-mono text-sm font-bold text-[#0B5336] tabular-nums mt-0.5">
+                          {formatMartPrice(insideDhakaFee, lang)}
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setDeliveryArea("Outside Dhaka")}
+                        className={`rounded-xl border p-3 text-left transition-colors ${
+                          deliveryArea === "Outside Dhaka"
+                            ? "border-[#0B5336] bg-brand-50 text-slate-900"
+                            : "border-slate-200 bg-white text-slate-600"
+                        }`}
+                      >
+                        <div className="text-xs font-semibold">{t.cart.outsideDhaka}</div>
+                        <div className="font-mono text-sm font-bold text-[#0B5336] tabular-nums mt-0.5">
+                          {formatMartPrice(outsideDhakaFee, lang)}
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Checkout Customer & Payment Form */}
+                  <form onSubmit={handleCheckoutSubmit} className="space-y-4 border-t border-slate-200 pt-5">
+                    <h3 className="font-display text-sm font-bold text-slate-900">
+                      {t.cart.customerDetailsTitle}
                     </h3>
 
                     {checkoutError && (
@@ -1253,60 +1612,30 @@ export function MartStorefront() {
                       </div>
                     )}
 
-                    {/* Delivery Area */}
-                    <div className="space-y-1.5">
-                      <label className="block text-xs font-semibold text-slate-700">
-                        Delivery Area *
-                      </label>
-                      <div className="grid grid-cols-2 gap-2.5">
-                        {(["Inside Dhaka", "Outside Dhaka"] as MartDeliveryArea[]).map((area) => {
-                          const fee = area === "Inside Dhaka" ? insideDhakaFee : outsideDhakaFee;
-                          const selected = deliveryArea === area;
-                          return (
-                            <button
-                              key={area}
-                              type="button"
-                              onClick={() => setDeliveryArea(area)}
-                              className={`rounded-xl border px-3 py-2.5 text-left transition-colors ${
-                                selected
-                                  ? "border-[#0B5336] bg-brand-50 text-[#0B5336]"
-                                  : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-                              }`}
-                            >
-                              <div className="text-xs font-semibold">{area}</div>
-                              <div className="font-mono text-[11px] opacity-80 tabular-nums">
-                                Charge: {formatMartBDT(fee)}
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          Full Name *
+                          {t.cart.fullNameLabel}
                         </label>
                         <input
                           type="text"
                           required
                           value={customerName}
                           onChange={(e) => setCustomerName(e.target.value)}
-                          placeholder="Customer name"
+                          placeholder={t.cart.fullNamePlaceholder}
                           className="input"
                         />
                       </div>
                       <div>
                         <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          Phone Number *
+                          {t.cart.phoneLabel}
                         </label>
                         <input
                           type="tel"
                           required
                           value={phone}
                           onChange={(e) => setPhone(e.target.value)}
-                          placeholder="01XXXXXXXXX"
+                          placeholder={t.cart.phonePlaceholder}
                           className="input font-mono"
                         />
                       </div>
@@ -1314,93 +1643,99 @@ export function MartStorefront() {
 
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Full Delivery Address *
+                        {t.cart.addressLabel}
                       </label>
                       <textarea
                         rows={2}
                         required
                         value={address}
                         onChange={(e) => setAddress(e.target.value)}
-                        placeholder="House, Road, Area, Thana, District"
+                        placeholder={t.cart.addressPlaceholder}
                         className="input min-h-[72px] py-2"
                       />
                     </div>
 
-                    {/* Payment Method */}
-                    <div className="space-y-2">
+                    {/* Payment Method Selector */}
+                    <div className="space-y-2.5">
                       <label className="block text-xs font-semibold text-slate-700">
-                        Payment Method *
+                        {t.cart.paymentMethodLabel}
                       </label>
-                      <div className="grid grid-cols-2 gap-2.5">
-                        {(["Cash on Delivery", "Mobile Banking"] as MartPaymentMethod[]).map(
-                          (method) => (
-                            <button
-                              key={method}
-                              type="button"
-                              onClick={() => setPaymentMethod(method)}
-                              className={`rounded-xl border px-3 py-2.5 text-left text-xs font-semibold transition-colors ${
-                                paymentMethod === method
-                                  ? "border-[#0B5336] bg-brand-50 text-[#0B5336]"
-                                  : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-                              }`}
-                            >
-                              {method}
-                            </button>
-                          )
-                        )}
+                      <div className="grid grid-cols-2 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setPaymentMethod("Cash on Delivery")}
+                          className={`rounded-xl border px-3 py-2.5 text-xs font-semibold transition-colors ${
+                            paymentMethod === "Cash on Delivery"
+                              ? "border-[#0B5336] bg-[#0B5336] text-white"
+                              : "border-slate-200 bg-white text-slate-700"
+                          }`}
+                        >
+                          {t.cart.codOption}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPaymentMethod("Mobile Banking")}
+                          className={`rounded-xl border px-3 py-2.5 text-xs font-semibold transition-colors ${
+                            paymentMethod === "Mobile Banking"
+                              ? "border-[#0B5336] bg-[#0B5336] text-white"
+                              : "border-slate-200 bg-white text-slate-700"
+                          }`}
+                        >
+                          {t.cart.mobileBankingOption}
+                        </button>
                       </div>
-                    </div>
 
-                    {paymentMethod === "Mobile Banking" && (
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 space-y-3">
-                        {settings.mobileBankingNumber && (
-                          <div className="text-xs text-slate-700">
-                            Send payment via bKash / Nagad / Rocket to:{" "}
-                            <span className="font-mono font-bold text-[#0B5336]">
-                              {settings.mobileBankingNumber}
-                            </span>
+                      {paymentMethod === "Mobile Banking" && (
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 space-y-3">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                {t.cart.providerLabel}
+                              </label>
+                              <select
+                                value={mobileChannel}
+                                onChange={(e) => setMobileChannel(e.target.value)}
+                                className="input min-h-[38px] py-1.5 text-xs"
+                              >
+                                <option value="bKash">bKash</option>
+                                <option value="Nagad">Nagad</option>
+                                <option value="Rocket">Rocket</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                {t.cart.trxIdLabel}
+                              </label>
+                              <input
+                                type="text"
+                                value={transactionId}
+                                onChange={(e) => setTransactionId(e.target.value)}
+                                placeholder={t.cart.trxIdPlaceholder}
+                                className="input min-h-[38px] py-1.5 text-xs font-mono"
+                              />
+                            </div>
                           </div>
-                        )}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                              Channel
-                            </label>
-                            <select
-                              value={mobileChannel}
-                              onChange={(e) => setMobileChannel(e.target.value)}
-                              className="input min-h-[40px] py-1.5 text-xs"
-                            >
-                              <option value="bKash">bKash</option>
-                              <option value="Nagad">Nagad</option>
-                              <option value="Rocket">Rocket</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                              Transaction ID (Optional)
-                            </label>
-                            <input
-                              type="text"
-                              value={transactionId}
-                              onChange={(e) => setTransactionId(e.target.value)}
-                              placeholder="e.g. TXN8A92K1"
-                              className="input min-h-[40px] py-1.5 font-mono text-xs"
-                            />
-                          </div>
+                          {settings.mobileBankingNumber && (
+                            <p className="text-[11px] text-slate-600">
+                              {t.cart.sendMoneyPrefix}{" "}
+                              <span className="font-mono font-bold text-slate-900">
+                                {settings.mobileBankingNumber}
+                              </span>
+                            </p>
+                          )}
                         </div>
-                      </div>
-                    )}
+                      )}
+                    </div>
 
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Order Notes (Optional)
+                        {t.cart.notesLabel}
                       </label>
                       <input
                         type="text"
                         value={notes}
                         onChange={(e) => setNotes(e.target.value)}
-                        placeholder="Delivery instructions or landmark"
+                        placeholder={t.cart.notesPlaceholder}
                         className="input"
                       />
                     </div>
@@ -1408,21 +1743,27 @@ export function MartStorefront() {
                     {/* Totals Summary */}
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-1.5 text-xs">
                       <div className="flex justify-between text-slate-600">
-                        <span>Items Subtotal</span>
-                        <span className="font-mono font-semibold tabular-nums">
-                          {formatMartBDT(cartSubtotal)}
+                        <span>{t.cart.subtotal}</span>
+                        <span className="font-mono tabular-nums">
+                          {formatMartPrice(cartSubtotal, lang)}
                         </span>
                       </div>
                       <div className="flex justify-between text-slate-600">
-                        <span>Delivery Charge ({deliveryArea})</span>
-                        <span className="font-mono font-semibold tabular-nums">
-                          {formatMartBDT(deliveryFee)}
+                        <span>
+                          {t.cart.deliveryFee} (
+                          {deliveryArea === "Inside Dhaka"
+                            ? t.cart.insideDhaka
+                            : t.cart.outsideDhaka}
+                          )
+                        </span>
+                        <span className="font-mono tabular-nums">
+                          {formatMartPrice(deliveryFee, lang)}
                         </span>
                       </div>
-                      <div className="flex justify-between text-sm font-bold text-slate-900 pt-2 border-t border-slate-200">
-                        <span>Total Payable</span>
-                        <span className="font-mono text-base text-[#0B5336] tabular-nums">
-                          {formatMartBDT(grandTotal)}
+                      <div className="flex justify-between text-base font-bold text-slate-900 pt-2 border-t border-slate-200">
+                        <span>{t.cart.grandTotal}</span>
+                        <span className="font-mono text-[#0B5336] tabular-nums">
+                          {formatMartPrice(grandTotal, lang)}
                         </span>
                       </div>
                     </div>
@@ -1430,11 +1771,11 @@ export function MartStorefront() {
                     <button
                       type="submit"
                       disabled={submittingOrder}
-                      className="btn-primary w-full py-3.5 text-sm disabled:opacity-60"
+                      className="btn-primary w-full py-3 text-sm"
                     >
                       {submittingOrder
-                        ? "Submitting Order..."
-                        : `Place Order · ${formatMartBDT(grandTotal)}`}
+                        ? t.cart.submittingOrder
+                        : `${t.cart.confirmOrder} · ${formatMartPrice(grandTotal, lang)}`}
                     </button>
                   </form>
                 </>
@@ -1444,28 +1785,26 @@ export function MartStorefront() {
         </div>
       )}
 
-      {/* TRACK ORDER MODAL */}
+      {/* CUSTOMER ORDER TRACKING MODAL */}
       {trackOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs"
           role="dialog"
           aria-modal="true"
-          aria-labelledby="track-modal-title"
+          aria-labelledby="track-order-title"
         >
           <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 bg-slate-50">
               <div>
-                <h2 id="track-modal-title" className="font-display text-lg font-bold text-slate-900">
-                  Track Your Order
+                <h2 id="track-order-title" className="font-display text-lg font-bold text-slate-900">
+                  {t.track.modalTitle}
                 </h2>
-                <p className="text-xs text-slate-500">
-                  Enter your Order ID and phone number used during checkout.
-                </p>
+                <p className="text-xs text-slate-500">{t.track.modalSubtitle}</p>
               </div>
               <button
                 type="button"
                 onClick={() => setTrackOpen(false)}
-                aria-label="Close track order modal"
+                aria-label={t.track.closeAria}
                 className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-200 hover:text-slate-900"
               >
                 <X className="h-5 w-5" />
@@ -1477,85 +1816,74 @@ export function MartStorefront() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Order ID *
+                      {t.track.orderIdLabel}
                     </label>
                     <input
                       type="text"
                       required
                       value={trackOrderId}
-                      onChange={(e) => setTrackOrderId(e.target.value.toUpperCase())}
-                      placeholder="e.g. XM-123456-789"
-                      className="input font-mono uppercase text-xs"
+                      onChange={(e) => setTrackOrderId(e.target.value)}
+                      placeholder={t.track.orderIdPlaceholder}
+                      className="input font-mono uppercase"
                     />
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Phone Number *
+                      {t.track.phoneLabel}
                     </label>
                     <input
                       type="tel"
                       required
                       value={trackPhone}
                       onChange={(e) => setTrackPhone(e.target.value)}
-                      placeholder="01XXXXXXXXX"
-                      className="input font-mono text-xs"
+                      placeholder={t.track.phonePlaceholder}
+                      className="input font-mono"
                     />
                   </div>
                 </div>
+
+                {trackingError && (
+                  <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs text-red-700">
+                    <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                    <span>{trackingError}</span>
+                  </div>
+                )}
+
                 <button
                   type="submit"
                   disabled={trackingLoading}
-                  className="btn-primary w-full py-2.5 text-xs"
+                  className="btn-primary w-full py-2.5 text-xs gap-2"
                 >
-                  {trackingLoading ? "Checking Order Status..." : "Check Order Status"}
+                  <PackageSearch className="h-4 w-4" />
+                  <span>{trackingLoading ? t.track.searching : t.track.checkStatus}</span>
                 </button>
               </form>
 
-              {trackingError && (
-                <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs text-red-700">
-                  <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                  <span>{trackingError}</span>
-                </div>
-              )}
-
               {trackedOrder && (
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 space-y-4 text-xs">
-                  <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                  <div className="flex items-center justify-between">
                     <div>
                       <div className="font-mono text-sm font-bold text-slate-900">
                         {trackedOrder.id}
                       </div>
                       <div className="text-slate-500">
-                        Placed{" "}
-                        {trackedOrder.createdAt
-                          ? new Date(trackedOrder.createdAt).toLocaleDateString()
-                          : ""}
+                        {formatMartDate(trackedOrder.createdAt, lang)}
                       </div>
                     </div>
-                    <div className="text-right">
-                      <div className="text-slate-500">Current Status</div>
-                      <div
-                        className={`font-semibold text-sm ${
-                          trackedOrder.status === "Cancelled"
-                            ? "text-red-600"
-                            : "text-[#0B5336]"
-                        }`}
-                      >
-                        {trackedOrder.status}
-                      </div>
+                    <div className="font-semibold text-[#0B5336]">
+                      {t.orderStatuses[trackedOrder.status] || trackedOrder.status}
                     </div>
                   </div>
 
-                  {/* Step Timeline */}
                   {trackedOrder.status === "Cancelled" ? (
                     <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-red-700 font-medium">
-                      This order has been cancelled. Contact {MART_CONTACT_PHONE} for assistance.
+                      {t.track.cancelledAlert}
                     </div>
                   ) : (
                     <div className="grid grid-cols-5 gap-1 pt-1">
                       {ORDER_STEPS.map((step, idx) => {
-                        const activeIdx = ORDER_STEPS.indexOf(trackedOrder.status);
-                        const completed = activeIdx >= idx;
+                        const currentIdx = ORDER_STEPS.indexOf(trackedOrder.status);
+                        const completed = idx <= (currentIdx === -1 ? 0 : currentIdx);
                         return (
                           <div key={step} className="text-center space-y-1.5">
                             <div
@@ -1576,7 +1904,7 @@ export function MartStorefront() {
                                 completed ? "text-slate-900" : "text-slate-400"
                               }`}
                             >
-                              {step}
+                              {t.orderStatuses[step]}
                             </div>
                           </div>
                         );
@@ -1584,18 +1912,18 @@ export function MartStorefront() {
                     </div>
                   )}
 
-                  {/* Items & Amount */}
                   <div className="border-t border-slate-200 pt-3 space-y-1.5">
-                    <div className="font-semibold text-slate-800">Ordered Items</div>
+                    <div className="font-semibold text-slate-800">{t.track.orderedItemsTitle}</div>
                     {parseOrderItems(trackedOrder.itemsJson).length > 0 ? (
                       parseOrderItems(trackedOrder.itemsJson).map((item, idx) => (
                         <div key={idx} className="flex justify-between text-slate-600">
                           <span>
-                            {item.name}
-                            {item.variant ? ` (${item.variant})` : ""} × {item.quantity}
+                            {pickLocalized(item.nameEn || item.name, item.nameBn, lang)}
+                            {item.variant ? ` (${item.variant})` : ""} ×{" "}
+                            {toLocalizedDigits(item.quantity, lang)}
                           </span>
                           <span className="font-mono tabular-nums">
-                            {formatMartBDT(item.lineTotal)}
+                            {formatMartPrice(item.lineTotal, lang)}
                           </span>
                         </div>
                       ))
@@ -1603,9 +1931,11 @@ export function MartStorefront() {
                       <div className="text-slate-600">{trackedOrder.itemsSummary}</div>
                     )}
                     <div className="flex justify-between font-bold text-slate-900 pt-2 border-t border-slate-200">
-                      <span>Total Payable ({trackedOrder.paymentMethod})</span>
+                      <span>
+                        {t.track.totalPayableLabel} ({trackedOrder.paymentMethod})
+                      </span>
                       <span className="font-mono text-[#0B5336] tabular-nums">
-                        {formatMartBDT(trackedOrder.totalAmount)}
+                        {formatMartPrice(trackedOrder.totalAmount, lang)}
                       </span>
                     </div>
                   </div>

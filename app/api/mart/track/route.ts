@@ -9,7 +9,11 @@ export async function GET(req: NextRequest) {
 
   if (!orderId || !phone) {
     return NextResponse.json(
-      { ok: false, error: "Order ID and phone number are required to track an order." },
+      {
+        ok: false,
+        code: "MISSING_FIELDS",
+        error: "Order ID and phone number are required to track an order.",
+      },
       { status: 400 }
     );
   }
@@ -19,6 +23,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(
       {
         ok: false,
+        code: "BACKEND_UNCONFIGURED",
         error: "Live order tracking requires Google Sheets backend configuration.",
       },
       { status: 503 }
@@ -51,6 +56,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json(
         {
           ok: false,
+          code: "NOT_FOUND",
           error:
             json.error ||
             "No matching order found. Please verify your Order ID and phone number.",
@@ -75,6 +81,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(
       {
         ok: false,
+        code: "GENERIC_NETWORK",
         error:
           err instanceof Error
             ? err.message
