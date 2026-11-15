@@ -116,7 +116,7 @@ function ProductMedia({ src, alt, className = "" }: { src: string; alt: string; 
   if (!resolved || failed) {
     return (
       <div
-        className={`flex h-full w-full flex-col items-center justify-center bg-slate-100 text-slate-400 p-6 text-center ${className}`}
+        className={`flex h-full w-full flex-col items-center justify-center bg-slate-50 text-slate-400 p-6 text-center ${className}`}
       >
         <Package className="h-10 w-10 text-slate-300 mb-2" />
         <span className="text-xs font-medium text-slate-500 line-clamp-2">{alt}</span>
@@ -131,7 +131,7 @@ function ProductMedia({ src, alt, className = "" }: { src: string; alt: string; 
       alt={alt}
       referrerPolicy="no-referrer"
       onError={() => setFailed(true)}
-      className={`h-full w-full object-cover ${className}`}
+      className={`h-full w-full object-contain ${className}`}
     />
   );
 }
@@ -1800,7 +1800,7 @@ export function MartStorefront() {
                         <button
                           type="button"
                           onClick={() => openQuickView(product, activeCardColor)}
-                          className="block w-full aspect-square sm:aspect-[4/3] bg-slate-100 overflow-hidden border-b border-slate-100 text-left"
+                          className="block w-full aspect-square bg-white p-2.5 sm:p-3 overflow-hidden border-b border-slate-100 text-left"
                         >
                           <ProductMedia
                             src={cardDisplayImage}
@@ -2048,7 +2048,7 @@ export function MartStorefront() {
               <div className="flex-1 overflow-y-auto p-4 sm:p-6 grid grid-cols-1 md:grid-cols-12 gap-5 sm:gap-6">
                 {/* Multi-Image Gallery Viewer */}
                 <div className="md:col-span-6 space-y-3">
-                  <div className="aspect-[4/3] rounded-xl bg-slate-100 overflow-hidden border border-slate-200">
+                  <div className="aspect-square rounded-xl bg-white p-3 overflow-hidden border border-slate-200">
                     <ProductMedia
                       src={quickViewActiveImage || quickViewProduct.imageUrl}
                       alt={pickLocalized(quickViewProduct.nameEn, quickViewProduct.nameBn, lang)}
@@ -2063,7 +2063,7 @@ export function MartStorefront() {
                             key={`${imgUrl}-${idx}`}
                             type="button"
                             onClick={() => setQuickViewActiveImage(imgUrl)}
-                            className={`h-14 w-14 rounded-lg overflow-hidden border-2 shrink-0 transition-colors ${
+                            className={`h-14 w-14 rounded-lg bg-white p-1 overflow-hidden border-2 shrink-0 transition-colors ${
                               active ? "border-[#0B5336]" : "border-slate-200 hover:border-slate-400"
                             }`}
                           >
@@ -2076,7 +2076,7 @@ export function MartStorefront() {
                                 lang
                               )}
                               referrerPolicy="no-referrer"
-                              className="h-full w-full object-cover"
+                              className="h-full w-full object-contain"
                             />
                           </button>
                         );
@@ -2606,7 +2606,7 @@ export function MartStorefront() {
                               : "border-slate-200 bg-slate-50"
                           }`}
                         >
-                          <div className="h-16 w-16 rounded-lg bg-white border border-slate-200 overflow-hidden shrink-0">
+                          <div className="h-16 w-16 rounded-lg bg-white p-1 border border-slate-200 overflow-hidden shrink-0">
                             <ProductMedia src={item.imageUrl} alt={liveTitle} />
                           </div>
                           <div className="flex-1 min-w-0">

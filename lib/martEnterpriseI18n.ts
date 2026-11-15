@@ -375,6 +375,10 @@ export interface MartEnterpriseDictionary {
     mediaGallerySectionTitle: string;
     primaryPreviewLabel: string;
     noPrimaryImageHint: string;
+    sizeGuideTitle: string;
+    sizeGuideHint: string;
+    autoSquarePadLabel: string;
+    autoSquarePadOffHint: string;
   };
   coupons: {
     title: string;
@@ -863,6 +867,10 @@ export const MART_ENTERPRISE_DICTIONARY: Record<MartLang, MartEnterpriseDictiona
       mediaGallerySectionTitle: "Product Images & Gallery",
       primaryPreviewLabel: "Primary Thumbnail",
       noPrimaryImageHint: "No image",
+      sizeGuideTitle: "Best Size: 1000 × 1000 px (1:1 Square)",
+      sizeGuideHint: "Any portrait or landscape photo fits cleanly inside a white 1:1 frame without cropping.",
+      autoSquarePadLabel: "Auto-fit onto 1:1 white square before Drive upload (Recommended)",
+      autoSquarePadOffHint: "Original aspect ratio preserved (max 1400px, uncropped in storefront).",
     },
     coupons: {
       title: "Discount Coupons & Promo Codes (Mart_Coupons)",
@@ -1349,6 +1357,10 @@ export const MART_ENTERPRISE_DICTIONARY: Record<MartLang, MartEnterpriseDictiona
       mediaGallerySectionTitle: "পণ্যের মূল ছবি ও গ্যালারি",
       primaryPreviewLabel: "মূল ছবি প্রিভিউ",
       noPrimaryImageHint: "ছবি নেই",
+      sizeGuideTitle: "আদর্শ সাইজ: ১০০০ × ১০০০ পিক্সেল (১:১ স্কয়ার)",
+      sizeGuideHint: "যেকোনো লম্বা বা চওড়া ছবিই না কেটে পরিচ্ছন্ন সাদা ১:১ ফ্রেমের ভেতর সম্পূর্ণ দেখাবে।",
+      autoSquarePadLabel: "ড্রাইভে আপলোডের আগে স্বয়ংক্রিয়ভাবে ১:১ সাদা স্কয়ার ফ্রেমে সাজান (প্রস্তাবিত)",
+      autoSquarePadOffHint: "মূল ছবির অনুপাত অক্ষুণ্ণ থাকবে (সর্বোচ্চ ১৪০০px, স্টোরফ্রন্টে না কেটে দেখাবে)।",
     },
     coupons: {
       title: "ডিসকাউন্ট কুপন ও প্রমো কোড (Mart_Coupons)",

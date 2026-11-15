@@ -1152,6 +1152,185 @@ export function fileToMartBase64(file: File): Promise<string> {
   });
 }
 
+export interface PreparedMartImagePayload {
+  base64Data: string;
+  mimeType: string;
+  fileName: string;
+  originalWidth: number;
+  originalHeight: number;
+  outputWidth: number;
+  outputHeight: number;
+}
+
+/**
+ * Optimizes a product photo in-browser before Drive upload:
+ * - When autoSquarePad is true: fits the complete image (zero cropping) centered inside
+ *   a 1000x1000 white (#FFFFFF) 1:1 square canvas encoded as crisp JPEG.
+ * - When autoSquarePad is false: preserves original aspect ratio and scales oversized images
+ *   down to at most 1400px on the longest edge for fast reliable Drive uploads.
+ */
+export async function prepareMartProductImageUpload(
+  file: File,
+  options?: {
+    autoSquarePad?: boolean;
+    targetSize?: number;
+    maxOriginalEdge?: number;
+    quality?: number;
+  }
+): Promise<PreparedMartImagePayload> {
+  const autoSquarePad = options?.autoSquarePad !== false;
+  const targetSize = options?.targetSize ?? 1000;
+  const maxOriginalEdge = options?.maxOriginalEdge ?? 1400;
+  const quality = options?.quality ?? 0.9;
+
+  // Skip canvas transformation for vector SVGs, animated GIFs, or SSR environments
+  if (
+    typeof window === "undefined" ||
+    file.type === "image/svg+xml" ||
+    file.type === "image/gif"
+  ) {
+    const base64Data = await fileToMartBase64(file);
+    return {
+      base64Data,
+      mimeType: file.type || "image/jpeg",
+      fileName: file.name,
+      originalWidth: 0,
+      originalHeight: 0,
+      outputWidth: 0,
+      outputHeight: 0,
+    };
+  }
+
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error("Could not decode image."));
+      el.src = objectUrl;
+    });
+
+    const origW = img.naturalWidth || 0;
+    const origH = img.naturalHeight || 0;
+    if (origW <= 0 || origH <= 0) {
+      const base64Data = await fileToMartBase64(file);
+      return {
+        base64Data,
+        mimeType: file.type || "image/jpeg",
+        fileName: file.name,
+        originalWidth: 0,
+        originalHeight: 0,
+        outputWidth: 0,
+        outputHeight: 0,
+      };
+    }
+
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      const base64Data = await fileToMartBase64(file);
+      return {
+        base64Data,
+        mimeType: file.type || "image/jpeg",
+        fileName: file.name,
+        originalWidth: origW,
+        originalHeight: origH,
+        outputWidth: origW,
+        outputHeight: origH,
+      };
+    }
+
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+
+    let outW: number;
+    let outH: number;
+    let outMime: string;
+    let outFileName: string;
+    const baseName = file.name.replace(/\.[^.]+$/, "") || "product-image";
+
+    if (autoSquarePad) {
+      outW = targetSize;
+      outH = targetSize;
+      canvas.width = outW;
+      canvas.height = outH;
+
+      ctx.fillStyle = "#FFFFFF";
+      ctx.fillRect(0, 0, outW, outH);
+
+      const scale = Math.min(outW / origW, outH / origH);
+      const drawW = Math.max(1, Math.round(origW * scale));
+      const drawH = Math.max(1, Math.round(origH * scale));
+      const dx = Math.round((outW - drawW) / 2);
+      const dy = Math.round((outH - drawH) / 2);
+      ctx.drawImage(img, dx, dy, drawW, drawH);
+
+      outMime = "image/jpeg";
+      outFileName = `${baseName}-1x1.jpg`;
+    } else {
+      const longest = Math.max(origW, origH);
+      const scale = longest > maxOriginalEdge ? maxOriginalEdge / longest : 1;
+      outW = Math.max(1, Math.round(origW * scale));
+      outH = Math.max(1, Math.round(origH * scale));
+      canvas.width = outW;
+      canvas.height = outH;
+
+      const preservePng = file.type === "image/png";
+      if (!preservePng) {
+        ctx.fillStyle = "#FFFFFF";
+        ctx.fillRect(0, 0, outW, outH);
+      }
+      ctx.drawImage(img, 0, 0, outW, outH);
+
+      outMime = preservePng ? "image/png" : "image/jpeg";
+      outFileName = preservePng ? `${baseName}.png` : `${baseName}.jpg`;
+    }
+
+    const dataUrl =
+      outMime === "image/png"
+        ? canvas.toDataURL("image/png")
+        : canvas.toDataURL("image/jpeg", quality);
+    const commaIdx = dataUrl.indexOf(",");
+    const base64Data = commaIdx !== -1 ? dataUrl.substring(commaIdx + 1) : "";
+
+    if (!base64Data) {
+      const rawBase64 = await fileToMartBase64(file);
+      return {
+        base64Data: rawBase64,
+        mimeType: file.type || "image/jpeg",
+        fileName: file.name,
+        originalWidth: origW,
+        originalHeight: origH,
+        outputWidth: origW,
+        outputHeight: origH,
+      };
+    }
+
+    return {
+      base64Data,
+      mimeType: outMime,
+      fileName: outFileName,
+      originalWidth: origW,
+      originalHeight: origH,
+      outputWidth: outW,
+      outputHeight: outH,
+    };
+  } catch {
+    const base64Data = await fileToMartBase64(file);
+    return {
+      base64Data,
+      mimeType: file.type || "image/jpeg",
+      fileName: file.name,
+      originalWidth: 0,
+      originalHeight: 0,
+      outputWidth: 0,
+      outputHeight: 0,
+    };
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
 export function exportMartOrdersToCsv(orders: MartOrder[], lang: MartLang = "en"): void {
   const headers = MART_DICTIONARY[lang].admin.csvHeaders;
 

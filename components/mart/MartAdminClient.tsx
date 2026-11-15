@@ -82,6 +82,7 @@ import {
   parseProductColors,
   parseProductSizes,
   parseVariationMatrix,
+  prepareMartProductImageUpload,
   slugifyCategory,
   updateMartRecord,
   updateMartStoreSettings,
@@ -261,6 +262,7 @@ export function MartAdminClient() {
   const [prodFeatured, setProdFeatured] = useState(false);
   const [prodActive, setProdActive] = useState(true);
   const [uploadingProdImg, setUploadingProdImg] = useState(false);
+  const [autoSquarePad, setAutoSquarePad] = useState(true);
   const [savingProduct, setSavingProduct] = useState(false);
   const [productSearch, setProductSearch] = useState("");
 
@@ -496,15 +498,23 @@ export function MartAdminClient() {
 
     setUploadingProdImg(true);
     try {
-      const base64Data = await fileToMartBase64(file);
+      const prepared = await prepareMartProductImageUpload(file, {
+        autoSquarePad,
+        targetSize: 1000,
+        quality: 0.9,
+      });
       const uploaded = await uploadMartImageToDrive({
-        fileName: file.name,
-        mimeType: file.type || "image/jpeg",
-        base64Data,
+        fileName: prepared.fileName,
+        mimeType: prepared.mimeType,
+        base64Data: prepared.base64Data,
         folderType: "products",
       });
       setProdImageUrl(uploaded.url);
-      showNotice("success", `${t.admin.products.msgImageUploaded} (${uploaded.fileId})`);
+      const dimTag =
+        prepared.outputWidth > 0 && prepared.outputHeight > 0
+          ? `${prepared.outputWidth}×${prepared.outputHeight} · `
+          : "";
+      showNotice("success", `${t.admin.products.msgImageUploaded} (${dimTag}${uploaded.fileId})`);
     } catch (err) {
       const apiErr = err as MartApiError;
       showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
@@ -525,17 +535,25 @@ export function MartAdminClient() {
 
     setUploadingGalleryImg(true);
     try {
-      const base64Data = await fileToMartBase64(file);
+      const prepared = await prepareMartProductImageUpload(file, {
+        autoSquarePad,
+        targetSize: 1000,
+        quality: 0.9,
+      });
       const uploaded = await uploadMartImageToDrive({
-        fileName: file.name,
-        mimeType: file.type || "image/jpeg",
-        base64Data,
+        fileName: prepared.fileName,
+        mimeType: prepared.mimeType,
+        base64Data: prepared.base64Data,
         folderType: "products",
       });
       setProdGalleryUrls((prev) =>
         prev.includes(uploaded.url) ? prev : [...prev, uploaded.url]
       );
-      showNotice("success", `${t.admin.products.msgImageUploaded} (${uploaded.fileId})`);
+      const dimTag =
+        prepared.outputWidth > 0 && prepared.outputHeight > 0
+          ? `${prepared.outputWidth}×${prepared.outputHeight} · `
+          : "";
+      showNotice("success", `${t.admin.products.msgImageUploaded} (${dimTag}${uploaded.fileId})`);
     } catch (err) {
       const apiErr = err as MartApiError;
       showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
@@ -579,11 +597,15 @@ export function MartAdminClient() {
     }
     setUploadingColorRowId(colorId);
     try {
-      const base64Data = await fileToMartBase64(file);
+      const prepared = await prepareMartProductImageUpload(file, {
+        autoSquarePad,
+        targetSize: 1000,
+        quality: 0.9,
+      });
       const uploaded = await uploadMartImageToDrive({
-        fileName: `color-${file.name}`,
-        mimeType: file.type || "image/jpeg",
-        base64Data,
+        fileName: `color-${prepared.fileName}`,
+        mimeType: prepared.mimeType,
+        base64Data: prepared.base64Data,
         folderType: "products",
       });
       setProdColors((prev) =>
@@ -594,7 +616,11 @@ export function MartAdminClient() {
           ? prev
           : [...prev, uploaded.url]
       );
-      showNotice("success", `${t.admin.products.msgImageUploaded} (${uploaded.fileId})`);
+      const dimTag =
+        prepared.outputWidth > 0 && prepared.outputHeight > 0
+          ? `${prepared.outputWidth}×${prepared.outputHeight} · `
+          : "";
+      showNotice("success", `${t.admin.products.msgImageUploaded} (${dimTag}${uploaded.fileId})`);
     } catch (err) {
       const apiErr = err as MartApiError;
       showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
@@ -3734,21 +3760,45 @@ export function MartAdminClient() {
 
                   {/* Product Primary Image & Multi-Angle Gallery Pool */}
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-4">
-                    <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                      <ImagePlus className="h-3.5 w-3.5 text-[#0B5336]" />
-                      <span>{tvar.mediaGallerySectionTitle}</span>
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+                      <div>
+                        <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                          <ImagePlus className="h-3.5 w-3.5 text-[#0B5336]" />
+                          <span>{tvar.mediaGallerySectionTitle}</span>
+                        </div>
+                        <div className="text-[11px] text-slate-600 mt-0.5">
+                          <span className="font-semibold text-[#0B5336]">{tvar.sizeGuideTitle}</span>
+                          {" · "}
+                          <span>{tvar.sizeGuideHint}</span>
+                        </div>
+                      </div>
+
+                      <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold text-slate-700 cursor-pointer shrink-0 hover:border-[#0B5336]">
+                        <input
+                          type="checkbox"
+                          checked={autoSquarePad}
+                          onChange={(e) => setAutoSquarePad(e.target.checked)}
+                          className="h-3.5 w-3.5 rounded accent-[#0B5336]"
+                        />
+                        <span>{tvar.autoSquarePadLabel}</span>
+                      </label>
                     </div>
+                    {!autoSquarePad && (
+                      <div className="text-[11px] text-slate-500">
+                        {tvar.autoSquarePadOffHint}
+                      </div>
+                    )}
 
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
                       <div className="lg:col-span-2 flex items-center gap-3">
-                        <div className="h-20 w-20 rounded-xl border border-slate-200 bg-white overflow-hidden shrink-0 flex items-center justify-center">
+                        <div className="h-20 w-20 rounded-xl border border-slate-200 bg-white p-1 overflow-hidden shrink-0 flex items-center justify-center">
                           {prodImageUrl.trim() ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
                               src={normalizeMartImageUrl(prodImageUrl)}
                               alt={tvar.primaryPreviewLabel}
                               referrerPolicy="no-referrer"
-                              className="h-full w-full object-cover"
+                              className="h-full w-full object-contain"
                             />
                           ) : (
                             <span className="text-[10px] text-slate-400 text-center px-1">
@@ -3839,13 +3889,13 @@ export function MartAdminClient() {
                               key={`${url}-${idx}`}
                               className="group relative flex flex-col items-center gap-1 rounded-xl border border-slate-200 bg-white p-1.5"
                             >
-                              <div className="relative h-16 w-16 rounded-lg overflow-hidden bg-slate-100">
+                              <div className="relative h-16 w-16 rounded-lg overflow-hidden bg-white p-1 border border-slate-100">
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img
                                   src={normalizeMartImageUrl(url)}
                                   alt={tvar.galleryTitle}
                                   referrerPolicy="no-referrer"
-                                  className="h-full w-full object-cover"
+                                  className="h-full w-full object-contain"
                                 />
                                 <button
                                   type="button"
@@ -3990,14 +4040,14 @@ export function MartAdminClient() {
                                     <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center">
                                       {/* Live Color Image / Hex Swatch Preview */}
                                       <div className="sm:col-span-1 flex items-center gap-2">
-                                        <div className="h-10 w-10 rounded-lg border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center bg-slate-100">
+                                        <div className="h-10 w-10 rounded-lg border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center bg-white p-0.5">
                                           {clr.imageUrl ? (
                                             // eslint-disable-next-line @next/next/no-img-element
                                             <img
                                               src={normalizeMartImageUrl(clr.imageUrl)}
                                               alt={clr.nameEn || clr.nameBn || "Color"}
                                               referrerPolicy="no-referrer"
-                                              className="h-full w-full object-cover"
+                                              className="h-full w-full object-contain"
                                             />
                                           ) : (
                                             <span
@@ -4172,7 +4222,7 @@ export function MartAdminClient() {
                                                     );
                                                     setColorGalleryPickerIdx(null);
                                                   }}
-                                                  className={`h-14 w-14 rounded-lg overflow-hidden border-2 transition-all ${
+                                                  className={`h-14 w-14 rounded-lg bg-white p-1 overflow-hidden border-2 transition-all ${
                                                     selected
                                                       ? "border-[#0B5336] ring-2 ring-[#0B5336]/25"
                                                       : "border-slate-200 hover:border-[#0B5336]"
@@ -4183,7 +4233,7 @@ export function MartAdminClient() {
                                                     src={normalizeMartImageUrl(poolUrl)}
                                                     alt={tvar.galleryTitle}
                                                     referrerPolicy="no-referrer"
-                                                    className="h-full w-full object-cover"
+                                                    className="h-full w-full object-contain"
                                                   />
                                                 </button>
                                               );
@@ -4521,14 +4571,14 @@ export function MartAdminClient() {
                       return (
                         <div key={p.id} className="p-4 space-y-3 text-xs">
                           <div className="flex items-start gap-3">
-                            <div className="h-14 w-14 rounded-xl bg-slate-100 overflow-hidden shrink-0 border border-slate-200">
+                            <div className="h-14 w-14 rounded-xl bg-white p-0.5 overflow-hidden shrink-0 border border-slate-200">
                               {p.imageUrl ? (
                                 // eslint-disable-next-line @next/next/no-img-element
                                 <img
                                   src={normalizeMartImageUrl(p.imageUrl)}
                                   alt={displayProdName}
                                   referrerPolicy="no-referrer"
-                                  className="h-full w-full object-cover"
+                                  className="h-full w-full object-contain"
                                 />
                               ) : null}
                             </div>
@@ -4782,14 +4832,14 @@ export function MartAdminClient() {
                             <tr key={p.id} className="hover:bg-slate-50">
                               <td className="px-4 py-3">
                                 <div className="flex items-center gap-3">
-                                  <div className="h-10 w-10 rounded-lg bg-slate-100 overflow-hidden shrink-0 border border-slate-200">
+                                  <div className="h-10 w-10 rounded-lg bg-white p-0.5 overflow-hidden shrink-0 border border-slate-200">
                                     {p.imageUrl ? (
                                       // eslint-disable-next-line @next/next/no-img-element
                                       <img
                                         src={normalizeMartImageUrl(p.imageUrl)}
                                         alt={displayProdName}
                                         referrerPolicy="no-referrer"
-                                        className="h-full w-full object-cover"
+                                        className="h-full w-full object-contain"
                                       />
                                     ) : null}
                                   </div>
