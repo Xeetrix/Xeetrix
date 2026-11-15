@@ -171,6 +171,12 @@ export interface MartDictionary {
     errOrderFailed: string;
     cartItemUnavailable: string;
     cartUnavailableCheckoutErr: string;
+    stepBagLabel: string;
+    stepCheckoutLabel: string;
+    continueCheckoutBtn: string;
+    backToBagBtn: string;
+    savedAddressHint: string;
+    clearSavedAddressBtn: string;
   };
   track: {
     modalTitle: string;
@@ -224,6 +230,14 @@ export interface MartDictionary {
     dismiss: string;
     setupAlertTitle: string;
     setupAlertBody: string;
+    openMenuAria: string;
+    closeMenuAria: string;
+    navGroups: {
+      operations: string;
+      catalog: string;
+      financeCrm: string;
+      system: string;
+    };
     nav: {
       analytics: string;
       orders: string;
@@ -650,6 +664,12 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
       cartItemUnavailable: "Unavailable or out of stock — please remove or adjust qty.",
       cartUnavailableCheckoutErr:
         "One or more items in your cart are no longer available. Please remove them to continue.",
+      stepBagLabel: "1. Bag & Delivery",
+      stepCheckoutLabel: "2. Address & Pay",
+      continueCheckoutBtn: "Continue to Checkout",
+      backToBagBtn: "Back to Bag",
+      savedAddressHint: "Saved delivery details pre-filled",
+      clearSavedAddressBtn: "Clear Saved",
     },
     track: {
       modalTitle: "Track Your Order",
@@ -705,6 +725,14 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
       setupAlertTitle: "Standalone Backend Setup Required:",
       setupAlertBody:
         "Deploy backend/mart/Code.gs inside your Google Sheet (run setupMartBackend), then configure MART_SCRIPT_URL in Vercel Environment Variables so products, categories, labels, orders, and Google Drive images sync live.",
+      openMenuAria: "Open navigation menu",
+      closeMenuAria: "Close navigation menu",
+      navGroups: {
+        operations: "Operations",
+        catalog: "Catalog & Offers",
+        financeCrm: "Finance & CRM",
+        system: "Configuration",
+      },
       nav: {
         analytics: "Dashboard & Follow-ups",
         orders: "Orders & Fulfillment",
@@ -1151,6 +1179,12 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
       cartItemUnavailable: "বর্তমানে স্টক নেই বা সাময়িকভাবে বন্ধ — অনুগ্রহ করে বাদ দিন বা পরিমাণ কমান।",
       cartUnavailableCheckoutErr:
         "আপনার কার্টের এক বা একাধিক পণ্য বর্তমানে উপলব্ধ নয়। অর্ডার করতে অনুগ্রহ করে সেগুলো বাদ দিন।",
+      stepBagLabel: "১. কার্ট ও এলাকা",
+      stepCheckoutLabel: "২. ঠিকানা ও পেমেন্ট",
+      continueCheckoutBtn: "চেকআউটে এগিয়ে যান",
+      backToBagBtn: "কার্টে ফিরুন",
+      savedAddressHint: "আগের সংরক্ষিত ঠিকানা অটো-ফিল হয়েছে",
+      clearSavedAddressBtn: "তথ্য মুছুন",
     },
     track: {
       modalTitle: "অর্ডার ট্র্যাক করুন",
@@ -1208,6 +1242,14 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
       setupAlertTitle: "ব্যাকএন্ড সেটআপ প্রয়োজন:",
       setupAlertBody:
         "আপনার Google Sheet-এ backend/mart/Code.gs ডিপ্লয় করে setupMartBackend রান করুন এবং Vercel Environment Variables-এ MART_SCRIPT_URL যুক্ত করুন যাতে পণ্য, ক্যাটাগরি, লেবেল, অর্ডার ও Drive ছবি লাইভ সিঙ্ক হয়।",
+      openMenuAria: "অ্যাডমিন মেনু খুলুন",
+      closeMenuAria: "অ্যাডমিন মেনু বন্ধ করুন",
+      navGroups: {
+        operations: "অপারেশন",
+        catalog: "ক্যাটালগ ও অফার",
+        financeCrm: "হিসাব ও সিআরএম",
+        system: "কনফিগারেশন",
+      },
       nav: {
         analytics: "ড্যাশবোর্ড ও ফলোআপ",
         orders: "অর্ডার ও ফুলফিলমেন্ট",

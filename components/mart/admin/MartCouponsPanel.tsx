@@ -26,6 +26,7 @@ interface MartCouponsPanelProps {
   onCouponUpdated: (id: string, updates: Partial<MartCoupon>) => void;
   onCouponDeleted: (id: string) => void;
   onNotify: (type: "success" | "error", text: string) => void;
+  onScrollToTop?: () => void;
 }
 
 export function MartCouponsPanel({
@@ -35,6 +36,7 @@ export function MartCouponsPanel({
   onCouponUpdated,
   onCouponDeleted,
   onNotify,
+  onScrollToTop,
 }: MartCouponsPanelProps) {
   const { lang, t } = useMartI18n();
   const tc = MART_ENTERPRISE_DICTIONARY[lang].coupons;
@@ -75,7 +77,9 @@ export function MartCouponsPanel({
     setUsageLimit(cpn.usageLimit > 0 ? String(cpn.usageLimit) : "");
     setCouponActive(cpn.active !== false);
     setNotes(cpn.notes || "");
-    if (typeof window !== "undefined") {
+    if (onScrollToTop) {
+      onScrollToTop();
+    } else if (typeof window !== "undefined") {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
   }
@@ -164,7 +168,7 @@ export function MartCouponsPanel({
     <div className="space-y-6">
       {/* Create / Edit Coupon Form */}
       <div
-        className={`rounded-2xl border bg-white p-6 space-y-4 ${
+        className={`rounded-2xl border bg-white p-4 sm:p-6 space-y-4 ${
           editingCouponId
             ? "border-[#0B5336] ring-1 ring-[#0B5336]/20"
             : "border-slate-200"
@@ -336,15 +340,100 @@ export function MartCouponsPanel({
         </form>
       </div>
 
-      {/* Coupons Ledger Table */}
+      {/* Coupons Ledger */}
       <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+        <div className="px-4 sm:px-6 py-4 border-b border-slate-200 flex items-center justify-between">
           <h3 className="font-display text-base font-bold text-slate-900">
             {tc.title} ({toLocalizedDigits(coupons.length, lang)})
           </h3>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Mobile Cards */}
+        <div className="md:hidden divide-y divide-slate-100">
+          {coupons.length === 0 ? (
+            <div className="px-4 py-10 text-center text-xs text-slate-500">{tc.emptyTitle}</div>
+          ) : (
+            coupons.map((cpn) => {
+              const offerLabel =
+                cpn.discountType === "fixed"
+                  ? formatMartPrice(cpn.discountValue, lang)
+                  : `${toLocalizedDigits(cpn.discountValue, lang)}%`;
+              const ruleParts: string[] = [];
+              if (cpn.minOrderAmount > 0) {
+                ruleParts.push(`${tc.minOrderPrefix}: ${formatMartPrice(cpn.minOrderAmount, lang)}`);
+              }
+              if (cpn.discountType === "percent" && cpn.maxDiscount > 0) {
+                ruleParts.push(`${tc.maxCapPrefix}: ${formatMartPrice(cpn.maxDiscount, lang)}`);
+              }
+              if (cpn.expiryDate) {
+                ruleParts.push(formatMartDate(cpn.expiryDate, lang));
+              }
+
+              return (
+                <div key={cpn.id} className="p-4 space-y-2.5 text-xs">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-mono text-sm font-bold text-slate-900">{cpn.code}</div>
+                      {cpn.notes && (
+                        <div className="text-[11px] text-slate-500 mt-0.5">{cpn.notes}</div>
+                      )}
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="font-mono text-sm font-bold text-[#0B5336] tabular-nums">
+                        {offerLabel}
+                      </div>
+                      <div className="text-[11px] font-mono text-slate-500 tabular-nums">
+                        {toLocalizedDigits(cpn.usageCount, lang)} /{" "}
+                        {cpn.usageLimit > 0
+                          ? toLocalizedDigits(cpn.usageLimit, lang)
+                          : tc.unlimitedUsage}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-[11px] text-slate-600 tabular-nums">
+                    {ruleParts.length > 0 ? ruleParts.join(" · ") : `${tc.noMinOrder} · ${tc.noExpiry}`}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleActive(cpn)}
+                      className={`min-h-[38px] rounded-lg border px-3 py-1.5 text-[11px] font-semibold whitespace-nowrap ${
+                        cpn.active
+                          ? "border-brand-200 bg-brand-50 text-[#0B5336]"
+                          : "border-slate-200 bg-slate-100 text-slate-500"
+                      }`}
+                    >
+                      {cpn.active ? t.admin.products.activeFlag : t.admin.products.pausedFlag}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => startEditCoupon(cpn)}
+                      aria-label={`${t.common.edit} ${cpn.code}`}
+                      className="min-h-[38px] inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336]"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      <span>{t.common.edit}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(cpn.id)}
+                      aria-label={cpn.code}
+                      className="min-h-[38px] inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[11px] font-semibold text-red-600 hover:bg-red-50 ml-auto"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      <span>{t.common.delete}</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Desktop Table */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-500">
               <tr>

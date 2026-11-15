@@ -50,6 +50,7 @@ interface MartSuppliersPanelProps {
   onCrmLogUpdated?: (id: string, updates: Partial<MartCrmLog>) => void;
   onCrmLogDeleted?: (id: string) => void;
   onNotify: (type: "success" | "error", text: string) => void;
+  onScrollToTop?: () => void;
 }
 
 export function MartSuppliersPanel({
@@ -65,6 +66,7 @@ export function MartSuppliersPanel({
   onCrmLogUpdated,
   onCrmLogDeleted,
   onNotify,
+  onScrollToTop,
 }: MartSuppliersPanelProps) {
   const { lang, t } = useMartI18n();
   const ent = MART_ENTERPRISE_DICTIONARY[lang];
@@ -180,7 +182,9 @@ export function MartSuppliersPanel({
     setNotes(s.notes);
     setNextFollowUpDate(s.nextFollowUpDate);
     setActive(s.active);
-    if (typeof window !== "undefined") {
+    if (onScrollToTop) {
+      onScrollToTop();
+    } else if (typeof window !== "undefined") {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
   }
@@ -368,7 +372,7 @@ export function MartSuppliersPanel({
   return (
     <div className="space-y-6">
       {/* Add / Edit Supplier Form */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 space-y-5">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6 space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
           <div>
             <h2 className="font-display text-lg font-bold text-slate-900">
@@ -556,9 +560,9 @@ export function MartSuppliersPanel({
         </form>
       </div>
 
-      {/* Suppliers Directory & Ledger Table */}
+      {/* Suppliers Directory & Ledger */}
       <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+        <div className="px-4 sm:px-6 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
           <h3 className="font-display text-base font-bold text-slate-900">
             {ts.title} ({toLocalizedDigits(filteredSummaries.length, lang)})
           </h3>
@@ -569,12 +573,166 @@ export function MartSuppliersPanel({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={ts.searchPlaceholder}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-8 pr-3 py-2 text-xs outline-none focus:border-[#0B5336] focus:bg-white"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-8 pr-3 py-2 min-h-[40px] text-xs outline-none focus:border-[#0B5336] focus:bg-white"
             />
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Mobile Cards */}
+        <div className="md:hidden divide-y divide-slate-100">
+          {filteredSummaries.length === 0 ? (
+            <div className="px-4 py-10 text-center text-xs text-slate-500">{ts.emptyTitle}</div>
+          ) : (
+            filteredSummaries.map((item) => {
+              const sup = item.supplier;
+              const tagList = parseCsvSlugs(sup.tags);
+              return (
+                <div key={sup.id} className="p-4 space-y-3 text-xs">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold text-sm text-slate-900">{sup.name}</span>
+                        <span
+                          className={`text-[11px] font-semibold ${
+                            sup.active ? "text-[#0B5336]" : "text-slate-400"
+                          }`}
+                        >
+                          {sup.active ? t.common.active : t.common.paused}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+                        {sup.contactPerson ? `${sup.contactPerson} · ` : ""}
+                        {sup.phone || sup.id}
+                      </div>
+                      <div className="text-[11px] text-slate-600 mt-0.5">
+                        {ts.types[sup.companyType]} · {ts.payoutModes[sup.payoutMode]}
+                      </div>
+                      {tagList.length > 0 && (
+                        <div className="text-[11px] text-[#0B5336] font-medium mt-0.5">
+                          {tagList.join(" · ")}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono tabular-nums bg-slate-50 rounded-xl p-2.5">
+                    <span className="text-slate-700">
+                      {toLocalizedDigits(item.productCount, lang)} {ts.productsCountSuffix} ·{" "}
+                      <span className="text-[#0B5336] font-semibold">
+                        {toLocalizedDigits(item.deliverySuccessRate, lang)}% {ts.deliveryRateLabel}
+                      </span>
+                    </span>
+                    <span className={item.returnRate >= 25 ? "text-red-600 font-semibold" : "text-slate-500"}>
+                      {toLocalizedDigits(item.returnRate, lang)}% {ts.returnRateLabel}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="rounded-xl border border-slate-200 p-2.5 space-y-1.5">
+                      <div className="text-[10px] font-semibold text-slate-500">
+                        {ts.colPayableDue}
+                      </div>
+                      <div
+                        className={`font-mono text-sm font-bold tabular-nums ${
+                          item.payableDue > 0 ? "text-red-600" : "text-slate-500"
+                        }`}
+                      >
+                        {formatMartPrice(Math.max(0, item.payableDue), lang)}
+                      </div>
+                      {item.payableEarned > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSettlementTarget({ supplier: sup, mode: "supplier_payout" });
+                            setSettleAmount(
+                              item.payableDue > 0 ? String(Math.round(item.payableDue)) : ""
+                            );
+                          }}
+                          className="min-h-[36px] w-full inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336]"
+                        >
+                          <DollarSign className="h-3 w-3" />
+                          <span>{ts.paySupplierBtn}</span>
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="rounded-xl border border-slate-200 p-2.5 space-y-1.5">
+                      <div className="text-[10px] font-semibold text-slate-500">
+                        {ts.colReceivableDue}
+                      </div>
+                      <div
+                        className={`font-mono text-sm font-bold tabular-nums ${
+                          item.receivableDue > 0 ? "text-[#0B5336]" : "text-slate-500"
+                        }`}
+                      >
+                        {formatMartPrice(Math.max(0, item.receivableDue), lang)}
+                      </div>
+                      {item.receivableEarned > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSettlementTarget({ supplier: sup, mode: "dropship_receipt" });
+                            setSettleAmount(
+                              item.receivableDue > 0 ? String(Math.round(item.receivableDue)) : ""
+                            );
+                          }}
+                          className="min-h-[36px] w-full inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-semibold text-[#0B5336] hover:border-[#0B5336]"
+                        >
+                          <DollarSign className="h-3 w-3" />
+                          <span>{ts.receiveDropshipBtn}</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {sup.nextFollowUpDate && (
+                    <div
+                      className={`text-[11px] font-mono font-semibold ${
+                        item.isOverdue
+                          ? "text-red-600"
+                          : item.isFollowUpDue
+                          ? "text-gold-700"
+                          : "text-slate-500"
+                      }`}
+                    >
+                      {tcrm.followUpDateLabel}: {sup.nextFollowUpDate}
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setCrmSupplierId(sup.id)}
+                      className="min-h-[38px] flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336]"
+                    >
+                      <MessageSquare className="h-3.5 w-3.5" />
+                      <span>{ts.openCrmBtn}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => startEdit(sup)}
+                      className="min-h-[38px] inline-flex items-center justify-center rounded-lg border border-slate-200 px-3 py-1.5 text-slate-600 hover:border-[#0B5336] hover:text-[#0B5336]"
+                      aria-label={t.common.edit}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteSupplier(sup.id)}
+                      className="min-h-[38px] inline-flex items-center justify-center rounded-lg border border-slate-200 px-3 py-1.5 text-red-500 hover:bg-red-50"
+                      aria-label={t.common.delete}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Desktop Table */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-500">
               <tr>
@@ -845,28 +1003,28 @@ export function MartSuppliersPanel({
       {/* Supplier CRM 360 Log Modal */}
       {activeCrmSupplier && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs"
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 p-0 sm:p-4 backdrop-blur-xs"
           role="dialog"
           aria-modal="true"
         >
-          <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden max-h-[88vh] flex flex-col">
-            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 bg-slate-50">
-              <div>
-                <h3 className="font-display text-base font-bold text-slate-900">
+          <div className="w-full max-w-2xl rounded-t-3xl sm:rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden max-h-[92dvh] sm:max-h-[88vh] flex flex-col">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 sm:px-6 py-3.5 sm:py-4 bg-slate-50 shrink-0">
+              <div className="min-w-0">
+                <h3 className="font-display text-sm sm:text-base font-bold text-slate-900 truncate">
                   {activeCrmSupplier.supplier.name} · {tcrm.profileTitleSuffix}
                 </h3>
-                <p className="text-xs text-slate-500 font-mono">
+                <p className="text-xs text-slate-500 font-mono truncate">
                   {activeCrmSupplier.supplier.contactPerson
                     ? `${activeCrmSupplier.supplier.contactPerson} · `
                     : ""}
                   {activeCrmSupplier.supplier.phone}
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {activeCrmSupplier.supplier.phone && (
                   <a
                     href={`tel:${activeCrmSupplier.supplier.phone}`}
-                    className="btn-outline px-3 py-1.5 text-xs gap-1.5 whitespace-nowrap"
+                    className="btn-outline px-3 py-1.5 text-xs gap-1.5 whitespace-nowrap min-h-[38px]"
                   >
                     <Phone className="h-3.5 w-3.5 text-[#0B5336]" />
                     <span>{tcrm.callNowBtn}</span>
@@ -876,7 +1034,7 @@ export function MartSuppliersPanel({
                   <button
                     type="button"
                     onClick={() => handleMarkFollowUpDone(activeCrmSupplier.supplier)}
-                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-[#0B5336] hover:bg-slate-100 whitespace-nowrap"
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 min-h-[38px] text-xs font-semibold text-[#0B5336] hover:bg-slate-100 whitespace-nowrap"
                   >
                     <CheckCircle2 className="h-3.5 w-3.5" />
                     <span>{tcrm.markDoneBtn}</span>
@@ -885,7 +1043,7 @@ export function MartSuppliersPanel({
                 <button
                   type="button"
                   onClick={() => setCrmSupplierId(null)}
-                  className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-200"
+                  className="rounded-lg p-2 min-h-[38px] min-w-[38px] flex items-center justify-center text-slate-500 hover:bg-slate-200"
                   aria-label={t.common.close}
                 >
                   <X className="h-4 w-4" />
@@ -893,7 +1051,7 @@ export function MartSuppliersPanel({
               </div>
             </div>
 
-            <div className="p-6 overflow-y-auto space-y-6">
+            <div className="p-4 sm:p-6 overflow-y-auto space-y-6">
               {/* Log Form */}
               <form
                 onSubmit={handleAddSupplierLog}

@@ -382,7 +382,7 @@ export function MartCrmPanel({
   return (
     <div className="space-y-6">
       {/* Header + Stats */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 space-y-5">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6 space-y-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h2 className="font-display text-lg font-bold text-slate-900">{tcrm.title}</h2>
@@ -439,7 +439,7 @@ export function MartCrmPanel({
 
       {/* Filters & Search */}
       <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+        <div className="px-4 sm:px-6 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-1.5">
             {(
               [
@@ -456,7 +456,7 @@ export function MartCrmPanel({
                 key={f.id}
                 type="button"
                 onClick={() => setTierFilter(f.id)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-semibold border transition-colors whitespace-nowrap ${
+                className={`rounded-lg px-3 py-1.5 min-h-[36px] text-xs font-semibold border transition-colors whitespace-nowrap ${
                   tierFilter === f.id
                     ? "bg-[#0B5336] border-[#0B5336] text-white"
                     : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
@@ -474,12 +474,106 @@ export function MartCrmPanel({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={tcrm.searchPlaceholder}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-8 pr-3 py-2 text-xs outline-none focus:border-[#0B5336] focus:bg-white"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-8 pr-3 py-2 min-h-[40px] text-xs outline-none focus:border-[#0B5336] focus:bg-white"
             />
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Mobile Cards */}
+        <div className="md:hidden divide-y divide-slate-100">
+          {filteredClients.length === 0 ? (
+            <div className="px-4 py-10 text-center text-xs text-slate-500">{tcrm.emptyClients}</div>
+          ) : (
+            filteredClients.map((client) => (
+              <div key={client.entityKey} className="p-4 space-y-2.5 text-xs">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-semibold text-sm text-slate-900">{client.name}</span>
+                      {(client.effectiveTier === "high_risk" ||
+                        client.effectiveTier === "blocked") && (
+                        <AlertTriangle className="h-3.5 w-3.5 text-red-600 shrink-0" />
+                      )}
+                      {renderTierLabel(client.effectiveTier)}
+                    </div>
+                    <div className="font-mono text-slate-600 mt-0.5">{client.phone}</div>
+                    {client.address && (
+                      <div className="text-[11px] text-slate-500 line-clamp-2 mt-0.5">
+                        {client.address}
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-right font-mono tabular-nums shrink-0">
+                    <div className="font-bold text-sm text-slate-900">
+                      {formatMartPrice(client.totalSpend, lang)}
+                    </div>
+                    <div className="text-[11px] text-[#0B5336]">
+                      {tcrm.profitPrefix}: {formatMartPrice(client.estimatedProfit, lang)}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono tabular-nums bg-slate-50 rounded-xl p-2.5">
+                  <span className="text-slate-800 font-semibold">
+                    {toLocalizedDigits(client.orderCount, lang)} ·{" "}
+                    <span className="text-[#0B5336]">
+                      {toLocalizedDigits(client.deliverySuccessRate, lang)}% {tcrm.successRateSuffix}
+                    </span>
+                  </span>
+                  {client.cancelledOrReturnedCount > 0 && (
+                    <span className="text-red-600">
+                      {toLocalizedDigits(client.cancelledOrReturnedCount, lang)} (
+                      {toLocalizedDigits(client.returnCancelRate, lang)}% {tcrm.returnRateSuffix})
+                    </span>
+                  )}
+                </div>
+
+                {(client.tags.length > 0 || client.nextFollowUpDate || client.followUpTask) && (
+                  <div className="space-y-0.5 text-[11px]">
+                    {client.tags.length > 0 && (
+                      <div className="font-medium text-[#0B5336]">{client.tags.join(" · ")}</div>
+                    )}
+                    {client.nextFollowUpDate && (
+                      <div
+                        className={`font-mono font-semibold ${
+                          client.isOverdue
+                            ? "text-red-600"
+                            : client.isFollowUpDue
+                            ? "text-gold-700"
+                            : "text-slate-500"
+                        }`}
+                      >
+                        {client.isOverdue
+                          ? `${tcrm.overdueBadge} · `
+                          : client.isFollowUpDue
+                          ? `${tcrm.dueTodayBadge} · `
+                          : ""}
+                        {client.nextFollowUpDate}
+                      </div>
+                    )}
+                    {client.followUpTask && (
+                      <div className="text-slate-600 line-clamp-1">{client.followUpTask}</div>
+                    )}
+                  </div>
+                )}
+
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setActiveClientKey(client.entityKey)}
+                    className="w-full min-h-[40px] inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336]"
+                  >
+                    <MessageSquare className="h-3.5 w-3.5" />
+                    <span>{tcrm.open360Btn}</span>
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Desktop Table */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-500">
               <tr>
@@ -604,25 +698,25 @@ export function MartCrmPanel({
       {/* Add Manual Client Modal */}
       {manualModalOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs"
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 p-0 sm:p-4 backdrop-blur-xs"
           role="dialog"
           aria-modal="true"
         >
-          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 bg-slate-50">
+          <div className="w-full max-w-lg rounded-t-3xl sm:rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden max-h-[92dvh] sm:max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 sm:px-6 py-3.5 sm:py-4 bg-slate-50 shrink-0">
               <h3 className="font-display text-base font-bold text-slate-900">
                 {tcrm.manualClientModalTitle}
               </h3>
               <button
                 type="button"
                 onClick={() => setManualModalOpen(false)}
-                className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-200"
+                className="rounded-lg p-2 min-h-[38px] min-w-[38px] flex items-center justify-center text-slate-500 hover:bg-slate-200"
                 aria-label={t.common.close}
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <form onSubmit={handleSaveManualClient} className="p-6 overflow-y-auto space-y-4">
+            <form onSubmit={handleSaveManualClient} className="p-4 sm:p-6 overflow-y-auto space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -758,20 +852,20 @@ export function MartCrmPanel({
       {/* 360 Client CRM Profile Modal */}
       {activeClient && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs"
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 p-0 sm:p-4 backdrop-blur-xs"
           role="dialog"
           aria-modal="true"
         >
-          <div className="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-6 py-4 bg-slate-50">
-              <div>
-                <div className="flex items-center gap-2.5">
-                  <h3 className="font-display text-base font-bold text-slate-900">
+          <div className="w-full max-w-4xl rounded-t-3xl sm:rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden max-h-[92dvh] sm:max-h-[90vh] flex flex-col">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 sm:px-6 py-3.5 sm:py-4 bg-slate-50 shrink-0">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="font-display text-sm sm:text-base font-bold text-slate-900 truncate">
                     {activeClient.name}
                   </h3>
                   {renderTierLabel(activeClient.effectiveTier)}
                 </div>
-                <p className="font-mono text-xs text-slate-500 mt-0.5">
+                <p className="font-mono text-xs text-slate-500 mt-0.5 truncate">
                   {activeClient.phone} · {toLocalizedDigits(activeClient.deliverySuccessRate, lang)}%{" "}
                   {tcrm.successRateSuffix} · {formatMartPrice(activeClient.totalSpend, lang)}
                 </p>
@@ -781,7 +875,7 @@ export function MartCrmPanel({
                 {activeClient.phone && (
                   <a
                     href={`tel:${activeClient.phone}`}
-                    className="btn-outline px-3 py-1.5 text-xs gap-1.5 whitespace-nowrap"
+                    className="btn-outline px-3 py-1.5 min-h-[38px] text-xs gap-1.5 whitespace-nowrap"
                   >
                     <Phone className="h-3.5 w-3.5 text-[#0B5336]" />
                     <span>{tcrm.callNowBtn}</span>
@@ -790,7 +884,7 @@ export function MartCrmPanel({
                 {activeClient.email && (
                   <a
                     href={`mailto:${activeClient.email}`}
-                    className="btn-outline px-3 py-1.5 text-xs gap-1.5 whitespace-nowrap"
+                    className="btn-outline px-3 py-1.5 min-h-[38px] text-xs gap-1.5 whitespace-nowrap"
                   >
                     <Mail className="h-3.5 w-3.5 text-[#0B5336]" />
                     <span>{tcrm.emailNowBtn}</span>
@@ -800,7 +894,7 @@ export function MartCrmPanel({
                   <button
                     type="button"
                     onClick={() => handleMarkFollowUpDone(activeClient)}
-                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-[#0B5336] hover:bg-slate-100 whitespace-nowrap"
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 min-h-[38px] text-xs font-semibold text-[#0B5336] hover:bg-slate-100 whitespace-nowrap"
                   >
                     <CheckCircle2 className="h-3.5 w-3.5" />
                     <span>{tcrm.markDoneBtn}</span>
@@ -809,7 +903,7 @@ export function MartCrmPanel({
                 <button
                   type="button"
                   onClick={() => setActiveClientKey(null)}
-                  className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-200"
+                  className="rounded-lg p-2 min-h-[38px] min-w-[38px] flex items-center justify-center text-slate-500 hover:bg-slate-200"
                   aria-label={t.common.close}
                 >
                   <X className="h-4 w-4" />
@@ -817,7 +911,7 @@ export function MartCrmPanel({
               </div>
             </div>
 
-            <div className="p-6 overflow-y-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div className="p-4 sm:p-6 overflow-y-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
               {/* Left Column: Edit Profile, Tier & Follow-up */}
               <form onSubmit={handleSaveActiveProfile} className="lg:col-span-5 space-y-3">
                 <div>

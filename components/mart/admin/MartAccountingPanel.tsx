@@ -34,6 +34,7 @@ interface MartAccountingPanelProps {
   onTransactionUpdated: (id: string, updates: Partial<MartTransaction>) => void;
   onTransactionDeleted: (id: string) => void;
   onNotify: (type: "success" | "error", text: string) => void;
+  onScrollToTop?: () => void;
 }
 
 type DatePreset = "all" | "this_month" | "last_30" | "custom";
@@ -49,6 +50,7 @@ export function MartAccountingPanel({
   onTransactionUpdated,
   onTransactionDeleted,
   onNotify,
+  onScrollToTop,
 }: MartAccountingPanelProps) {
   const { lang, t } = useMartI18n();
   const ent = MART_ENTERPRISE_DICTIONARY[lang];
@@ -99,7 +101,9 @@ export function MartAccountingPanel({
     setPaymentAccount((txn.paymentAccount as MartPaymentAccount) || "Cash");
     setReferenceNo(txn.referenceNo || "");
     setNote(txn.note || "");
-    if (typeof window !== "undefined") {
+    if (onScrollToTop) {
+      onScrollToTop();
+    } else if (typeof window !== "undefined") {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
   }
@@ -214,7 +218,7 @@ export function MartAccountingPanel({
   return (
     <div className="space-y-6">
       {/* Header + Date Filter + Export */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 space-y-4">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6 space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h2 className="font-display text-lg font-bold text-slate-900">{tacc.title}</h2>
@@ -246,7 +250,7 @@ export function MartAccountingPanel({
                 key={preset}
                 type="button"
                 onClick={() => setDatePreset(preset)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-semibold border transition-colors whitespace-nowrap ${
+                className={`rounded-lg px-3 py-1.5 min-h-[36px] text-xs font-semibold border transition-colors whitespace-nowrap ${
                   datePreset === preset
                     ? "bg-[#0B5336] border-[#0B5336] text-white"
                     : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
@@ -258,7 +262,7 @@ export function MartAccountingPanel({
           })}
 
           {datePreset === "custom" && (
-            <div className="flex items-center gap-2 ml-auto">
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:ml-auto pt-1 sm:pt-0">
               <label className="text-[11px] font-semibold text-slate-500">
                 {tacc.fromDateLabel}
               </label>
@@ -266,7 +270,7 @@ export function MartAccountingPanel({
                 type="date"
                 value={customFrom}
                 onChange={(e) => setCustomFrom(e.target.value)}
-                className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-mono"
+                className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-mono"
               />
               <label className="text-[11px] font-semibold text-slate-500">
                 {tacc.toDateLabel}
@@ -275,7 +279,7 @@ export function MartAccountingPanel({
                 type="date"
                 value={customTo}
                 onChange={(e) => setCustomTo(e.target.value)}
-                className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-mono"
+                className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-mono"
               />
             </div>
           )}
@@ -630,15 +634,15 @@ export function MartAccountingPanel({
         </div>
       </div>
 
-      {/* Cashbook Ledger Table */}
+      {/* Cashbook Ledger */}
       <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+        <div className="px-4 sm:px-6 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
           <h3 className="font-display text-base font-bold text-slate-900">{tacc.ledgerTitle}</h3>
           <select
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value as "all" | MartTransactionType)}
             aria-label={tacc.filterTypeLabel}
-            className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700 outline-none focus:border-[#0B5336]"
+            className="w-full sm:w-auto rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 min-h-[40px] text-xs font-medium text-slate-700 outline-none focus:border-[#0B5336]"
           >
             <option value="all">{tacc.allTypesOption}</option>
             {(Object.keys(tacc.txnTypes) as MartTransactionType[]).map((k) => (
@@ -649,7 +653,78 @@ export function MartAccountingPanel({
           </select>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Mobile Cards */}
+        <div className="md:hidden divide-y divide-slate-100">
+          {filteredTxns.length === 0 ? (
+            <div className="px-4 py-10 text-center text-xs text-slate-500">{tacc.emptyLedger}</div>
+          ) : (
+            filteredTxns.map((txn) => {
+              const isInflow =
+                txn.type === "dropship_receipt" || txn.type === "other_income";
+              const partyLine = [
+                txn.supplierId ? supNameMap.get(txn.supplierId) || txn.supplierId : "",
+                txn.orderId,
+                txn.referenceNo,
+              ]
+                .filter(Boolean)
+                .join(" · ");
+
+              return (
+                <div key={txn.id} className="p-4 space-y-2 text-xs">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-semibold text-slate-900">
+                        {tacc.txnTypes[txn.type] || txn.type}
+                      </div>
+                      <div className="font-mono text-[11px] text-slate-500">
+                        {formatMartDate(txn.date || txn.createdAt, lang)} · {txn.paymentAccount}
+                      </div>
+                    </div>
+                    <div
+                      className={`font-mono text-sm font-bold tabular-nums shrink-0 ${
+                        isInflow ? "text-[#0B5336]" : "text-red-600"
+                      }`}
+                    >
+                      {isInflow ? "+" : "−"} {formatMartPrice(txn.amount, lang)}
+                    </div>
+                  </div>
+
+                  {(txn.category || txn.note) && (
+                    <div className="text-[11px] text-slate-600">
+                      {[txn.category, txn.note].filter(Boolean).join(" · ")}
+                    </div>
+                  )}
+
+                  {partyLine && (
+                    <div className="font-mono text-[11px] text-slate-500">{partyLine}</div>
+                  )}
+
+                  <div className="flex items-center justify-end gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => startEditTxn(txn)}
+                      className="min-h-[38px] inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336]"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      <span>{t.common.edit}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteTxn(txn.id)}
+                      className="min-h-[38px] inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[11px] font-semibold text-red-600 hover:bg-red-50"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      <span>{t.common.delete}</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Desktop Table */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-500">
               <tr>

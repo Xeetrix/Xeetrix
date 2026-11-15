@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Lock,
@@ -28,6 +28,7 @@ import {
   EyeOff,
   Star,
   X,
+  Menu,
   Building2,
   Calculator,
   ChevronDown,
@@ -177,9 +178,26 @@ export function MartAdminClient() {
   const [authError, setAuthError] = useState<string | null>(null);
 
   const [activeSection, setActiveSection] = useState<MartAdminSection>("analytics");
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const mainScrollRef = useRef<HTMLDivElement>(null);
   const [data, setData] = useState<MartAdminBundle | null>(null);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  function scrollWorkspaceToTop() {
+    if (mainScrollRef.current) {
+      mainScrollRef.current.scrollTo({ top: 0, behavior: "smooth" });
+    }
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }
+
+  function handleSelectSection(section: MartAdminSection) {
+    setActiveSection(section);
+    setMobileNavOpen(false);
+    scrollWorkspaceToTop();
+  }
 
   // Order Filters, Expandable Item Fulfillment Panel, Edit/Delete & Printable Invoice Modal
   const [orderSearch, setOrderSearch] = useState("");
@@ -439,9 +457,7 @@ export function MartAdminClient() {
     setProdFeatured(Boolean(p.featured));
     setProdActive(Boolean(p.active));
     setActiveSection("products");
-    if (typeof window !== "undefined") {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    }
+    scrollWorkspaceToTop();
   }
 
   function startDuplicateProduct(p: MartProduct) {
@@ -1226,9 +1242,7 @@ export function MartAdminClient() {
     setCatDescBn(cat.descriptionBn || "");
     setCatImageUrl(cat.imageUrl || "");
     setActiveSection("taxonomy");
-    if (typeof window !== "undefined") {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    }
+    scrollWorkspaceToTop();
   }
 
   async function handleSaveCategory(e: React.FormEvent) {
@@ -1383,9 +1397,7 @@ export function MartAdminClient() {
     setLblDescEn(lbl.descriptionEn || "");
     setLblDescBn(lbl.descriptionBn || "");
     setActiveSection("taxonomy");
-    if (typeof window !== "undefined") {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    }
+    scrollWorkspaceToTop();
   }
 
   async function handleSaveLabel(e: React.FormEvent) {
@@ -1793,148 +1805,288 @@ export function MartAdminClient() {
     );
   }
 
-  const navItems: {
+  type NavItemDef = {
     id: MartAdminSection;
     label: string;
     icon: React.ComponentType<{ className?: string }>;
-  }[] = [
-    { id: "analytics", label: t.admin.nav.analytics, icon: LayoutDashboard },
-    { id: "orders", label: t.admin.nav.orders, icon: ShoppingCart },
-    { id: "products", label: t.admin.nav.products, icon: Package },
-    { id: "taxonomy", label: t.admin.nav.taxonomy, icon: Tags },
-    { id: "coupons", label: t.admin.nav.coupons, icon: Ticket },
-    { id: "suppliers", label: t.admin.nav.suppliers, icon: Building2 },
-    { id: "accounts", label: t.admin.nav.accounts, icon: Calculator },
-    { id: "customers", label: t.admin.nav.customers, icon: Users },
-    { id: "settings", label: t.admin.nav.settings, icon: SlidersHorizontal },
+    badgeCount?: number;
+  };
+
+  const pendingBadgeCount = orders.filter((o) => o.status === "Pending").length;
+  const dueFollowUpsCount = followUpQueue.length;
+
+  const navGroups: { title: string; items: NavItemDef[] }[] = [
+    {
+      title: t.admin.navGroups.operations,
+      items: [
+        { id: "analytics", label: t.admin.nav.analytics, icon: LayoutDashboard },
+        {
+          id: "orders",
+          label: t.admin.nav.orders,
+          icon: ShoppingCart,
+          badgeCount: pendingBadgeCount,
+        },
+      ],
+    },
+    {
+      title: t.admin.navGroups.catalog,
+      items: [
+        { id: "products", label: t.admin.nav.products, icon: Package },
+        { id: "taxonomy", label: t.admin.nav.taxonomy, icon: Tags },
+        { id: "coupons", label: t.admin.nav.coupons, icon: Ticket },
+      ],
+    },
+    {
+      title: t.admin.navGroups.financeCrm,
+      items: [
+        { id: "suppliers", label: t.admin.nav.suppliers, icon: Building2 },
+        { id: "accounts", label: t.admin.nav.accounts, icon: Calculator },
+        {
+          id: "customers",
+          label: t.admin.nav.customers,
+          icon: Users,
+          badgeCount: dueFollowUpsCount,
+        },
+      ],
+    },
+    {
+      title: t.admin.navGroups.system,
+      items: [{ id: "settings", label: t.admin.nav.settings, icon: SlidersHorizontal }],
+    },
   ];
 
+  const allNavItems = navGroups.flatMap((g) => g.items);
+  const activeNavLabel = allNavItems.find((n) => n.id === activeSection)?.label || "";
+
+  const sidebarFooterContent = (
+    <div className="p-4 border-t border-slate-800 bg-slate-900 shrink-0 space-y-3">
+      <div className="flex items-center justify-between gap-2 px-1">
+        <div className="flex items-center gap-2 text-xs text-slate-400">
+          <span
+            className={`h-2 w-2 rounded-full shrink-0 ${
+              data?.isLiveBackend ? "bg-emerald-400" : "bg-gold-400"
+            }`}
+          />
+          <span>{t.admin.sheetStatusLabel}:</span>
+        </div>
+        <span
+          className={`text-xs font-semibold ${
+            data?.isLiveBackend ? "text-emerald-400" : "text-gold-400"
+          }`}
+        >
+          {data?.isLiveBackend ? t.admin.connectedLive : t.admin.notConnected}
+        </span>
+      </div>
+
+      <div className="flex items-center justify-between gap-2 px-1">
+        <MartLanguageSwitcher inverted />
+      </div>
+
+      <div className="flex items-center gap-2">
+        <Link
+          href="/mart"
+          onClick={() => setMobileNavOpen(false)}
+          className="flex-1 min-h-[40px] flex items-center justify-center rounded-lg border border-slate-700 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800 hover:text-white whitespace-nowrap"
+        >
+          {t.admin.viewStoreBtn}
+        </Link>
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="min-h-[40px] inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-700 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800 hover:text-white whitespace-nowrap"
+        >
+          <LogOut className="h-3.5 w-3.5" />
+          <span>{t.admin.logoutBtn}</span>
+        </button>
+      </div>
+    </div>
+  );
+
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col lg:flex-row">
-      {/* Sidebar (264px) */}
-      <aside className="w-full lg:w-[264px] shrink-0 bg-slate-900 text-slate-200 border-b lg:border-b-0 lg:border-r border-slate-800 flex flex-col justify-between">
-        <div className="p-5 space-y-6">
-          <div className="flex items-center justify-between gap-2">
-            <Link href="/mart">
-              <MartLogo inverted />
-            </Link>
-            <div className="flex items-center gap-2 lg:hidden">
-              <MartLanguageSwitcher inverted />
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 px-2.5 py-1.5 text-xs text-slate-300 hover:text-white whitespace-nowrap"
-              >
-                <LogOut className="h-3.5 w-3.5" />
-                <span>{t.admin.exitBtn}</span>
-              </button>
-            </div>
-          </div>
-
-          <nav className="flex lg:flex-col gap-1 overflow-x-auto scrollbar-none pb-1 lg:pb-0">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const active = activeSection === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setActiveSection(item.id)}
-                  className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
-                    active
-                      ? "bg-[#0B5336] text-white"
-                      : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                  }`}
-                >
-                  <Icon className="h-4 w-4 shrink-0" />
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
-          </nav>
+    <div className="min-h-screen lg:h-screen lg:overflow-hidden bg-slate-50 text-slate-900 flex flex-col lg:flex-row">
+      {/* Stationary Fixed Full-Height Desktop Sidebar (264px) */}
+      <aside className="hidden lg:flex lg:w-[264px] shrink-0 lg:h-screen lg:flex-col bg-slate-900 text-slate-200 border-r border-slate-800">
+        <div className="px-5 py-4 border-b border-slate-800 shrink-0">
+          <Link href="/mart" className="inline-block">
+            <MartLogo inverted />
+          </Link>
         </div>
 
-        <div className="hidden lg:block p-5 border-t border-slate-800 space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <div className="text-xs text-slate-400">
-              {t.admin.sheetStatusLabel}:{" "}
-              <span
-                className={
-                  data?.isLiveBackend
-                    ? "text-emerald-400 font-semibold"
-                    : "text-gold-400 font-semibold"
-                }
-              >
-                {data?.isLiveBackend ? t.admin.connectedLive : t.admin.notConnected}
-              </span>
+        <nav
+          aria-label={t.admin.breadcrumbRoot}
+          className="flex-1 overflow-y-auto px-3.5 py-4 space-y-5 scrollbar-none"
+        >
+          {navGroups.map((group) => (
+            <div key={group.title} className="space-y-1">
+              <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                {group.title}
+              </div>
+              {group.items.map((item) => {
+                const Icon = item.icon;
+                const active = activeSection === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => handleSelectSection(item.id)}
+                    className={`w-full min-h-[42px] flex items-center justify-between gap-2.5 rounded-xl px-3.5 py-2.5 text-xs font-semibold transition-colors whitespace-nowrap ${
+                      active
+                        ? "bg-[#0B5336] text-white"
+                        : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                    }`}
+                  >
+                    <span className="flex items-center gap-3 min-w-0">
+                      <Icon className="h-4 w-4 shrink-0" />
+                      <span className="truncate">{item.label}</span>
+                    </span>
+                    {typeof item.badgeCount === "number" && item.badgeCount > 0 && (
+                      <span
+                        className={`font-mono text-[11px] font-bold tabular-nums shrink-0 ${
+                          active ? "text-gold-300" : "text-gold-400"
+                        }`}
+                      >
+                        {toLocalizedDigits(item.badgeCount, lang)}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
-          </div>
+          ))}
+        </nav>
 
-          <div className="flex items-center justify-between gap-2">
-            <MartLanguageSwitcher inverted />
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Link
-              href="/mart"
-              className="flex-1 rounded-lg border border-slate-700 px-3 py-2 text-center text-xs font-medium text-slate-300 hover:bg-slate-800 hover:text-white whitespace-nowrap"
-            >
-              {t.admin.viewStoreBtn}
-            </Link>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-700 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800 hover:text-white whitespace-nowrap"
-            >
-              <LogOut className="h-3.5 w-3.5" />
-              <span>{t.admin.logoutBtn}</span>
-            </button>
-          </div>
-        </div>
+        {sidebarFooterContent}
       </aside>
 
-      {/* Main Content */}
-      <div className="flex-1 min-w-0 flex flex-col">
-        <header className="bg-white border-b border-slate-200 px-6 py-4 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <div className="text-xs text-slate-500">
-              {t.admin.breadcrumbRoot} /{" "}
-              <span className="text-slate-900 font-medium">
-                {navItems.find((n) => n.id === activeSection)?.label}
-              </span>
+      {/* Mobile Slide-Over Sidebar Drawer */}
+      {mobileNavOpen && (
+        <div
+          className="fixed inset-0 z-50 lg:hidden flex"
+          role="dialog"
+          aria-modal="true"
+          aria-label={t.admin.breadcrumbRoot}
+        >
+          <div
+            className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs"
+            onClick={() => setMobileNavOpen(false)}
+          />
+          <aside className="relative z-10 w-[280px] max-w-[85vw] h-full bg-slate-900 text-slate-200 flex flex-col justify-between shadow-2xl border-r border-slate-800">
+            <div className="px-4 py-3.5 border-b border-slate-800 flex items-center justify-between gap-2 shrink-0">
+              <Link href="/mart" onClick={() => setMobileNavOpen(false)}>
+                <MartLogo inverted />
+              </Link>
+              <button
+                type="button"
+                onClick={() => setMobileNavOpen(false)}
+                aria-label={t.admin.closeMenuAria}
+                className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl border border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white"
+              >
+                <X className="h-5 w-5" />
+              </button>
             </div>
-            <h1 className="font-display text-xl font-bold text-slate-900">
-              {navItems.find((n) => n.id === activeSection)?.label}
-            </h1>
+
+            <nav className="flex-1 overflow-y-auto px-3.5 py-4 space-y-5 scrollbar-none">
+              {navGroups.map((group) => (
+                <div key={group.title} className="space-y-1">
+                  <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    {group.title}
+                  </div>
+                  {group.items.map((item) => {
+                    const Icon = item.icon;
+                    const active = activeSection === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => handleSelectSection(item.id)}
+                        className={`w-full min-h-[44px] flex items-center justify-between gap-2.5 rounded-xl px-3.5 py-2.5 text-xs font-semibold transition-colors whitespace-nowrap ${
+                          active
+                            ? "bg-[#0B5336] text-white"
+                            : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                        }`}
+                      >
+                        <span className="flex items-center gap-3 min-w-0">
+                          <Icon className="h-4 w-4 shrink-0" />
+                          <span className="truncate">{item.label}</span>
+                        </span>
+                        {typeof item.badgeCount === "number" && item.badgeCount > 0 && (
+                          <span
+                            className={`font-mono text-[11px] font-bold tabular-nums shrink-0 ${
+                              active ? "text-gold-300" : "text-gold-400"
+                            }`}
+                          >
+                            {toLocalizedDigits(item.badgeCount, lang)}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </nav>
+
+            {sidebarFooterContent}
+          </aside>
+        </div>
+      )}
+
+      {/* Main Content Workspace (Scrolls independently on Desktop) */}
+      <div
+        ref={mainScrollRef}
+        className="flex-1 min-w-0 flex flex-col lg:h-screen lg:overflow-y-auto"
+      >
+        <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 sm:px-6 py-3 sm:py-3.5 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              type="button"
+              onClick={() => setMobileNavOpen(true)}
+              aria-label={t.admin.openMenuAria}
+              className="lg:hidden min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl border border-slate-200 text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] shrink-0"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+            <div className="min-w-0">
+              <div className="hidden sm:block text-xs text-slate-500 truncate">
+                {t.admin.breadcrumbRoot} /{" "}
+                <span className="text-slate-900 font-medium">{activeNavLabel}</span>
+              </div>
+              <h1 className="font-display text-base sm:text-xl font-bold text-slate-900 truncate">
+                {activeNavLabel}
+              </h1>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
             <MartLanguageSwitcher className="hidden lg:inline-flex" />
 
             <button
               type="button"
               onClick={() => exportMartOrdersToCsv(orders, lang)}
               disabled={orders.length === 0}
-              className="btn-outline px-4 py-2 text-xs gap-2 disabled:opacity-50"
+              aria-label={t.admin.exportCsv}
+              className="btn-outline min-h-[40px] px-3 sm:px-4 py-2 text-xs gap-1.5 disabled:opacity-50"
             >
               <Download className="h-3.5 w-3.5" />
-              <span>{t.admin.exportCsv}</span>
+              <span className="hidden sm:inline">{t.admin.exportCsv}</span>
             </button>
 
             <button
               type="button"
               onClick={loadMartDashboard}
               disabled={loading}
-              className="btn-primary px-4 py-2 text-xs gap-2"
+              aria-label={t.admin.refreshStore}
+              className="btn-primary min-h-[40px] px-3 sm:px-4 py-2 text-xs gap-1.5"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-              <span>{loading ? t.admin.syncing : t.admin.refreshStore}</span>
+              <span className="hidden sm:inline">
+                {loading ? t.admin.syncing : t.admin.refreshStore}
+              </span>
             </button>
           </div>
         </header>
 
         {toast && (
-          <div className="mx-6 mt-4">
+          <div className="mx-4 sm:mx-6 mt-4">
             <div
               className={`flex items-center justify-between rounded-xl border px-4 py-3 text-xs font-medium ${
                 toast.type === "success"
@@ -1942,18 +2094,18 @@ export function MartAdminClient() {
                   : "border-red-200 bg-red-50 text-red-700"
               }`}
             >
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 min-w-0">
                 {toast.type === "success" ? (
                   <CheckCircle2 className="h-4 w-4 shrink-0" />
                 ) : (
                   <AlertCircle className="h-4 w-4 shrink-0" />
                 )}
-                <span>{toast.text}</span>
+                <span className="break-words">{toast.text}</span>
               </div>
               <button
                 type="button"
                 onClick={() => setToast(null)}
-                className="text-xs underline ml-4 whitespace-nowrap"
+                className="text-xs underline ml-4 whitespace-nowrap shrink-0"
               >
                 {t.admin.dismiss}
               </button>
@@ -1961,9 +2113,9 @@ export function MartAdminClient() {
           </div>
         )}
 
-        <main className="p-6 space-y-8 flex-1">
+        <main className="p-4 sm:p-6 space-y-6 sm:space-y-8 flex-1">
           {!data?.isLiveBackend && !loading && (
-            <div className="rounded-xl border border-gold-200 bg-gold-50 px-5 py-4 text-xs text-gold-900">
+            <div className="rounded-xl border border-gold-200 bg-gold-50 px-4 sm:px-5 py-4 text-xs text-gold-900">
               <strong>{t.admin.setupAlertTitle}</strong> {t.admin.setupAlertBody}
             </div>
           )}
@@ -2300,7 +2452,334 @@ export function MartAdminClient() {
               </div>
 
               <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-                <div className="overflow-x-auto">
+                {/* Mobile Orders Card List */}
+                <div className="md:hidden divide-y divide-slate-100">
+                  {filteredOrders.length === 0 ? (
+                    <div className="px-4 py-10 text-center text-xs text-slate-500">
+                      {t.admin.orders.emptyOrders}
+                    </div>
+                  ) : (
+                    filteredOrders.map((order) => {
+                      const parsedItems = parseOrderItems(order.itemsJson);
+                      const fin = resolvedOrderMap.get(order.id);
+                      const expanded = Boolean(expandedOrderIds[order.id]);
+                      const clientKey =
+                        normalizePhoneKey(order.phone) ||
+                        order.phone.trim() ||
+                        order.customerName.trim();
+                      const crmSummary = customerByKeyMap.get(clientKey);
+                      const clientTier = crmSummary?.effectiveTier;
+
+                      return (
+                        <div key={order.id} className="p-4 space-y-3 text-xs">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="font-mono text-sm font-bold text-slate-900">
+                                {order.id}
+                              </div>
+                              <div className="text-[11px] text-slate-400">
+                                {formatMartDate(order.createdAt, lang)}
+                              </div>
+                            </div>
+                            <div className="text-right font-mono tabular-nums shrink-0">
+                              <div className="text-sm font-bold text-[#0B5336]">
+                                {formatMartPrice(order.totalAmount, lang)}
+                              </div>
+                              {(Number(order.discountAmount) || 0) > 0 && (
+                                <div className="text-[11px] text-[#0B5336]">
+                                  − {formatMartPrice(Number(order.discountAmount) || 0, lang)}
+                                  {order.discountCode ? ` (${order.discountCode})` : ""}
+                                </div>
+                              )}
+                              <div className="text-[11px] text-slate-400">
+                                {t.admin.orders.deliveryPrefix}:{" "}
+                                {formatMartPrice(order.deliveryCharge, lang)}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="rounded-xl bg-slate-50 p-3 space-y-1">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="font-semibold text-slate-900">
+                                {order.customerName}
+                              </span>
+                              {clientTier && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setCrmJumpClientKey(clientKey);
+                                    handleSelectSection("customers");
+                                  }}
+                                  className={`rounded px-1.5 py-0.5 text-[10px] font-semibold border whitespace-nowrap ${
+                                    clientTier === "high_risk" || clientTier === "blocked"
+                                      ? "border-red-200 bg-red-50 text-red-700"
+                                      : clientTier === "vip"
+                                      ? "border-brand-200 bg-brand-50 text-[#0B5336]"
+                                      : "border-slate-200 bg-white text-slate-600"
+                                  }`}
+                                >
+                                  {clientTier === "high_risk"
+                                    ? tord.highRiskWarning
+                                    : clientTier === "blocked"
+                                    ? tord.blockedWarning
+                                    : clientTier === "vip"
+                                    ? tord.vipCustomerTag
+                                    : tcrm.tiers[clientTier]}
+                                </button>
+                              )}
+                            </div>
+                            <div className="font-mono text-[11px] text-slate-700">
+                              {order.phone}
+                            </div>
+                            <div className="text-[11px] text-slate-500">
+                              {order.deliveryArea} · {order.address}
+                            </div>
+                            {order.notes && (
+                              <div className="text-[11px] text-gold-700">
+                                {t.admin.orders.notePrefix}: {order.notes}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="space-y-1">
+                            {parsedItems.length > 0 ? (
+                              <ul className="space-y-0.5 text-slate-700">
+                                {parsedItems.map((it, idx) => (
+                                  <li key={idx}>
+                                    {pickLocalized(it.nameEn || it.name, it.nameBn, lang)}
+                                    {it.variant ? ` (${it.variant})` : ""}{" "}
+                                    <span className="font-mono text-slate-500">
+                                      × {toLocalizedDigits(it.quantity, lang)}
+                                    </span>
+                                    {it.isWholesale && (
+                                      <span className="ml-1 text-[10px] font-semibold text-[#0B5336]">
+                                        [{tvar.wholesaleCardHintPrefix}]
+                                      </span>
+                                    )}
+                                    {it.fulfillmentType === "dropship" && (
+                                      <span className="ml-1 text-[10px] font-semibold text-gold-700">
+                                        [{tsrc.dropshipMode.split(" ")[0]}]
+                                      </span>
+                                    )}
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <div className="text-slate-700">{order.itemsSummary}</div>
+                            )}
+                            {fin && (
+                              <div className="font-mono text-[11px] text-[#0B5336] font-semibold tabular-nums">
+                                {tord.orderProfitLabel}: {formatMartPrice(fin.grossProfit, lang)}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-100">
+                            <div className="text-[11px]">
+                              <span className="font-semibold text-slate-800">
+                                {order.paymentMethod}
+                              </span>
+                              {order.paymentProvider ? (
+                                <span className="ml-1 font-semibold text-[#0B5336]">
+                                  ({order.paymentProvider})
+                                </span>
+                              ) : null}
+                              {order.transactionId && (
+                                <div className="font-mono text-slate-500">
+                                  {t.admin.orders.trxPrefix}: {order.transactionId}
+                                </div>
+                              )}
+                            </div>
+
+                            <select
+                              value={order.status}
+                              onChange={(e) =>
+                                handleOrderStatusChange(
+                                  order.id,
+                                  e.target.value as MartOrderStatus
+                                )
+                              }
+                              aria-label={t.admin.orders.colStatus}
+                              className="min-h-[40px] rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold"
+                            >
+                              {ORDER_STATUSES.map((st) => (
+                                <option key={st} value={st}>
+                                  {t.orderStatuses[st]}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2 pt-1">
+                            {parsedItems.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setExpandedOrderIds((prev) => ({
+                                    ...prev,
+                                    [order.id]: !prev[order.id],
+                                  }))
+                                }
+                                className="min-h-[38px] inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] whitespace-nowrap"
+                              >
+                                {expanded ? (
+                                  <ChevronUp className="h-3.5 w-3.5" />
+                                ) : (
+                                  <ChevronDown className="h-3.5 w-3.5" />
+                                )}
+                                <span>
+                                  {expanded ? tord.hidePanelBtn : tord.fulfillmentPanelBtn}
+                                </span>
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => startEditOrder(order)}
+                              className="min-h-[38px] inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] whitespace-nowrap"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                              <span>{t.admin.orders.editOrderBtn}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setInvoiceOrder(order)}
+                              className="min-h-[38px] inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] whitespace-nowrap"
+                            >
+                              <Printer className="h-3.5 w-3.5" />
+                              <span>{t.admin.orders.invoiceBtn}</span>
+                            </button>
+                            {confirmDeleteOrderId === order.id ? (
+                              <div className="inline-flex items-center gap-1 ml-auto">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteOrder(order)}
+                                  className="min-h-[38px] inline-flex items-center gap-1 rounded-lg border border-red-300 bg-red-600 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-red-700 whitespace-nowrap"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                  <span>{t.admin.orders.deleteOrderConfirm}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteOrderId(null)}
+                                  aria-label={t.common.cancel}
+                                  className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100"
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteOrderId(order.id)}
+                                aria-label={t.admin.orders.deleteOrderBtn}
+                                className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg border border-slate-200 text-red-600 hover:bg-red-50 hover:border-red-200 ml-auto"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
+
+                          {expanded && fin && fin.items.length > 0 && (
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2.5">
+                              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2 text-[11px]">
+                                <span className="font-bold text-slate-900">
+                                  {tord.itemSourceLabel}
+                                </span>
+                                <span className="font-mono font-bold text-[#0B5336] tabular-nums">
+                                  {tord.orderSalesLabel}: {formatMartPrice(fin.validSales, lang)} ·{" "}
+                                  {tord.orderCostLabel}: {formatMartPrice(fin.validCost, lang)}
+                                </span>
+                              </div>
+                              {fin.items.map((item, idx) => (
+                                <div
+                                  key={idx}
+                                  className="rounded-lg border border-slate-200 bg-white p-2.5 space-y-2"
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <div className="font-semibold text-slate-900">
+                                        {pickLocalized(item.nameEn || item.name, item.nameBn, lang)}{" "}
+                                        <span className="font-mono text-slate-500">
+                                          × {toLocalizedDigits(item.quantity, lang)}
+                                        </span>
+                                      </div>
+                                      {item.variant && (
+                                        <div className="text-[11px] text-slate-500">
+                                          {item.variant}
+                                        </div>
+                                      )}
+                                      <div className="text-[11px] text-slate-500">
+                                        {item.resolvedFulfillmentType === "dropship"
+                                          ? tsrc.dropshipMode
+                                          : tsrc.ownStockMode}{" "}
+                                        ·{" "}
+                                        {item.resolvedCollectionMode === "supplier_collects"
+                                          ? tsrc.supplierCollectsOption
+                                          : tsrc.storeCollectsOption}
+                                      </div>
+                                    </div>
+                                    <div className="text-right font-mono tabular-nums shrink-0">
+                                      <div className="text-slate-600">
+                                        {formatMartPrice(item.resolvedLineCost, lang)}
+                                      </div>
+                                      <div
+                                        className={
+                                          item.resolvedLineProfit >= 0
+                                            ? "text-[#0B5336] font-bold"
+                                            : "text-red-600 font-bold"
+                                        }
+                                      >
+                                        {formatMartPrice(item.resolvedLineProfit, lang)}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <select
+                                      value={item.resolvedSupplierId}
+                                      onChange={(e) =>
+                                        handleOrderItemUpdate(order, idx, {
+                                          supplierId: e.target.value,
+                                        })
+                                      }
+                                      className="min-h-[38px] rounded border border-slate-200 bg-white px-2 py-1 text-[11px]"
+                                    >
+                                      <option value="">
+                                        {item.resolvedSupplierName || tsrc.noSupplierOption}
+                                      </option>
+                                      {suppliers.map((sup) => (
+                                        <option key={sup.id} value={sup.id}>
+                                          {sup.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <select
+                                      value={item.resolvedStatus}
+                                      onChange={(e) =>
+                                        handleOrderItemUpdate(order, idx, {
+                                          itemStatus: e.target.value as MartItemStatus,
+                                        })
+                                      }
+                                      className="min-h-[38px] rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold"
+                                    >
+                                      {MART_ITEM_STATUSES.map((ist) => (
+                                        <option key={ist} value={ist}>
+                                          {tord.itemStatuses[ist]}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* Desktop Orders Table */}
+                <div className="hidden md:block overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead className="bg-slate-50 border-b border-slate-200 text-slate-500">
                       <tr>
@@ -2709,7 +3188,7 @@ export function MartAdminClient() {
           {activeSection === "products" && (
             <div className="space-y-8">
               <div
-                className={`rounded-2xl border p-6 space-y-5 transition-colors ${
+                className={`rounded-2xl border p-4 sm:p-6 space-y-5 transition-colors ${
                   editingProductId
                     ? "border-[#0B5336] ring-2 ring-[#0B5336]/15 bg-brand-50/20"
                     : "border-slate-200 bg-white"
@@ -3631,9 +4110,9 @@ export function MartAdminClient() {
                 </form>
               </div>
 
-              {/* Catalog Table */}
+              {/* Catalog */}
               <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-                <div className="px-6 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-4">
+                <div className="px-4 sm:px-6 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-4">
                   <h3 className="font-display text-base font-bold text-slate-900">
                     {t.admin.products.catalogTableTitle} (
                     {toLocalizedDigits(filteredProducts.length, lang)})
@@ -3645,12 +4124,234 @@ export function MartAdminClient() {
                       value={productSearch}
                       onChange={(e) => setProductSearch(e.target.value)}
                       placeholder={t.admin.products.filterPlaceholder}
-                      className="input min-h-[38px] py-1.5 pl-9 text-xs"
+                      className="input min-h-[40px] py-1.5 pl-9 text-xs"
                     />
                   </div>
                 </div>
 
-                <div className="overflow-x-auto">
+                {/* Mobile Product Cards */}
+                <div className="md:hidden divide-y divide-slate-100">
+                  {filteredProducts.length === 0 ? (
+                    <div className="px-4 py-10 text-center text-xs text-slate-500">
+                      {t.admin.products.emptyProducts}
+                    </div>
+                  ) : (
+                    filteredProducts.map((p) => {
+                      const catLabels = parseCsvSlugs(p.categories).map((slug) => {
+                        const c = categoryMap.get(slug);
+                        return c ? pickLocalized(c.nameEn, c.nameBn, lang, slug) : slug;
+                      });
+                      const lblNames = parseCsvSlugs(p.labels).map((slug) => {
+                        const l = labelMap.get(slug);
+                        return l ? pickLocalized(l.nameEn, l.nameBn, lang, slug) : slug;
+                      });
+                      const displayProdName = pickLocalized(
+                        p.nameEn,
+                        p.nameBn,
+                        lang,
+                        p.sku
+                      );
+                      const isDropship = p.fulfillmentType === "dropship";
+                      const supObj = p.supplierId ? supMap.get(p.supplierId) : undefined;
+                      const unitCost = Number(p.costPrice) || 0;
+                      const unitProfit = (Number(p.price) || 0) - unitCost;
+                      const effectiveStock = getEffectiveProductStock(p);
+                      const colorList = parseProductColors(p.colorsJson);
+                      const sizeList = parseProductSizes(p.sizesList);
+                      const hasWholesale = p.wholesaleMinQty > 0 && p.wholesalePrice > 0;
+
+                      return (
+                        <div key={p.id} className="p-4 space-y-3 text-xs">
+                          <div className="flex items-start gap-3">
+                            <div className="h-14 w-14 rounded-xl bg-slate-100 overflow-hidden shrink-0 border border-slate-200">
+                              {p.imageUrl ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={normalizeMartImageUrl(p.imageUrl)}
+                                  alt={displayProdName}
+                                  referrerPolicy="no-referrer"
+                                  className="h-full w-full object-cover"
+                                />
+                              ) : null}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="font-semibold text-sm text-slate-900 line-clamp-2">
+                                  {displayProdName}
+                                </div>
+                                <div className="text-right font-mono tabular-nums shrink-0">
+                                  <div className="font-bold text-slate-900">
+                                    {formatMartPrice(p.price, lang)}
+                                  </div>
+                                  <div
+                                    className={`text-[11px] font-semibold ${
+                                      unitProfit >= 0 ? "text-[#0B5336]" : "text-red-600"
+                                    }`}
+                                  >
+                                    {formatMartPrice(unitCost, lang)} →{" "}
+                                    {formatMartPrice(unitProfit, lang)}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="font-mono text-[11px] text-slate-400 mt-0.5">
+                                {p.sku || p.id}
+                                {colorList.length > 0
+                                  ? ` · ${toLocalizedDigits(colorList.length, lang)} ${tvar.colorsCountSuffix}`
+                                  : ""}
+                                {sizeList.length > 0
+                                  ? ` · ${toLocalizedDigits(sizeList.length, lang)} ${tvar.sizesCountSuffix}`
+                                  : ""}
+                              </div>
+                              {hasWholesale && (
+                                <div className="text-[11px] font-mono text-[#0B5336] font-semibold mt-0.5">
+                                  {tvar.wholesaleCardHintPrefix}:{" "}
+                                  {formatMartPrice(p.wholesalePrice, lang)} (
+                                  {toLocalizedDigits(p.wholesaleMinQty, lang)}+)
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="text-[11px] text-slate-600 flex flex-wrap gap-x-3 gap-y-1 bg-slate-50 rounded-xl px-3 py-2">
+                            <span>
+                              <strong>
+                                {catLabels.length > 0
+                                  ? catLabels.join(" · ")
+                                  : t.catalog.generalFallback}
+                              </strong>
+                              {lblNames.length > 0 ? ` · ${lblNames.join(" · ")}` : ""}
+                            </span>
+                            <span className="text-slate-500">
+                              {isDropship ? tsrc.dropshipMode : tsrc.ownStockMode} (
+                              {supObj?.name || p.sourceName || tsrc.noSupplierOption})
+                            </span>
+                          </div>
+
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            {isDropship ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleToggleProductField(p, "supplierAvailable")
+                                }
+                                className={`min-h-[38px] rounded-lg border px-2.5 py-1 text-[11px] font-semibold whitespace-nowrap ${
+                                  p.supplierAvailable !== false
+                                    ? "border-brand-200 bg-brand-50 text-[#0B5336]"
+                                    : "border-red-200 bg-red-50 text-red-700"
+                                }`}
+                              >
+                                {p.supplierAvailable !== false
+                                  ? tsrc.availableStatus
+                                  : tsrc.pausedStatus}
+                              </button>
+                            ) : parseVariationMatrix(p.variationMatrixJson).length > 0 ? (
+                              <button
+                                type="button"
+                                onClick={() => startEditProduct(p)}
+                                title={t.admin.products.variantStockLockedNote}
+                                className="min-h-[38px] inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1 text-xs font-mono font-bold tabular-nums hover:border-[#0B5336]"
+                              >
+                                <span
+                                  className={
+                                    effectiveStock <= (Number(p.lowStockThreshold) || 5)
+                                      ? "text-red-600"
+                                      : "text-slate-900"
+                                  }
+                                >
+                                  {t.admin.products.colStock}: {toLocalizedDigits(effectiveStock, lang)}
+                                </span>
+                                <Pencil className="h-3 w-3 text-slate-400" />
+                              </button>
+                            ) : (
+                              <div className="inline-flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleQuickStockAdjust(p, -1)}
+                                  className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg border border-slate-200 font-mono hover:bg-slate-100"
+                                >
+                                  -
+                                </button>
+                                <span
+                                  className={`font-mono font-bold tabular-nums w-8 text-center ${
+                                    effectiveStock <= (Number(p.lowStockThreshold) || 5)
+                                      ? "text-red-600"
+                                      : "text-slate-900"
+                                  }`}
+                                >
+                                  {toLocalizedDigits(effectiveStock, lang)}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleQuickStockAdjust(p, 1)}
+                                  className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg border border-slate-200 font-mono hover:bg-slate-100"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            )}
+
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleToggleProductField(p, "active")}
+                                className={`min-h-[38px] rounded-lg px-2.5 py-1 text-[11px] font-semibold border whitespace-nowrap ${
+                                  p.active
+                                    ? "border-brand-200 bg-brand-50 text-[#0B5336]"
+                                    : "border-slate-200 bg-slate-100 text-slate-500"
+                                }`}
+                              >
+                                {p.active ? t.admin.products.activeFlag : t.admin.products.pausedFlag}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleProductField(p, "featured")}
+                                title={t.admin.products.featuredTitle}
+                                className={`min-h-[38px] min-w-[38px] flex items-center justify-center rounded-lg border ${
+                                  p.featured
+                                    ? "border-gold-200 bg-gold-50 text-gold-600"
+                                    : "border-slate-200 bg-white text-slate-400"
+                                }`}
+                              >
+                                <Star className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => startEditProduct(p)}
+                              className="min-h-[38px] inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 px-2 py-1.5 text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] font-medium whitespace-nowrap"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                              <span>{t.admin.products.editBtn}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => startDuplicateProduct(p)}
+                              className="min-h-[38px] inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 px-2 py-1.5 text-slate-600 hover:border-[#0B5336] hover:text-[#0B5336] font-medium whitespace-nowrap"
+                            >
+                              <Copy className="h-3.5 w-3.5" />
+                              <span>{t.admin.products.duplicateBtn}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteProduct(p.id)}
+                              className="min-h-[38px] inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 px-2 py-1.5 text-red-600 hover:bg-red-50 font-medium whitespace-nowrap"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              <span>{t.admin.products.deleteBtn}</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* Desktop Table */}
+                <div className="hidden md:block overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead className="bg-slate-50 border-b border-slate-200 text-slate-500">
                       <tr>
@@ -4099,7 +4800,7 @@ export function MartAdminClient() {
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-                  <div className="px-6 py-4 border-b border-slate-200">
+                  <div className="px-4 sm:px-6 py-4 border-b border-slate-200">
                     <h3 className="font-display text-sm font-bold text-slate-900">
                       {t.admin.taxonomy.catListTitle} ({toLocalizedDigits(categories.length, lang)})
                     </h3>
@@ -4117,7 +4818,7 @@ export function MartAdminClient() {
                         return (
                           <div
                             key={cat.id}
-                            className="px-6 py-3 flex items-center justify-between gap-3 text-xs"
+                            className="px-4 sm:px-6 py-3 flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 text-xs"
                           >
                             <div className="flex items-center gap-3 min-w-0">
                               <div className="h-9 w-9 rounded-lg bg-slate-100 border border-slate-200 overflow-hidden shrink-0">
@@ -4331,7 +5032,7 @@ export function MartAdminClient() {
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-                  <div className="px-6 py-4 border-b border-slate-200">
+                  <div className="px-4 sm:px-6 py-4 border-b border-slate-200">
                     <h3 className="font-display text-sm font-bold text-slate-900">
                       {t.admin.taxonomy.lblListTitle} ({toLocalizedDigits(labels.length, lang)})
                     </h3>
@@ -4345,7 +5046,7 @@ export function MartAdminClient() {
                       labels.map((lbl) => (
                         <div
                           key={lbl.id}
-                          className="px-6 py-3 flex items-center justify-between gap-3 text-xs"
+                          className="px-4 sm:px-6 py-3 flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 text-xs"
                         >
                           <div className="min-w-0">
                             <div className="font-semibold text-slate-900 truncate">
@@ -4398,7 +5099,7 @@ export function MartAdminClient() {
 
           {/* 5. BILINGUAL STORE SETTINGS */}
           {activeSection === "settings" && (
-            <div className="max-w-4xl rounded-2xl border border-slate-200 bg-white p-6 space-y-5">
+            <div className="max-w-4xl rounded-2xl border border-slate-200 bg-white p-4 sm:p-6 space-y-5">
               <div>
                 <h2 className="font-display text-lg font-bold text-slate-900">
                   {t.admin.settings.title}
@@ -4734,6 +5435,7 @@ export function MartAdminClient() {
             <MartCouponsPanel
               isLiveBackend={Boolean(data?.isLiveBackend)}
               coupons={coupons}
+              onScrollToTop={scrollWorkspaceToTop}
               onCouponCreated={(coupon: MartCoupon) =>
                 setData((prev) =>
                   prev
@@ -4774,6 +5476,7 @@ export function MartAdminClient() {
               supplierSummaries={supplierSummaries}
               initialCrmSupplierId={crmJumpSupplierId}
               onClearInitialSupplier={() => setCrmJumpSupplierId(null)}
+              onScrollToTop={scrollWorkspaceToTop}
               onSupplierCreated={(s) =>
                 setData((prev) =>
                   prev ? { ...prev, suppliers: [s, ...(prev.suppliers || [])] } : prev
@@ -4848,6 +5551,7 @@ export function MartAdminClient() {
               suppliers={suppliers}
               supplierSummaries={supplierSummaries}
               transactions={transactions}
+              onScrollToTop={scrollWorkspaceToTop}
               onTransactionCreated={(txn) =>
                 setData((prev) =>
                   prev
@@ -4947,20 +5651,20 @@ export function MartAdminClient() {
       {/* PRINTABLE CUSTOMER INVOICE MODAL */}
       {invoiceOrder && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs"
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 p-0 sm:p-4 backdrop-blur-xs"
           role="dialog"
           aria-modal="true"
         >
-          <div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 bg-slate-50 print:hidden">
-              <h2 className="font-display text-base font-bold text-slate-900">
+          <div className="w-full max-w-xl rounded-t-3xl sm:rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden max-h-[92dvh] sm:max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 sm:px-6 py-3.5 sm:py-4 bg-slate-50 print:hidden shrink-0">
+              <h2 className="font-display text-sm sm:text-base font-bold text-slate-900 truncate pr-2">
                 {t.admin.invoice.titlePrefix} · {invoiceOrder.id}
               </h2>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
                   onClick={() => window.print()}
-                  className="btn-primary px-3.5 py-1.5 text-xs gap-1.5 min-h-[34px]"
+                  className="btn-primary px-3.5 py-1.5 text-xs gap-1.5 min-h-[38px]"
                 >
                   <Printer className="h-3.5 w-3.5" />
                   <span>{t.common.print}</span>
@@ -4969,14 +5673,14 @@ export function MartAdminClient() {
                   type="button"
                   onClick={() => setInvoiceOrder(null)}
                   aria-label={t.common.close}
-                  className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-200"
+                  className="rounded-lg p-2 min-h-[38px] min-w-[38px] flex items-center justify-center text-slate-500 hover:bg-slate-200"
                 >
                   <X className="h-5 w-5" />
                 </button>
               </div>
             </div>
 
-            <div className="p-6 overflow-y-auto space-y-5 text-xs">
+            <div className="p-4 sm:p-6 overflow-y-auto space-y-5 text-xs">
               <div className="flex items-start justify-between border-b border-slate-200 pb-4">
                 <div>
                   <MartLogo />
@@ -5116,26 +5820,26 @@ export function MartAdminClient() {
       {/* EDIT ORDER DETAILS MODAL */}
       {editingOrder && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs"
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/60 p-0 sm:p-4 backdrop-blur-xs"
           role="dialog"
           aria-modal="true"
         >
-          <div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 bg-slate-50">
-              <h2 className="font-display text-base font-bold text-slate-900">
+          <div className="w-full max-w-xl rounded-t-3xl sm:rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden max-h-[92dvh] sm:max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 sm:px-6 py-3.5 sm:py-4 bg-slate-50 shrink-0">
+              <h2 className="font-display text-sm sm:text-base font-bold text-slate-900 truncate pr-2">
                 {t.admin.orders.editOrderTitle} · {editingOrder.id}
               </h2>
               <button
                 type="button"
                 onClick={() => setEditingOrder(null)}
                 aria-label={t.common.close}
-                className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-200"
+                className="rounded-lg p-2 min-h-[38px] min-w-[38px] flex items-center justify-center text-slate-500 hover:bg-slate-200 shrink-0"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveOrderDetails} className="p-6 overflow-y-auto space-y-4 text-xs">
+            <form onSubmit={handleSaveOrderDetails} className="p-4 sm:p-6 overflow-y-auto space-y-4 text-xs">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">
