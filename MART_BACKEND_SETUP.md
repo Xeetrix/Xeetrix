@@ -1,4 +1,4 @@
-# Xeetrix Mart — Standalone ERP, Hybrid Sourcing, Accounting & CRM Backend Setup
+# Xeetrix Mart — Standalone ERP, Hybrid Sourcing, Variations, Coupons & QR Payment Backend Setup
 
 This guide sets up the **completely independent Google Sheets + Google Drive backend** specifically for **Xeetrix Mart** (`/mart` and `/mart/admin`). It does **not** mix with Holding Group or Xeetrix Travels.
 
@@ -14,19 +14,20 @@ This guide sets up the **completely independent Google Sheets + Google Drive bac
 6. Approve the Google Sheets & Google Drive authorization prompt when asked.
 
 **What `setupMartBackend` automatically prepares (safe to re-run — upgrades existing sheets cleanly without erasing data):**
-- Creates/upgrades all **9 Mart tabs** with styled, frozen Row 1 column headers (**ZERO dummy items**):
-  1. **`Mart_Products`**: Bilingual fields, multi-category/label CSV slugs, plus **`costPrice`, `fulfillmentType` (`own_stock` | `dropship`), `supplierId`, `sourceName`, `collectionMode` (`store_collects` | `supplier_collects`), `supplierAvailable`, `lowStockThreshold`**
+- Creates/upgrades all **10 Mart tabs** with styled, frozen Row 1 column headers (**ZERO dummy items**):
+  1. **`Mart_Products`**: Bilingual fields, multi-category/label CSV slugs, **`costPrice`, `wholesaleMinQty`, `wholesalePrice`, `fulfillmentType` (`own_stock` | `dropship`), `supplierId`, `sourceName`, `collectionMode` (`store_collects` | `supplier_collects`), `supplierAvailable`, `lowStockThreshold`, `colorsJson`, `sizesList`, `variationMatrixJson`, `galleryUrls`**
   2. **`Mart_Categories`**: Bilingual category names, parent categories, Drive icons, and sort order
   3. **`Mart_Labels`**: Bilingual promotional labels / seasonal collections & tone styling
-  4. **`Mart_Orders`**: Full item snapshots in `itemsJson` (including `unitCost`, `lineCost`, `lineProfit`, `fulfillmentType`, `supplierId`, `collectionMode`, and per-item `itemStatus`)
-  5. **`Mart_Settings`**: Bilingual store hero text, promo banner, Dhaka/Outside delivery charges, and mobile banking number
-  6. **`Mart_Suppliers`**: Wholesalers, factories, & dropshipping partners with payout terms, SLA lead time, tags, notes, & follow-up reminders
-  7. **`Mart_Transactions`**: Double-aspect cashbook & expense ledger (`marketing_expense`, `operating_expense`, `inventory_purchase`, `return_shipping_loss`, `supplier_payout`, `dropship_receipt`, `other_income`, `other_expense`)
-  8. **`Mart_CRM_Profiles`**: Client 360° profiles, manual B2B buyers, tier/risk overrides (`auto` | `vip` | `regular` | `new` | `high_risk` | `blocked`), tags, & follow-up reminders
-  9. **`Mart_CRM_Logs`**: Timestamped phone call, SMS, email, payment follow-up, and internal communication logs for both customers and suppliers
-- Automatically creates Google Drive folder **`Xeetrix_Mart_Storage`** containing **`Products`** and **`Categories`** subfolders and pre-warms **`CacheService`**.
+  4. **`Mart_Coupons`**: Promo code rules (`code`, `discountType`, `discountValue`, `maxDiscount`, `minOrderAmount`, `expiryDate`, `usageLimit`, `usageCount`, `active`, `notes`)
+  5. **`Mart_Orders`**: Full item snapshots in `itemsJson` (including `colorName`, `sizeName`, `variantSku`, `isWholesale`, `unitCost`, `lineCost`, `lineProfit`, `fulfillmentType`, `supplierId`, `collectionMode`, and per-item `itemStatus`) plus `discountCode`, `discountAmount`, and `paymentProvider`
+  6. **`Mart_Settings`**: Bilingual store hero text, promo banner, Dhaka/Outside delivery charges, mobile banking number, plus **`bkashMerchantNumber`, `bkashQrUrl`, `banglaQrUrl`, `banglaQrAccountInfo`**
+  7. **`Mart_Suppliers`**: Wholesalers, factories, & dropshipping partners with payout terms, SLA lead time, tags, notes, & follow-up reminders
+  8. **`Mart_Transactions`**: Double-aspect cashbook & expense ledger (`marketing_expense`, `operating_expense`, `inventory_purchase`, `return_shipping_loss`, `supplier_payout`, `dropship_receipt`, `other_income`, `other_expense`)
+  9. **`Mart_CRM_Profiles`**: Client 360° profiles, manual B2B buyers, tier/risk overrides (`auto` | `vip` | `regular` | `new` | `high_risk` | `blocked`), tags, & follow-up reminders
+  10. **`Mart_CRM_Logs`**: Timestamped phone call, SMS, email, payment follow-up, and internal communication logs for both customers and suppliers
+- Automatically creates Google Drive folder **`Xeetrix_Mart_Storage`** containing **`Products`**, **`Categories`**, and **`PaymentQR`** subfolders and pre-warms **`CacheService`**.
 
-> **Privacy Note:** Cost prices, internal supplier details, accounting ledger entries, and CRM logs are strictly restricted to admin requests (`action=martAdmin`) and stripped automatically from public storefront responses (`action=martPublic` / `/api/mart/track`).
+> **Privacy Note:** Cost prices (`costPrice` and `variationMatrixJson[].costOverride`), internal supplier details, accounting ledger entries, and CRM logs are strictly restricted to admin requests (`action=martAdmin`) and stripped automatically from public storefront responses (`action=martPublic`, `/api/mart/order`, and `/api/mart/track`).
 
 ---
 
@@ -37,12 +38,12 @@ This guide sets up the **completely independent Google Sheets + Google Drive bac
    - Value: any strong random secret token.
 2. Click **Deploy → New deployment**:
    - **Select type:** `Web app`
-   - **Description:** `Xeetrix Mart Hybrid ERP, Accounting & CRM v3`
+   - **Description:** `Xeetrix Mart Hybrid ERP, Variations, Coupons & QR v4`
    - **Execute as:** `Me`
    - **Who has access:** `Anyone`
 3. Click **Deploy** and copy the **Web app URL** (`https://script.google.com/macros/s/.../exec`).
 
-> **Important:** Whenever you update `backend/mart/Code.gs`, always choose **Deploy → New deployment** so the live `/exec` URL serves the latest version.
+> **Important:** Whenever you update `backend/mart/Code.gs`, always run `setupMartBackend` once (when upgrading schema tabs/columns) and choose **Deploy → New deployment** so the live `/exec` URL serves the latest version.
 
 ---
 
@@ -61,5 +62,6 @@ MART_API_TOKEN=your_optional_matching_script_token
 ## Step 4: Admin Portal Workflow (`/mart/admin`)
 
 1. Unlock `/mart/admin` with `MART_ADMIN_PASSWORD` and switch between **EN / বাংলা** anytime.
-2. Add partners in **Suppliers & Dropship**, set up multi-category & label collections in **Categories & Labels**, and publish **Own Stock** or **Dropshipping (Unlimited)** products with cost prices to see live unit margins.
-3. Manage mixed-source orders item-by-item in **Orders**, monitor real **Net Profit, Supplier Payables & Dropship Receivables** in **Accounting & P&L**, and track VIP/High-Risk buyers & daily follow-ups in **Client CRM (360°)**.
+2. Upload official **bKash Merchant QR** and **Bangla QR** images + merchant account numbers in **Storefront Settings** (stored in `Xeetrix_Mart_Storage/PaymentQR`).
+3. Create **Promo & Discount Coupons** (`%` or flat `৳`), manage **Own Stock** or **Dropshipping** SKUs with **multi-image galleries, Color × Size stock/price matrices, and Wholesale tier pricing**, and fulfill orders item-by-item in **Orders**.
+4. Monitor real **Net Profit, Coupon Discounts, Supplier Payables & Dropship Receivables** in **Accounting & P&L**, and track VIP/High-Risk buyers & daily follow-ups in **Client CRM (360°)**.

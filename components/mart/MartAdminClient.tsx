@@ -32,6 +32,10 @@ import {
   ChevronDown,
   ChevronUp,
   BellRing,
+  Ticket,
+  QrCode,
+  Layers,
+  ImagePlus,
 } from "lucide-react";
 import { MartLogo } from "./MartLogo";
 import { MartLanguageSwitcher } from "./MartLanguageSwitcher";
@@ -39,6 +43,7 @@ import { useMartI18n } from "./MartI18nProvider";
 import { MartSuppliersPanel } from "./admin/MartSuppliersPanel";
 import { MartAccountingPanel } from "./admin/MartAccountingPanel";
 import { MartCrmPanel } from "./admin/MartCrmPanel";
+import { MartCouponsPanel } from "./admin/MartCouponsPanel";
 import {
   clearStoredMartAdminPass,
   createMartRecord,
@@ -54,6 +59,7 @@ import {
   MartApiError,
   MartCategory,
   MartCollectionMode,
+  MartCoupon,
   MartCrmLog,
   MartCrmProfile,
   MartFulfillmentType,
@@ -63,11 +69,17 @@ import {
   MartOrder,
   MartOrderStatus,
   MartProduct,
+  MartProductColor,
   MartSettings,
   MartSupplier,
   MartTransaction,
+  MartVariationVariant,
   normalizeMartImageUrl,
+  parseGalleryUrls,
   parseOrderItems,
+  parseProductColors,
+  parseProductSizes,
+  parseVariationMatrix,
   slugifyCategory,
   updateMartRecord,
   updateMartStoreSettings,
@@ -90,6 +102,7 @@ import {
   buildSupplierSummaries,
   computeAccountingSummary,
   DashboardFollowUpItem,
+  getEffectiveProductStock,
   normalizePhoneKey,
   ResolvedOrderFinancials,
   resolveOrderFinancials,
@@ -100,6 +113,7 @@ type MartAdminSection =
   | "orders"
   | "products"
   | "taxonomy"
+  | "coupons"
   | "suppliers"
   | "accounts"
   | "customers"
@@ -150,6 +164,9 @@ export function MartAdminClient() {
   const tsrc = ent.sourcing;
   const tord = ent.orderItems;
   const tcrm = ent.crm;
+  const tvar = ent.variations;
+  const tcop = ent.coupons;
+  const tqr = ent.qrPayment;
 
   const [authenticated, setAuthenticated] = useState(false);
   const [authReady, setAuthReady] = useState(false);
@@ -169,7 +186,7 @@ export function MartAdminClient() {
   const [expandedOrderIds, setExpandedOrderIds] = useState<Record<string, boolean>>({});
   const [invoiceOrder, setInvoiceOrder] = useState<MartOrder | null>(null);
 
-  // Product Form (Add or Edit — Bilingual + Multi-Category + Multi-Label + Hybrid Sourcing/Costing)
+  // Product Form (Add or Edit — Bilingual + Multi-Category + Labels + Variations + Gallery + Wholesale + Hybrid Sourcing)
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [prodSku, setProdSku] = useState("");
   const [prodNameEn, setProdNameEn] = useState("");
@@ -179,6 +196,8 @@ export function MartAdminClient() {
   const [prodPrice, setProdPrice] = useState("");
   const [prodComparePrice, setProdComparePrice] = useState("");
   const [prodCostPrice, setProdCostPrice] = useState("");
+  const [prodWholesaleMinQty, setProdWholesaleMinQty] = useState("");
+  const [prodWholesalePrice, setProdWholesalePrice] = useState("");
   const [prodFulfillmentType, setProdFulfillmentType] =
     useState<MartFulfillmentType>("own_stock");
   const [prodSupplierId, setProdSupplierId] = useState("");
@@ -191,6 +210,13 @@ export function MartAdminClient() {
   const [prodVariantsEn, setProdVariantsEn] = useState("");
   const [prodVariantsBn, setProdVariantsBn] = useState("");
   const [prodImageUrl, setProdImageUrl] = useState("");
+  const [prodGalleryUrls, setProdGalleryUrls] = useState<string[]>([]);
+  const [extraImgInput, setExtraImgInput] = useState("");
+  const [uploadingGalleryImg, setUploadingGalleryImg] = useState(false);
+  const [prodColors, setProdColors] = useState<MartProductColor[]>([]);
+  const [prodSizesInput, setProdSizesInput] = useState("");
+  const [prodMatrix, setProdMatrix] = useState<MartVariationVariant[]>([]);
+  const [showVariationBuilder, setShowVariationBuilder] = useState(false);
   const [prodDescEn, setProdDescEn] = useState("");
   const [prodDescBn, setProdDescBn] = useState("");
   const [prodFeatured, setProdFeatured] = useState(false);
@@ -219,9 +245,11 @@ export function MartAdminClient() {
   const [lblDescBn, setLblDescBn] = useState("");
   const [savingLabel, setSavingLabel] = useState(false);
 
-  // Store Settings Form
+  // Store Settings Form + QR Uploaders
   const [settingsForm, setSettingsForm] = useState<MartSettings>(DEFAULT_MART_SETTINGS);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [uploadingBkashQr, setUploadingBkashQr] = useState(false);
+  const [uploadingBanglaQr, setUploadingBanglaQr] = useState(false);
 
   // CRM Deep-Link Jump States
   const [crmJumpClientKey, setCrmJumpClientKey] = useState<string | null>(null);
@@ -320,6 +348,8 @@ export function MartAdminClient() {
     setProdPrice("");
     setProdComparePrice("");
     setProdCostPrice("");
+    setProdWholesaleMinQty("");
+    setProdWholesalePrice("");
     setProdFulfillmentType("own_stock");
     setProdSupplierId("");
     setProdSourceName("");
@@ -330,6 +360,12 @@ export function MartAdminClient() {
     setProdVariantsEn("");
     setProdVariantsBn("");
     setProdImageUrl("");
+    setProdGalleryUrls([]);
+    setExtraImgInput("");
+    setProdColors([]);
+    setProdSizesInput("");
+    setProdMatrix([]);
+    setShowVariationBuilder(false);
     setProdDescEn("");
     setProdDescBn("");
     setProdFeatured(false);
@@ -346,6 +382,8 @@ export function MartAdminClient() {
     setProdPrice(String(p.price));
     setProdComparePrice(p.comparePrice ? String(p.comparePrice) : "");
     setProdCostPrice(p.costPrice ? String(p.costPrice) : "");
+    setProdWholesaleMinQty(p.wholesaleMinQty > 0 ? String(p.wholesaleMinQty) : "");
+    setProdWholesalePrice(p.wholesalePrice > 0 ? String(p.wholesalePrice) : "");
     setProdFulfillmentType(p.fulfillmentType === "dropship" ? "dropship" : "own_stock");
     setProdSupplierId(p.supplierId || "");
     setProdSourceName(p.sourceName || "");
@@ -358,6 +396,23 @@ export function MartAdminClient() {
     setProdVariantsEn(p.variantsEn || "");
     setProdVariantsBn(p.variantsBn || "");
     setProdImageUrl(p.imageUrl || "");
+    const extraGallery = parseGalleryUrls(p.galleryUrls).filter(
+      (u) => u && u !== p.imageUrl
+    );
+    setProdGalleryUrls(extraGallery);
+    setExtraImgInput("");
+    const parsedColors = parseProductColors(p.colorsJson);
+    const parsedMatrix = parseVariationMatrix(p.variationMatrixJson);
+    setProdColors(parsedColors);
+    setProdSizesInput(p.sizesList || "");
+    setProdMatrix(parsedMatrix);
+    setShowVariationBuilder(
+      extraGallery.length > 0 ||
+        parsedColors.length > 0 ||
+        Boolean(p.sizesList) ||
+        parsedMatrix.length > 0 ||
+        (p.wholesaleMinQty || 0) > 0
+    );
     setProdDescEn(p.descriptionEn || "");
     setProdDescBn(p.descriptionBn || "");
     setProdFeatured(Boolean(p.featured));
@@ -409,6 +464,169 @@ export function MartAdminClient() {
     }
   }
 
+  async function handleGalleryImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!data?.isLiveBackend) {
+      showNotice("error", t.admin.products.errConnectBackend);
+      e.target.value = "";
+      return;
+    }
+
+    setUploadingGalleryImg(true);
+    try {
+      const base64Data = await fileToMartBase64(file);
+      const uploaded = await uploadMartImageToDrive({
+        fileName: file.name,
+        mimeType: file.type || "image/jpeg",
+        base64Data,
+        folderType: "products",
+      });
+      setProdGalleryUrls((prev) =>
+        prev.includes(uploaded.url) ? prev : [...prev, uploaded.url]
+      );
+      showNotice("success", `${t.admin.products.msgImageUploaded} (${uploaded.fileId})`);
+    } catch (err) {
+      const apiErr = err as MartApiError;
+      showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
+    } finally {
+      setUploadingGalleryImg(false);
+      e.target.value = "";
+    }
+  }
+
+  function handleAddExtraGalleryUrl() {
+    const clean = extraImgInput.trim();
+    if (!clean) return;
+    setProdGalleryUrls((prev) => (prev.includes(clean) ? prev : [...prev, clean]));
+    setExtraImgInput("");
+  }
+
+  function handleAddColorRow() {
+    setProdColors((prev) => [
+      ...prev,
+      {
+        id: `clr-${Date.now()}-${prev.length + 1}`,
+        nameEn: "",
+        nameBn: "",
+        hex: "#0B5336",
+        imageUrl: "",
+      },
+    ]);
+  }
+
+  function handleBuildVariationMatrix() {
+    const validColors = prodColors.filter((c) => c.nameEn.trim() || c.nameBn.trim());
+    const sizes = parseProductSizes(prodSizesInput);
+    const existingMap = new Map<string, MartVariationVariant>();
+    prodMatrix.forEach((m) => existingMap.set(m.key, m));
+
+    const nextRows: MartVariationVariant[] = [];
+    const baseSku = prodSku.trim() || "XM";
+
+    if (validColors.length > 0 && sizes.length > 0) {
+      validColors.forEach((c) => {
+        const cEn = (c.nameEn || c.nameBn).trim();
+        sizes.forEach((s) => {
+          const key = `${cEn}::${s}`;
+          const prev = existingMap.get(key);
+          nextRows.push(
+            prev || {
+              key,
+              colorNameEn: cEn,
+              size: s,
+              sku: `${baseSku}-${cEn.slice(0, 3).toUpperCase()}-${s.toUpperCase()}`.replace(
+                /\s+/g,
+                ""
+              ),
+              priceOverride: 0,
+              costOverride: 0,
+              stock: Math.max(0, Number(prodStock) || 10),
+              active: true,
+            }
+          );
+        });
+      });
+    } else if (validColors.length > 0) {
+      validColors.forEach((c) => {
+        const cEn = (c.nameEn || c.nameBn).trim();
+        const key = `${cEn}::`;
+        const prev = existingMap.get(key);
+        nextRows.push(
+          prev || {
+            key,
+            colorNameEn: cEn,
+            size: "",
+            sku: `${baseSku}-${cEn.slice(0, 4).toUpperCase()}`.replace(/\s+/g, ""),
+            priceOverride: 0,
+            costOverride: 0,
+            stock: Math.max(0, Number(prodStock) || 10),
+            active: true,
+          }
+        );
+      });
+    } else if (sizes.length > 0) {
+      sizes.forEach((s) => {
+        const key = `::${s}`;
+        const prev = existingMap.get(key);
+        nextRows.push(
+          prev || {
+            key,
+            colorNameEn: "",
+            size: s,
+            sku: `${baseSku}-${s.toUpperCase()}`.replace(/\s+/g, ""),
+            priceOverride: 0,
+            costOverride: 0,
+            stock: Math.max(0, Number(prodStock) || 10),
+            active: true,
+          }
+        );
+      });
+    }
+
+    setProdMatrix(nextRows);
+  }
+
+  async function handleQrImageUpload(
+    type: "bkash" | "bangla",
+    e: React.ChangeEvent<HTMLInputElement>
+  ) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!data?.isLiveBackend) {
+      showNotice("error", t.admin.products.errConnectBackend);
+      e.target.value = "";
+      return;
+    }
+
+    if (type === "bkash") setUploadingBkashQr(true);
+    else setUploadingBanglaQr(true);
+
+    try {
+      const base64Data = await fileToMartBase64(file);
+      const uploaded = await uploadMartImageToDrive({
+        fileName: `${type}-qr-${file.name}`,
+        mimeType: file.type || "image/png",
+        base64Data,
+        folderType: "payment",
+      });
+      setSettingsForm((prev) => ({
+        ...prev,
+        ...(type === "bkash"
+          ? { bkashQrUrl: uploaded.url }
+          : { banglaQrUrl: uploaded.url }),
+      }));
+      showNotice("success", `${tqr.qrUploadedMsg} (${uploaded.fileId})`);
+    } catch (err) {
+      const apiErr = err as MartApiError;
+      showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
+    } finally {
+      if (type === "bkash") setUploadingBkashQr(false);
+      else setUploadingBanglaQr(false);
+      e.target.value = "";
+    }
+  }
+
   async function handleSaveProduct(e: React.FormEvent) {
     e.preventDefault();
     if (!data?.isLiveBackend) {
@@ -420,6 +638,35 @@ export function MartAdminClient() {
       return;
     }
 
+    const cleanColors = prodColors
+      .filter((c) => c.nameEn.trim() || c.nameBn.trim())
+      .map((c) => ({
+        id: c.id,
+        nameEn: (c.nameEn || c.nameBn).trim(),
+        nameBn: (c.nameBn || c.nameEn).trim(),
+        hex: c.hex || "#0B5336",
+        imageUrl: (c.imageUrl || "").trim(),
+      }));
+
+    const cleanMatrix = prodMatrix.map((v) => ({
+      ...v,
+      sku: v.sku.trim(),
+      priceOverride: Math.max(0, Number(v.priceOverride) || 0),
+      costOverride: Math.max(0, Number(v.costOverride) || 0),
+      stock: Math.max(0, Number(v.stock) || 0),
+    }));
+
+    const matrixStockTotal = cleanMatrix
+      .filter((v) => v.active)
+      .reduce((sum, v) => sum + v.stock, 0);
+
+    const effectiveStock =
+      prodFulfillmentType === "dropship"
+        ? 0
+        : cleanMatrix.length > 0
+        ? matrixStockTotal
+        : Math.max(0, Number(prodStock) || 0);
+
     const payload = {
       sku: prodSku.trim() || `XM-${Date.now().toString().slice(-5)}`,
       nameEn: prodNameEn.trim() || prodNameBn.trim(),
@@ -429,16 +676,22 @@ export function MartAdminClient() {
       price: Number(prodPrice) || 0,
       comparePrice: Number(prodComparePrice) || 0,
       costPrice: Math.max(0, Number(prodCostPrice) || 0),
+      wholesaleMinQty: Math.max(0, Number(prodWholesaleMinQty) || 0),
+      wholesalePrice: Math.max(0, Number(prodWholesalePrice) || 0),
       fulfillmentType: prodFulfillmentType,
       supplierId: prodSupplierId.trim(),
       sourceName: prodSourceName.trim(),
       collectionMode: prodCollectionMode,
       supplierAvailable: prodFulfillmentType === "dropship" ? prodSupplierAvailable : true,
       lowStockThreshold: Math.max(0, Number(prodLowStockThreshold) || 5),
-      stock: prodFulfillmentType === "dropship" ? 0 : Math.max(0, Number(prodStock) || 0),
+      stock: effectiveStock,
       variantsEn: prodVariantsEn.trim(),
       variantsBn: prodVariantsBn.trim(),
+      colorsJson: cleanColors.length > 0 ? JSON.stringify(cleanColors) : "",
+      sizesList: prodSizesInput.trim(),
+      variationMatrixJson: cleanMatrix.length > 0 ? JSON.stringify(cleanMatrix) : "",
       imageUrl: prodImageUrl.trim(),
+      galleryUrls: prodGalleryUrls.filter(Boolean).join(","),
       descriptionEn: prodDescEn.trim(),
       descriptionBn: prodDescBn.trim(),
       featured: prodFeatured,
@@ -896,6 +1149,7 @@ export function MartAdminClient() {
   const products = useMemo(() => data?.products || [], [data]);
   const categories = useMemo(() => data?.categories || [], [data]);
   const labels = useMemo(() => data?.labels || [], [data]);
+  const coupons = useMemo(() => data?.coupons || [], [data]);
   const orders = useMemo(() => data?.orders || [], [data]);
   const suppliers = useMemo(() => data?.suppliers || [], [data]);
   const transactions = useMemo(() => data?.transactions || [], [data]);
@@ -998,7 +1252,7 @@ export function MartAdminClient() {
     const lowStockProducts = products.filter(
       (p) =>
         p.fulfillmentType !== "dropship" &&
-        p.stock <= (Number(p.lowStockThreshold) || 5)
+        getEffectiveProductStock(p) <= (Number(p.lowStockThreshold) || 5)
     );
 
     const statusCounts: Record<MartOrderStatus, number> = {
@@ -1164,6 +1418,7 @@ export function MartAdminClient() {
     { id: "orders", label: t.admin.nav.orders, icon: ShoppingCart },
     { id: "products", label: t.admin.nav.products, icon: Package },
     { id: "taxonomy", label: t.admin.nav.taxonomy, icon: Tags },
+    { id: "coupons", label: t.admin.nav.coupons, icon: Ticket },
     { id: "suppliers", label: t.admin.nav.suppliers, icon: Building2 },
     { id: "accounts", label: t.admin.nav.accounts, icon: Calculator },
     { id: "customers", label: t.admin.nav.customers, icon: Users },
@@ -1764,6 +2019,11 @@ export function MartAdminClient() {
                                           <span className="font-mono text-slate-500">
                                             × {toLocalizedDigits(it.quantity, lang)}
                                           </span>
+                                          {it.isWholesale && (
+                                            <span className="ml-1 text-[10px] font-semibold text-[#0B5336]">
+                                              [{tvar.wholesaleCardHintPrefix}]
+                                            </span>
+                                          )}
                                           {it.fulfillmentType === "dropship" && (
                                             <span className="ml-1 text-[10px] font-semibold text-gold-700">
                                               [{tsrc.dropshipMode.split(" ")[0]}]
@@ -1786,6 +2046,11 @@ export function MartAdminClient() {
                                   <div className="font-medium text-slate-800">
                                     {order.paymentMethod}
                                   </div>
+                                  {order.paymentProvider && (
+                                    <div className="text-[11px] font-semibold text-[#0B5336]">
+                                      {order.paymentProvider}
+                                    </div>
+                                  )}
                                   {order.transactionId && (
                                     <div className="font-mono text-[11px] text-slate-500">
                                       {t.admin.orders.trxPrefix}: {order.transactionId}
@@ -1796,6 +2061,12 @@ export function MartAdminClient() {
                                   <div className="font-bold text-slate-900">
                                     {formatMartPrice(order.totalAmount, lang)}
                                   </div>
+                                  {(Number(order.discountAmount) || 0) > 0 && (
+                                    <div className="text-[11px] text-[#0B5336]">
+                                      − {formatMartPrice(Number(order.discountAmount) || 0, lang)}
+                                      {order.discountCode ? ` (${order.discountCode})` : ""}
+                                    </div>
+                                  )}
                                   <div className="text-[11px] text-slate-400">
                                     {t.admin.orders.deliveryPrefix}:{" "}
                                     {formatMartPrice(order.deliveryCharge, lang)}
@@ -2413,7 +2684,7 @@ export function MartAdminClient() {
                     </div>
                   </div>
 
-                  {/* Image Upload + URL */}
+                  {/* Primary Image Upload + URL */}
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-end">
                     <div className="lg:col-span-8">
                       <label className="block text-xs font-semibold text-slate-700 mb-1.5">
@@ -2445,6 +2716,397 @@ export function MartAdminClient() {
                         />
                       </label>
                     </div>
+                  </div>
+
+                  {/* Color & Size Variations, Gallery & Wholesale Pricing Builder */}
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                          <Layers className="h-3.5 w-3.5 text-[#0B5336]" />
+                          <span>{tvar.sectionTitle}</span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-0.5">{tvar.sectionSubtitle}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowVariationBuilder((prev) => !prev)}
+                        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] whitespace-nowrap inline-flex items-center gap-1.5"
+                      >
+                        {showVariationBuilder ? (
+                          <ChevronUp className="h-3.5 w-3.5" />
+                        ) : (
+                          <ChevronDown className="h-3.5 w-3.5" />
+                        )}
+                        <span>{tvar.toggleBuilderBtn}</span>
+                      </button>
+                    </div>
+
+                    {showVariationBuilder && (
+                      <div className="space-y-5 pt-3 border-t border-slate-200">
+                        {/* Additional Gallery Photos */}
+                        <div className="space-y-2.5">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <div className="text-xs font-bold text-slate-800">
+                                {tvar.galleryTitle}
+                              </div>
+                              <div className="text-[11px] text-slate-500">{tvar.galleryHint}</div>
+                            </div>
+                            <label className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
+                              <ImagePlus className="h-3.5 w-3.5 text-[#0B5336]" />
+                              <span>
+                                {uploadingGalleryImg
+                                  ? t.admin.products.uploading
+                                  : tvar.uploadGalleryBtn}
+                              </span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                disabled={uploadingGalleryImg}
+                                onChange={handleGalleryImageUpload}
+                                className="sr-only"
+                              />
+                            </label>
+                          </div>
+
+                          <div className="flex flex-col sm:flex-row gap-2">
+                            <input
+                              type="text"
+                              value={extraImgInput}
+                              onChange={(e) => setExtraImgInput(e.target.value)}
+                              placeholder={tvar.addImageUrlPlaceholder}
+                              className="input text-xs font-mono flex-1 bg-white"
+                            />
+                            <button
+                              type="button"
+                              onClick={handleAddExtraGalleryUrl}
+                              className="btn-outline px-4 py-2 text-xs whitespace-nowrap"
+                            >
+                              {tvar.addImageBtn}
+                            </button>
+                          </div>
+
+                          {prodGalleryUrls.length > 0 && (
+                            <div className="flex flex-wrap gap-2.5 pt-1">
+                              {prodGalleryUrls.map((url, idx) => (
+                                <div
+                                  key={`${url}-${idx}`}
+                                  className="relative h-16 w-16 rounded-lg border border-slate-200 bg-white overflow-hidden"
+                                >
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={normalizeMartImageUrl(url)}
+                                    alt={tvar.galleryTitle}
+                                    referrerPolicy="no-referrer"
+                                    className="h-full w-full object-cover"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setProdGalleryUrls((prev) =>
+                                        prev.filter((_, i) => i !== idx)
+                                      )
+                                    }
+                                    aria-label={t.common.delete}
+                                    className="absolute top-0.5 right-0.5 rounded bg-slate-900/80 p-0.5 text-white hover:bg-red-600"
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Color Swatches Builder */}
+                        <div className="space-y-2.5 pt-3 border-t border-slate-200">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-bold text-slate-800">
+                              {tvar.colorsTitle}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={handleAddColorRow}
+                              className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-[11px] font-semibold text-[#0B5336] hover:bg-brand-50 whitespace-nowrap"
+                            >
+                              {tvar.addColorBtn}
+                            </button>
+                          </div>
+
+                          {prodColors.length > 0 && (
+                            <div className="space-y-2">
+                              {prodColors.map((clr, idx) => (
+                                <div
+                                  key={clr.id}
+                                  className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center rounded-lg border border-slate-200 bg-white p-2.5"
+                                >
+                                  <div className="sm:col-span-3">
+                                    <input
+                                      type="text"
+                                      value={clr.nameEn}
+                                      onChange={(e) =>
+                                        setProdColors((prev) =>
+                                          prev.map((item, i) =>
+                                            i === idx ? { ...item, nameEn: e.target.value } : item
+                                          )
+                                        )
+                                      }
+                                      placeholder={tvar.colorNameEnPlaceholder}
+                                      aria-label={tvar.colorNameEnLabel}
+                                      className="input min-h-[34px] py-1 text-xs"
+                                    />
+                                  </div>
+                                  <div className="sm:col-span-3">
+                                    <input
+                                      type="text"
+                                      value={clr.nameBn}
+                                      onChange={(e) =>
+                                        setProdColors((prev) =>
+                                          prev.map((item, i) =>
+                                            i === idx ? { ...item, nameBn: e.target.value } : item
+                                          )
+                                        )
+                                      }
+                                      placeholder={tvar.colorNameBnPlaceholder}
+                                      aria-label={tvar.colorNameBnLabel}
+                                      className="input min-h-[34px] py-1 text-xs"
+                                    />
+                                  </div>
+                                  <div className="sm:col-span-1 flex items-center justify-center">
+                                    <input
+                                      type="color"
+                                      value={clr.hex || "#0B5336"}
+                                      onChange={(e) =>
+                                        setProdColors((prev) =>
+                                          prev.map((item, i) =>
+                                            i === idx ? { ...item, hex: e.target.value } : item
+                                          )
+                                        )
+                                      }
+                                      aria-label={tvar.colorHexLabel}
+                                      className="h-8 w-10 rounded border border-slate-200 cursor-pointer"
+                                    />
+                                  </div>
+                                  <div className="sm:col-span-4">
+                                    <input
+                                      type="text"
+                                      value={clr.imageUrl || ""}
+                                      onChange={(e) =>
+                                        setProdColors((prev) =>
+                                          prev.map((item, i) =>
+                                            i === idx
+                                              ? { ...item, imageUrl: e.target.value }
+                                              : item
+                                          )
+                                        )
+                                      }
+                                      placeholder={tvar.colorImageLabel}
+                                      className="input min-h-[34px] py-1 text-xs font-mono"
+                                    />
+                                  </div>
+                                  <div className="sm:col-span-1 text-right">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setProdColors((prev) => prev.filter((_, i) => i !== idx))
+                                      }
+                                      className="text-red-600 hover:text-red-800 p-1"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Sizes Input + Matrix Generator */}
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-end pt-3 border-t border-slate-200">
+                          <div className="lg:col-span-7">
+                            <label className="block text-xs font-semibold text-slate-700 mb-1">
+                              {tvar.sizesLabel}
+                            </label>
+                            <input
+                              type="text"
+                              value={prodSizesInput}
+                              onChange={(e) => setProdSizesInput(e.target.value)}
+                              placeholder={tvar.sizesPlaceholder}
+                              className="input bg-white text-xs"
+                            />
+                          </div>
+                          <div className="lg:col-span-5 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={handleBuildVariationMatrix}
+                              className="btn-outline px-3.5 py-2 text-xs whitespace-nowrap"
+                            >
+                              {tvar.generateMatrixBtn}
+                            </button>
+                            {prodMatrix.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setProdMatrix([])}
+                                className="rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 whitespace-nowrap"
+                              >
+                                {tvar.clearMatrixBtn}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Optional Price/Cost/Stock Variation Matrix */}
+                        {prodMatrix.length > 0 && (
+                          <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="text-xs font-bold text-slate-800">
+                                {tvar.matrixTitle} ({toLocalizedDigits(prodMatrix.length, lang)})
+                              </span>
+                              <span className="text-[11px] text-slate-500">{tvar.matrixHint}</span>
+                            </div>
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-left text-xs">
+                                <thead className="border-b border-slate-200 text-slate-500">
+                                  <tr>
+                                    <th className="py-2 pr-2 font-semibold">{tvar.colCombination}</th>
+                                    <th className="py-2 pr-2 font-semibold">{tvar.colVariantSku}</th>
+                                    <th className="py-2 pr-2 font-semibold">{tvar.colPriceOverride}</th>
+                                    <th className="py-2 pr-2 font-semibold">{tvar.colCostOverride}</th>
+                                    <th className="py-2 pr-2 font-semibold">{tvar.colStock}</th>
+                                    <th className="py-2 font-semibold text-center">{tvar.colActive}</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                  {prodMatrix.map((row, idx) => (
+                                    <tr key={row.key}>
+                                      <td className="py-1.5 pr-2 font-semibold text-slate-800 whitespace-nowrap">
+                                        {[row.colorNameEn, row.size].filter(Boolean).join(" / ")}
+                                      </td>
+                                      <td className="py-1.5 pr-2">
+                                        <input
+                                          type="text"
+                                          value={row.sku}
+                                          onChange={(e) =>
+                                            setProdMatrix((prev) =>
+                                              prev.map((m, i) =>
+                                                i === idx ? { ...m, sku: e.target.value } : m
+                                              )
+                                            )
+                                          }
+                                          className="rounded border border-slate-200 px-2 py-1 text-xs font-mono w-28"
+                                        />
+                                      </td>
+                                      <td className="py-1.5 pr-2">
+                                        <input
+                                          type="number"
+                                          min={0}
+                                          value={row.priceOverride || ""}
+                                          onChange={(e) =>
+                                            setProdMatrix((prev) =>
+                                              prev.map((m, i) =>
+                                                i === idx
+                                                  ? { ...m, priceOverride: Number(e.target.value) || 0 }
+                                                  : m
+                                              )
+                                            )
+                                          }
+                                          className="rounded border border-slate-200 px-2 py-1 text-xs font-mono w-20"
+                                        />
+                                      </td>
+                                      <td className="py-1.5 pr-2">
+                                        <input
+                                          type="number"
+                                          min={0}
+                                          value={row.costOverride || ""}
+                                          onChange={(e) =>
+                                            setProdMatrix((prev) =>
+                                              prev.map((m, i) =>
+                                                i === idx
+                                                  ? { ...m, costOverride: Number(e.target.value) || 0 }
+                                                  : m
+                                              )
+                                            )
+                                          }
+                                          className="rounded border border-slate-200 px-2 py-1 text-xs font-mono w-20"
+                                        />
+                                      </td>
+                                      <td className="py-1.5 pr-2">
+                                        <input
+                                          type="number"
+                                          min={0}
+                                          value={row.stock}
+                                          onChange={(e) =>
+                                            setProdMatrix((prev) =>
+                                              prev.map((m, i) =>
+                                                i === idx
+                                                  ? { ...m, stock: Math.max(0, Number(e.target.value) || 0) }
+                                                  : m
+                                              )
+                                            )
+                                          }
+                                          className="rounded border border-slate-200 px-2 py-1 text-xs font-mono w-20"
+                                        />
+                                      </td>
+                                      <td className="py-1.5 text-center">
+                                        <input
+                                          type="checkbox"
+                                          checked={row.active}
+                                          onChange={(e) =>
+                                            setProdMatrix((prev) =>
+                                              prev.map((m, i) =>
+                                                i === idx ? { ...m, active: e.target.checked } : m
+                                              )
+                                            )
+                                          }
+                                          className="h-4 w-4 rounded border-slate-300 text-[#0B5336]"
+                                        />
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Wholesale / Bulk Tier Pricing */}
+                        <div className="pt-3 border-t border-slate-200 space-y-2">
+                          <div className="text-xs font-bold text-slate-800">
+                            {tvar.wholesaleTitle}
+                          </div>
+                          <p className="text-[11px] text-slate-500">{tvar.wholesaleHint}</p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                {tvar.wholesaleMinQtyLabel}
+                              </label>
+                              <input
+                                type="number"
+                                min={0}
+                                value={prodWholesaleMinQty}
+                                onChange={(e) => setProdWholesaleMinQty(e.target.value)}
+                                placeholder="10"
+                                className="input bg-white font-mono text-xs"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                {tvar.wholesalePriceLabel}
+                              </label>
+                              <input
+                                type="number"
+                                min={0}
+                                value={prodWholesalePrice}
+                                onChange={(e) => setProdWholesalePrice(e.target.value)}
+                                placeholder="980"
+                                className="input bg-white font-mono text-xs"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Dual EN + BN Descriptions */}
@@ -2582,6 +3244,10 @@ export function MartAdminClient() {
                           const supObj = p.supplierId ? supMap.get(p.supplierId) : undefined;
                           const unitCost = Number(p.costPrice) || 0;
                           const unitProfit = (Number(p.price) || 0) - unitCost;
+                          const effectiveStock = getEffectiveProductStock(p);
+                          const colorList = parseProductColors(p.colorsJson);
+                          const sizeList = parseProductSizes(p.sizesList);
+                          const hasWholesale = p.wholesaleMinQty > 0 && p.wholesalePrice > 0;
 
                           return (
                             <tr key={p.id} className="hover:bg-slate-50">
@@ -2604,6 +3270,12 @@ export function MartAdminClient() {
                                     </div>
                                     <div className="font-mono text-[11px] text-slate-400">
                                       {p.sku || p.id}
+                                      {colorList.length > 0
+                                        ? ` · ${toLocalizedDigits(colorList.length, lang)} ${tvar.colorsCountSuffix}`
+                                        : ""}
+                                      {sizeList.length > 0
+                                        ? ` · ${toLocalizedDigits(sizeList.length, lang)} ${tvar.sizesCountSuffix}`
+                                        : ""}
                                     </div>
                                   </div>
                                 </div>
@@ -2632,6 +3304,13 @@ export function MartAdminClient() {
                                 <div className="font-bold text-slate-900">
                                   {formatMartPrice(p.price, lang)}
                                 </div>
+                                {hasWholesale && (
+                                  <div className="text-[10px] text-[#0B5336] font-semibold">
+                                    {tvar.wholesaleCardHintPrefix}:{" "}
+                                    {formatMartPrice(p.wholesalePrice, lang)} (
+                                    {toLocalizedDigits(p.wholesaleMinQty, lang)}+)
+                                  </div>
+                                )}
                                 <div className="text-[11px] text-slate-500">
                                   {formatMartPrice(unitCost, lang)} →{" "}
                                   <span
@@ -2673,12 +3352,12 @@ export function MartAdminClient() {
                                     </button>
                                     <span
                                       className={`font-mono font-bold tabular-nums w-8 text-center ${
-                                        p.stock <= (Number(p.lowStockThreshold) || 5)
+                                        effectiveStock <= (Number(p.lowStockThreshold) || 5)
                                           ? "text-red-600"
                                           : "text-slate-900"
                                       }`}
                                     >
-                                      {toLocalizedDigits(p.stock, lang)}
+                                      {toLocalizedDigits(effectiveStock, lang)}
                                     </span>
                                     <button
                                       type="button"
@@ -3306,6 +3985,149 @@ export function MartAdminClient() {
                   />
                 </div>
 
+                {/* Official bKash Merchant QR & Bangla QR Payments */}
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-4">
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                      <QrCode className="h-4 w-4 text-[#0B5336]" />
+                      <span>{tqr.adminSectionTitle}</span>
+                    </h3>
+                    <p className="text-[11px] text-slate-500 mt-0.5">{tqr.adminSectionSubtitle}</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {/* bKash Merchant QR */}
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          {tqr.bkashMerchantLabel}
+                        </label>
+                        <input
+                          type="text"
+                          value={settingsForm.bkashMerchantNumber}
+                          onChange={(e) =>
+                            setSettingsForm({
+                              ...settingsForm,
+                              bkashMerchantNumber: e.target.value,
+                            })
+                          }
+                          placeholder={tqr.bkashMerchantPlaceholder}
+                          className="input font-mono text-xs"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          {tqr.bkashQrUrlLabel}
+                        </label>
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <input
+                            type="text"
+                            value={settingsForm.bkashQrUrl}
+                            onChange={(e) =>
+                              setSettingsForm({ ...settingsForm, bkashQrUrl: e.target.value })
+                            }
+                            placeholder="https://lh3.googleusercontent.com/d/..."
+                            className="input font-mono text-xs flex-1"
+                          />
+                          <label className="btn-outline px-3 py-2 text-xs gap-1.5 cursor-pointer whitespace-nowrap shrink-0">
+                            <Upload className="h-3.5 w-3.5 text-[#0B5336]" />
+                            <span>
+                              {uploadingBkashQr
+                                ? t.admin.products.uploading
+                                : tqr.uploadQrBtn}
+                            </span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              disabled={uploadingBkashQr}
+                              onChange={(e) => handleQrImageUpload("bkash", e)}
+                              className="sr-only"
+                            />
+                          </label>
+                        </div>
+                      </div>
+
+                      {settingsForm.bkashQrUrl && (
+                        <div className="h-28 w-28 rounded-lg border border-slate-200 bg-slate-50 overflow-hidden p-1">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={normalizeMartImageUrl(settingsForm.bkashQrUrl)}
+                            alt={tqr.bkashQrTab}
+                            referrerPolicy="no-referrer"
+                            className="h-full w-full object-contain"
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Bangla QR */}
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          {tqr.banglaQrAccountLabel}
+                        </label>
+                        <input
+                          type="text"
+                          value={settingsForm.banglaQrAccountInfo}
+                          onChange={(e) =>
+                            setSettingsForm({
+                              ...settingsForm,
+                              banglaQrAccountInfo: e.target.value,
+                            })
+                          }
+                          placeholder={tqr.banglaQrAccountPlaceholder}
+                          className="input text-xs"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          {tqr.banglaQrUrlLabel}
+                        </label>
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <input
+                            type="text"
+                            value={settingsForm.banglaQrUrl}
+                            onChange={(e) =>
+                              setSettingsForm({ ...settingsForm, banglaQrUrl: e.target.value })
+                            }
+                            placeholder="https://lh3.googleusercontent.com/d/..."
+                            className="input font-mono text-xs flex-1"
+                          />
+                          <label className="btn-outline px-3 py-2 text-xs gap-1.5 cursor-pointer whitespace-nowrap shrink-0">
+                            <Upload className="h-3.5 w-3.5 text-[#0B5336]" />
+                            <span>
+                              {uploadingBanglaQr
+                                ? t.admin.products.uploading
+                                : tqr.uploadQrBtn}
+                            </span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              disabled={uploadingBanglaQr}
+                              onChange={(e) => handleQrImageUpload("bangla", e)}
+                              className="sr-only"
+                            />
+                          </label>
+                        </div>
+                      </div>
+
+                      {settingsForm.banglaQrUrl && (
+                        <div className="h-28 w-28 rounded-lg border border-slate-200 bg-slate-50 overflow-hidden p-1">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={normalizeMartImageUrl(settingsForm.banglaQrUrl)}
+                            alt={tqr.banglaQrTab}
+                            referrerPolicy="no-referrer"
+                            className="h-full w-full object-contain"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
                 <button
                   type="submit"
                   disabled={savingSettings}
@@ -3315,6 +4137,44 @@ export function MartAdminClient() {
                 </button>
               </form>
             </div>
+          )}
+
+          {/* COUPONS & PROMO CODES */}
+          {activeSection === "coupons" && (
+            <MartCouponsPanel
+              isLiveBackend={Boolean(data?.isLiveBackend)}
+              coupons={coupons}
+              onCouponCreated={(coupon: MartCoupon) =>
+                setData((prev) =>
+                  prev
+                    ? { ...prev, coupons: [coupon, ...(prev.coupons || [])] }
+                    : prev
+                )
+              }
+              onCouponUpdated={(id, updates) =>
+                setData((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        coupons: (prev.coupons || []).map((c) =>
+                          c.id === id ? { ...c, ...updates } : c
+                        ),
+                      }
+                    : prev
+                )
+              }
+              onCouponDeleted={(id) =>
+                setData((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        coupons: (prev.coupons || []).filter((c) => c.id !== id),
+                      }
+                    : prev
+                )
+              }
+              onNotify={showNotice}
+            />
           )}
 
           {/* 5. SUPPLIERS & DROPSHIPPING PARTNERS */}
@@ -3500,6 +4360,7 @@ export function MartAdminClient() {
                   </div>
                   <div>
                     {t.admin.invoice.paymentLabel}: {invoiceOrder.paymentMethod}
+                    {invoiceOrder.paymentProvider ? ` (${invoiceOrder.paymentProvider})` : ""}
                   </div>
                   {invoiceOrder.transactionId && (
                     <div className="font-mono">
@@ -3525,6 +4386,11 @@ export function MartAdminClient() {
                           <td className="py-2">
                             <div className="font-semibold text-slate-900">
                               {pickLocalized(item.nameEn || item.name, item.nameBn, lang)}
+                              {item.isWholesale && (
+                                <span className="ml-1.5 text-[10px] font-semibold text-[#0B5336]">
+                                  [{tvar.wholesaleCardHintPrefix}]
+                                </span>
+                              )}
                             </div>
                             {item.variant && (
                               <div className="text-slate-500">{item.variant}</div>
@@ -3560,6 +4426,17 @@ export function MartAdminClient() {
                     {formatMartPrice(invoiceOrder.subtotal, lang)}
                   </span>
                 </div>
+                {(Number(invoiceOrder.discountAmount) || 0) > 0 && (
+                  <div className="flex justify-between text-[#0B5336] font-medium">
+                    <span>
+                      {tcop.discountRowLabel}
+                      {invoiceOrder.discountCode ? ` (${invoiceOrder.discountCode})` : ""}
+                    </span>
+                    <span className="font-mono tabular-nums">
+                      − {formatMartPrice(Number(invoiceOrder.discountAmount) || 0, lang)}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between text-slate-600">
                   <span>
                     {t.admin.invoice.deliveryPrefix} ({invoiceOrder.deliveryArea})

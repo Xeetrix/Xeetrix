@@ -14,6 +14,7 @@ export type MartSheetName =
   | "Mart_Categories"
   | "Mart_Labels"
   | "Mart_Suppliers"
+  | "Mart_Coupons"
   | "Mart_Orders"
   | "Mart_Transactions"
   | "Mart_CRM_Profiles"
@@ -63,6 +64,42 @@ export type MartCrmOutcome =
   | "resolved"
   | "escalated";
 
+export interface MartProductColor {
+  id: string;
+  nameEn: string;
+  nameBn: string;
+  hex: string;
+  imageUrl?: string;
+}
+
+export interface MartVariationVariant {
+  key: string;
+  colorNameEn: string;
+  size: string;
+  sku: string;
+  priceOverride: number;
+  costOverride?: number;
+  stock: number;
+  active: boolean;
+}
+
+export type MartCouponDiscountType = "percent" | "fixed";
+
+export interface MartCoupon {
+  id: string;
+  code: string;
+  discountType: MartCouponDiscountType;
+  discountValue: number;
+  maxDiscount: number;
+  minOrderAmount: number;
+  expiryDate: string;
+  usageLimit: number;
+  usageCount: number;
+  active: boolean;
+  notes: string;
+  createdAt: string;
+}
+
 export interface MartProduct {
   id: string;
   sku: string;
@@ -73,6 +110,8 @@ export interface MartProduct {
   price: number;
   comparePrice: number;
   costPrice: number;
+  wholesaleMinQty: number;
+  wholesalePrice: number;
   fulfillmentType: MartFulfillmentType;
   supplierId: string;
   sourceName: string;
@@ -82,7 +121,11 @@ export interface MartProduct {
   stock: number;
   variantsEn: string;
   variantsBn: string;
+  colorsJson: string;
+  sizesList: string;
+  variationMatrixJson: string;
   imageUrl: string;
+  galleryUrls: string;
   descriptionEn: string;
   descriptionBn: string;
   featured: boolean;
@@ -210,6 +253,10 @@ export interface MartOrderItem {
   nameEn?: string;
   nameBn?: string;
   variant: string;
+  colorName?: string;
+  sizeName?: string;
+  variantSku?: string;
+  isWholesale?: boolean;
   unitPrice: number;
   quantity: number;
   lineTotal: number;
@@ -232,6 +279,8 @@ export interface MartOrder {
   itemsSummary: string;
   totalItems: number;
   subtotal: number;
+  discountCode?: string;
+  discountAmount?: number;
   deliveryArea: MartDeliveryArea | string;
   deliveryCharge: number;
   totalAmount: number;
@@ -239,6 +288,7 @@ export interface MartOrder {
   phone: string;
   address: string;
   paymentMethod: MartPaymentMethod | string;
+  paymentProvider?: string;
   transactionId: string;
   notes: string;
   status: MartOrderStatus;
@@ -257,6 +307,10 @@ export interface MartSettings {
   insideDhakaCharge: string;
   outsideDhakaCharge: string;
   mobileBankingNumber: string;
+  bkashMerchantNumber: string;
+  bkashQrUrl: string;
+  banglaQrUrl: string;
+  banglaQrAccountInfo: string;
   // Legacy single-language read fallback keys
   heroTitle?: string;
   heroSubtitle?: string;
@@ -278,6 +332,10 @@ export const DEFAULT_MART_SETTINGS: MartSettings = {
   insideDhakaCharge: "70",
   outsideDhakaCharge: "130",
   mobileBankingNumber: "",
+  bkashMerchantNumber: "",
+  bkashQrUrl: "",
+  banglaQrUrl: "",
+  banglaQrAccountInfo: "",
 };
 
 function mergeMartSettings(partial?: Partial<MartSettings>): MartSettings {
@@ -295,6 +353,10 @@ function mergeMartSettings(partial?: Partial<MartSettings>): MartSettings {
     insideDhakaCharge: partial?.insideDhakaCharge || DEFAULT_MART_SETTINGS.insideDhakaCharge,
     outsideDhakaCharge: partial?.outsideDhakaCharge || DEFAULT_MART_SETTINGS.outsideDhakaCharge,
     mobileBankingNumber: partial?.mobileBankingNumber ?? DEFAULT_MART_SETTINGS.mobileBankingNumber,
+    bkashMerchantNumber: partial?.bkashMerchantNumber ?? DEFAULT_MART_SETTINGS.bkashMerchantNumber,
+    bkashQrUrl: partial?.bkashQrUrl ?? DEFAULT_MART_SETTINGS.bkashQrUrl,
+    banglaQrUrl: partial?.banglaQrUrl ?? DEFAULT_MART_SETTINGS.banglaQrUrl,
+    banglaQrAccountInfo: partial?.banglaQrAccountInfo ?? DEFAULT_MART_SETTINGS.banglaQrAccountInfo,
   };
 }
 
@@ -316,6 +378,8 @@ function normalizeProductRecord(raw: Partial<MartProduct>): MartProduct {
     price: Number(raw.price) || 0,
     comparePrice: Number(raw.comparePrice) || 0,
     costPrice: Number(raw.costPrice) || 0,
+    wholesaleMinQty: Math.max(0, Number(raw.wholesaleMinQty) || 0),
+    wholesalePrice: Math.max(0, Number(raw.wholesalePrice) || 0),
     fulfillmentType,
     supplierId: String(raw.supplierId || ""),
     sourceName: String(raw.sourceName || ""),
@@ -325,11 +389,32 @@ function normalizeProductRecord(raw: Partial<MartProduct>): MartProduct {
     stock: Number(raw.stock) || 0,
     variantsEn: String(raw.variantsEn || raw.variants || ""),
     variantsBn: String(raw.variantsBn || ""),
+    colorsJson: String(raw.colorsJson || ""),
+    sizesList: String(raw.sizesList || ""),
+    variationMatrixJson: String(raw.variationMatrixJson || ""),
     imageUrl: String(raw.imageUrl || ""),
+    galleryUrls: String(raw.galleryUrls || ""),
     descriptionEn: String(raw.descriptionEn || raw.description || ""),
     descriptionBn: String(raw.descriptionBn || ""),
     featured: Boolean(raw.featured),
     active: raw.active !== false,
+    createdAt: String(raw.createdAt || ""),
+  };
+}
+
+export function normalizeCouponRecord(raw: Partial<MartCoupon>): MartCoupon {
+  return {
+    id: String(raw.id || ""),
+    code: String(raw.code || "").trim().toUpperCase(),
+    discountType: raw.discountType === "fixed" ? "fixed" : "percent",
+    discountValue: Math.max(0, Number(raw.discountValue) || 0),
+    maxDiscount: Math.max(0, Number(raw.maxDiscount) || 0),
+    minOrderAmount: Math.max(0, Number(raw.minOrderAmount) || 0),
+    expiryDate: String(raw.expiryDate || ""),
+    usageLimit: Math.max(0, Number(raw.usageLimit) || 0),
+    usageCount: Math.max(0, Number(raw.usageCount) || 0),
+    active: raw.active !== false,
+    notes: String(raw.notes || ""),
     createdAt: String(raw.createdAt || ""),
   };
 }
@@ -458,6 +543,7 @@ export interface MartPublicBundle {
 
 export interface MartAdminBundle extends MartPublicBundle {
   suppliers: MartSupplier[];
+  coupons: MartCoupon[];
   orders: MartOrder[];
   transactions: MartTransaction[];
   crmProfiles: MartCrmProfile[];
@@ -484,6 +570,118 @@ export function parseProductVariants(variants?: string): string[] {
     .filter(Boolean);
 }
 
+export function parseProductColors(colorsJson?: string): MartProductColor[] {
+  if (!colorsJson) return [];
+  try {
+    const parsed = JSON.parse(colorsJson);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((c) => c && typeof c === "object" && (c.nameEn || c.nameBn || c.hex))
+      .map((c, idx) => ({
+        id: String(c.id || `clr-${idx}`),
+        nameEn: String(c.nameEn || c.nameBn || ""),
+        nameBn: String(c.nameBn || c.nameEn || ""),
+        hex: String(c.hex || "#0B5336"),
+        imageUrl: String(c.imageUrl || ""),
+      }));
+  } catch {
+    return [];
+  }
+}
+
+export function parseProductSizes(sizesList?: string): string[] {
+  if (!sizesList) return [];
+  return sizesList
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+export function parseVariationMatrix(matrixJson?: string): MartVariationVariant[] {
+  if (!matrixJson) return [];
+  try {
+    const parsed = JSON.parse(matrixJson);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((v) => v && typeof v === "object")
+      .map((v) => ({
+        key: String(v.key || `${v.colorNameEn || ""}::${v.size || ""}`),
+        colorNameEn: String(v.colorNameEn || ""),
+        size: String(v.size || ""),
+        sku: String(v.sku || ""),
+        priceOverride: Math.max(0, Number(v.priceOverride) || 0),
+        costOverride:
+          v.costOverride !== undefined && v.costOverride !== ""
+            ? Math.max(0, Number(v.costOverride) || 0)
+            : undefined,
+        stock: Math.max(0, Number(v.stock) || 0),
+        active: v.active !== false,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+export function findMatchingVariant(
+  matrix: MartVariationVariant[],
+  colorNameEn?: string,
+  size?: string
+): MartVariationVariant | undefined {
+  if (matrix.length === 0) return undefined;
+  const cNorm = String(colorNameEn || "").trim().toLowerCase();
+  const sNorm = String(size || "").trim().toLowerCase();
+  return matrix.find(
+    (v) =>
+      v.colorNameEn.trim().toLowerCase() === cNorm &&
+      v.size.trim().toLowerCase() === sNorm
+  );
+}
+
+export function parseGalleryUrls(galleryUrls?: string, primaryImageUrl?: string): string[] {
+  const list: string[] = [];
+  const pushUnique = (u?: string) => {
+    const clean = String(u || "").trim();
+    if (!clean) return;
+    if (!list.includes(clean)) list.push(clean);
+  };
+  pushUnique(primaryImageUrl);
+  if (galleryUrls) {
+    try {
+      if (galleryUrls.trim().startsWith("[")) {
+        const arr = JSON.parse(galleryUrls);
+        if (Array.isArray(arr)) arr.forEach((u) => pushUnique(String(u)));
+      } else {
+        galleryUrls.split(/[,\n]/).forEach((u) => pushUnique(u));
+      }
+    } catch {
+      galleryUrls.split(/[,\n]/).forEach((u) => pushUnique(u));
+    }
+  }
+  return list;
+}
+
+export function resolveProductPricing(
+  product: MartProduct,
+  variant?: MartVariationVariant,
+  quantity = 1
+): {
+  baseUnitPrice: number;
+  unitPrice: number;
+  comparePrice: number;
+  isWholesale: boolean;
+} {
+  const baseUnitPrice =
+    variant && variant.priceOverride > 0
+      ? variant.priceOverride
+      : Number(product.price) || 0;
+  const minQty = Number(product.wholesaleMinQty) || 0;
+  const wholesaleRate = Number(product.wholesalePrice) || 0;
+  const isWholesale = minQty > 0 && wholesaleRate > 0 && quantity >= minQty;
+  const unitPrice = isWholesale ? wholesaleRate : baseUnitPrice;
+  const comparePrice = Number(product.comparePrice) || 0;
+  return { baseUnitPrice, unitPrice, comparePrice, isWholesale };
+}
+
 export function parseOrderItems(itemsJson?: string): MartOrderItem[] {
   if (!itemsJson) return [];
   try {
@@ -498,7 +696,7 @@ export function slugifyCategory(text: string): string {
   return slugifyTaxonomy(text);
 }
 
-const MART_PUBLIC_CACHE_KEY = "xeetrix_mart_public_snapshot_v3";
+const MART_PUBLIC_CACHE_KEY = "xeetrix_mart_public_snapshot_v4";
 const MART_ADMIN_PASS_KEY = "xeetrix_mart_admin_pass_v1";
 
 export function getCachedMartPublicSnapshot(): MartPublicBundle | null {
@@ -720,9 +918,51 @@ export async function trackMartOrder(orderId: string, phone: string): Promise<Ma
   return json.order;
 }
 
+export interface MartCouponCheckResult {
+  valid: boolean;
+  reasonCode?: string;
+  minOrderAmount?: number;
+  discountAmount: number;
+  coupon?: Partial<MartCoupon> | null;
+}
+
+export async function validateMartCoupon(
+  code: string,
+  subtotal: number
+): Promise<MartCouponCheckResult> {
+  const res = await fetch("/api/mart/coupon", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: code.trim().toUpperCase(), subtotal }),
+    cache: "no-store",
+  });
+  const json = (await res.json()) as {
+    ok: boolean;
+    valid?: boolean;
+    reasonCode?: string;
+    minOrderAmount?: number;
+    discountAmount?: number;
+    coupon?: Partial<MartCoupon> | null;
+    error?: string;
+    code?: string;
+  };
+  if (!res.ok) {
+    throw new MartApiError(json.error || "Unable to verify coupon right now.", json.code);
+  }
+  return {
+    valid: Boolean(json.valid),
+    reasonCode: json.reasonCode,
+    minOrderAmount: Number(json.minOrderAmount) || 0,
+    discountAmount: Math.max(0, Number(json.discountAmount) || 0),
+    coupon: json.coupon || null,
+  };
+}
+
 export async function placeMartOrder(payload: {
   items: MartOrderItem[];
   subtotal: number;
+  discountCode?: string;
+  discountAmount?: number;
   deliveryArea: MartDeliveryArea;
   deliveryCharge: number;
   totalAmount: number;
@@ -730,6 +970,7 @@ export async function placeMartOrder(payload: {
   phone: string;
   address: string;
   paymentMethod: MartPaymentMethod;
+  paymentProvider?: string;
   transactionId?: string;
   notes?: string;
 }): Promise<{ id: string; record?: MartOrder }> {
@@ -779,6 +1020,7 @@ export async function fetchMartAdminData(): Promise<MartAdminBundle> {
       categories?: Partial<MartCategory>[];
       labels?: Partial<MartLabel>[];
       suppliers?: Partial<MartSupplier>[];
+      coupons?: Partial<MartCoupon>[];
       orders?: MartOrder[];
       transactions?: Partial<MartTransaction>[];
       crmProfiles?: Partial<MartCrmProfile>[];
@@ -810,6 +1052,9 @@ export async function fetchMartAdminData(): Promise<MartAdminBundle> {
       : [],
     suppliers: Array.isArray(json.data.suppliers)
       ? json.data.suppliers.map(normalizeSupplierRecord)
+      : [],
+    coupons: Array.isArray(json.data.coupons)
+      ? json.data.coupons.map(normalizeCouponRecord)
       : [],
     orders: Array.isArray(json.data.orders) ? json.data.orders : [],
     transactions: Array.isArray(json.data.transactions)
@@ -876,7 +1121,7 @@ export async function uploadMartImageToDrive(params: {
   fileName: string;
   mimeType: string;
   base64Data: string;
-  folderType: "products" | "categories";
+  folderType: "products" | "categories" | "payment";
 }): Promise<{ fileId: string; url: string; driveViewUrl?: string }> {
   const res = await postToMartAdminApi<{
     fileId: string;

@@ -1,5 +1,5 @@
 /**
- * Xeetrix Mart — Standalone Bilingual & Multi-Taxonomy Google Apps Script Backend
+ * Xeetrix Mart — Standalone Bilingual, Hybrid ERP, Variations, Coupons & QR Payment Backend
  *
  * Designed to be attached directly inside a dedicated "Xeetrix Mart Database" Google Sheet.
  *
@@ -8,10 +8,11 @@
  *   2. Select "setupMartBackend" in the top function dropdown and click Run.
  *   3. Authorize Google Sheets & Google Drive access.
  *      This single run automatically creates OR non-destructively upgrades:
- *        - 5 Tabs with bold frozen Row 1 headers (ZERO dummy items):
- *          Mart_Products, Mart_Categories, Mart_Labels, Mart_Orders, Mart_Settings
+ *        - 10 Tabs with bold frozen Row 1 headers (ZERO dummy items):
+ *          Mart_Products, Mart_Categories, Mart_Labels, Mart_Suppliers, Mart_Coupons,
+ *          Mart_Orders, Mart_Transactions, Mart_CRM_Profiles, Mart_CRM_Logs, Mart_Settings
  *        - Google Drive folders:
- *          Xeetrix_Mart_Storage/Products  &  Xeetrix_Mart_Storage/Categories
+ *          Xeetrix_Mart_Storage/Products, Categories & PaymentQR
  *        - Cached Drive Folder IDs in Script Properties + warmed CacheService
  *   4. Deploy -> New deployment -> Web app -> Execute as: Me -> Who has access: Anyone.
  *
@@ -31,6 +32,8 @@ var MART_SCHEMA = {
     "price",
     "comparePrice",
     "costPrice",
+    "wholesaleMinQty",
+    "wholesalePrice",
     "fulfillmentType",
     "supplierId",
     "sourceName",
@@ -40,7 +43,11 @@ var MART_SCHEMA = {
     "stock",
     "variantsEn",
     "variantsBn",
+    "colorsJson",
+    "sizesList",
+    "variationMatrixJson",
     "imageUrl",
+    "galleryUrls",
     "descriptionEn",
     "descriptionBn",
     "featured",
@@ -90,12 +97,28 @@ var MART_SCHEMA = {
     "active",
     "createdAt"
   ],
+  Mart_Coupons: [
+    "id",
+    "code",
+    "discountType",
+    "discountValue",
+    "maxDiscount",
+    "minOrderAmount",
+    "expiryDate",
+    "usageLimit",
+    "usageCount",
+    "active",
+    "notes",
+    "createdAt"
+  ],
   Mart_Orders: [
     "id",
     "itemsJson",
     "itemsSummary",
     "totalItems",
     "subtotal",
+    "discountCode",
+    "discountAmount",
     "deliveryArea",
     "deliveryCharge",
     "totalAmount",
@@ -103,6 +126,7 @@ var MART_SCHEMA = {
     "phone",
     "address",
     "paymentMethod",
+    "paymentProvider",
     "transactionId",
     "notes",
     "status",
@@ -167,18 +191,24 @@ var MART_DEFAULT_SETTINGS = {
   promoTextBn: "সারাদেশে ডেলিভারি · ক্যাশ অন ডেলিভারি ও মোবাইল ব্যাংকিং সুবিধা",
   insideDhakaCharge: "70",
   outsideDhakaCharge: "130",
-  mobileBankingNumber: ""
+  mobileBankingNumber: "",
+  bkashMerchantNumber: "",
+  bkashQrUrl: "",
+  banglaQrUrl: "",
+  banglaQrAccountInfo: ""
 };
 
 var DRIVE_ROOT_FOLDER_NAME = "Xeetrix_Mart_Storage";
 var DRIVE_PRODUCTS_FOLDER_NAME = "Products";
 var DRIVE_CATEGORIES_FOLDER_NAME = "Categories";
+var DRIVE_PAYMENT_FOLDER_NAME = "PaymentQR";
 
 var PROP_DRIVE_ROOT_ID = "MART_DRIVE_ROOT_ID";
 var PROP_DRIVE_PRODUCTS_ID = "MART_DRIVE_PRODUCTS_ID";
 var PROP_DRIVE_CATEGORIES_ID = "MART_DRIVE_CATEGORIES_ID";
+var PROP_DRIVE_PAYMENT_ID = "MART_DRIVE_PAYMENT_ID";
 
-var CACHE_PUBLIC_KEY = "xeetrix_mart_public_v3";
+var CACHE_PUBLIC_KEY = "xeetrix_mart_public_v4";
 var CACHE_TTL_SECONDS = 600; // 10 minutes; automatically busted on every mutation
 
 function jsonOut(payload) {
@@ -229,11 +259,26 @@ function getOrCreateFolderByName(parent, name) {
   return parent ? parent.createFolder(name) : DriveApp.createFolder(name);
 }
 
+function resolveCachedSubfolder(props, propKey, rootFolder, folderName) {
+  var savedId = props.getProperty(propKey);
+  if (savedId) {
+    try {
+      var candidate = DriveApp.getFolderById(savedId);
+      if (!candidate.isTrashed()) {
+        return candidate;
+      }
+    } catch (e) {
+      // recreate below
+    }
+  }
+  var folder = getOrCreateFolderByName(rootFolder, folderName);
+  props.setProperty(propKey, folder.getId());
+  return folder;
+}
+
 function ensureDriveFoldersReady() {
   var props = PropertiesService.getScriptProperties();
   var rootFolder = null;
-  var productsFolder = null;
-  var categoriesFolder = null;
 
   var savedRootId = props.getProperty(PROP_DRIVE_ROOT_ID);
   if (savedRootId) {
@@ -251,42 +296,30 @@ function ensureDriveFoldersReady() {
     props.setProperty(PROP_DRIVE_ROOT_ID, rootFolder.getId());
   }
 
-  var savedProdId = props.getProperty(PROP_DRIVE_PRODUCTS_ID);
-  if (savedProdId) {
-    try {
-      var candidateProd = DriveApp.getFolderById(savedProdId);
-      if (!candidateProd.isTrashed()) {
-        productsFolder = candidateProd;
-      }
-    } catch (e) {
-      productsFolder = null;
-    }
-  }
-  if (!productsFolder) {
-    productsFolder = getOrCreateFolderByName(rootFolder, DRIVE_PRODUCTS_FOLDER_NAME);
-    props.setProperty(PROP_DRIVE_PRODUCTS_ID, productsFolder.getId());
-  }
-
-  var savedCatId = props.getProperty(PROP_DRIVE_CATEGORIES_ID);
-  if (savedCatId) {
-    try {
-      var candidateCat = DriveApp.getFolderById(savedCatId);
-      if (!candidateCat.isTrashed()) {
-        categoriesFolder = candidateCat;
-      }
-    } catch (e) {
-      categoriesFolder = null;
-    }
-  }
-  if (!categoriesFolder) {
-    categoriesFolder = getOrCreateFolderByName(rootFolder, DRIVE_CATEGORIES_FOLDER_NAME);
-    props.setProperty(PROP_DRIVE_CATEGORIES_ID, categoriesFolder.getId());
-  }
+  var productsFolder = resolveCachedSubfolder(
+    props,
+    PROP_DRIVE_PRODUCTS_ID,
+    rootFolder,
+    DRIVE_PRODUCTS_FOLDER_NAME
+  );
+  var categoriesFolder = resolveCachedSubfolder(
+    props,
+    PROP_DRIVE_CATEGORIES_ID,
+    rootFolder,
+    DRIVE_CATEGORIES_FOLDER_NAME
+  );
+  var paymentFolder = resolveCachedSubfolder(
+    props,
+    PROP_DRIVE_PAYMENT_ID,
+    rootFolder,
+    DRIVE_PAYMENT_FOLDER_NAME
+  );
 
   return {
     rootFolder: rootFolder,
     productsFolder: productsFolder,
-    categoriesFolder: categoriesFolder
+    categoriesFolder: categoriesFolder,
+    paymentFolder: paymentFolder
   };
 }
 
@@ -353,8 +386,7 @@ function ensureMartSheet(ss, sheetName) {
 /**
  * ONE-CLICK INITIALIZER / UPGRADER:
  * Run inside your bound Google Sheet's Apps Script Editor.
- * Builds/upgrades all Mart tabs (Products, Categories, Labels, Suppliers, Orders,
- * Transactions, CRM Profiles, CRM Logs, Settings), Drive folders, and CacheService.
+ * Builds/upgrades all 10 Mart tabs, Drive folders, and CacheService.
  */
 function setupMartBackend() {
   var ss = getBoundSpreadsheet();
@@ -375,7 +407,7 @@ function setupMartBackend() {
     }
   }
 
-  // Auto-create Drive folders: Xeetrix_Mart_Storage -> Products & Categories
+  // Auto-create Drive folders: Xeetrix_Mart_Storage -> Products, Categories & PaymentQR
   var folders = ensureDriveFoldersReady();
 
   // Warm public cache immediately
@@ -396,6 +428,7 @@ function invalidateMartCache() {
   try {
     var cache = CacheService.getScriptCache();
     cache.remove(CACHE_PUBLIC_KEY);
+    cache.remove("xeetrix_mart_public_v3");
     cache.remove("xeetrix_mart_public_v2");
     cache.remove("xeetrix_mart_public_v1");
   } catch (err) {
@@ -414,18 +447,29 @@ function normalizeMartCell(header, val) {
     header === "price" ||
     header === "comparePrice" ||
     header === "costPrice" ||
+    header === "wholesaleMinQty" ||
+    header === "wholesalePrice" ||
     header === "lowStockThreshold" ||
     header === "stock" ||
     header === "leadTimeDays" ||
     header === "amount" ||
     header === "totalItems" ||
     header === "subtotal" ||
+    header === "discountAmount" ||
     header === "deliveryCharge" ||
     header === "totalAmount" ||
+    header === "discountValue" ||
+    header === "maxDiscount" ||
+    header === "minOrderAmount" ||
+    header === "usageLimit" ||
+    header === "usageCount" ||
     header === "sortOrder"
   ) {
     var num = Number(val);
     return isNaN(num) ? 0 : num;
+  }
+  if (header === "code" || header === "discountCode") {
+    return String(val || "").trim().toUpperCase();
   }
   return val === null || val === undefined ? "" : String(val);
 }
@@ -525,6 +569,11 @@ function readMartRows(sheet, sheetName) {
       if (colMap["active"] === undefined || row[colMap["active"]] === "") obj.active = true;
     }
 
+    if (sheetName === "Mart_Coupons") {
+      if (!obj.discountType) obj.discountType = "percent";
+      if (colMap["active"] === undefined || row[colMap["active"]] === "") obj.active = true;
+    }
+
     if (sheetName === "Mart_CRM_Profiles") {
       if (!obj.tierOverride) obj.tierOverride = "auto";
       if (!obj.entityType) obj.entityType = "customer";
@@ -580,6 +629,31 @@ function sortTaxonomyByOrder(list) {
   });
 }
 
+function sanitizeVariationMatrixForPublic(matrixJsonStr) {
+  if (!matrixJsonStr) return "";
+  try {
+    var parsed = JSON.parse(String(matrixJsonStr));
+    if (!Array.isArray(parsed)) return "";
+    var clean = [];
+    for (var i = 0; i < parsed.length; i++) {
+      var row = parsed[i];
+      if (!row || typeof row !== "object") continue;
+      clean.push({
+        key: String(row.key || ""),
+        colorNameEn: String(row.colorNameEn || ""),
+        size: String(row.size || ""),
+        sku: String(row.sku || ""),
+        priceOverride: Number(row.priceOverride) || 0,
+        stock: Math.max(0, Number(row.stock) || 0),
+        active: row.active !== false
+      });
+    }
+    return JSON.stringify(clean);
+  } catch (e) {
+    return "";
+  }
+}
+
 function buildAndCachePublicBundle(ss) {
   var prodSheet = ensureMartSheet(ss, "Mart_Products");
   var catSheet = ensureMartSheet(ss, "Mart_Categories");
@@ -593,7 +667,7 @@ function buildAndCachePublicBundle(ss) {
     supplierActiveMap[suppliers[s].id] = suppliers[s].active === true;
   }
 
-  // Strip internal costPrice / supplierId / sourceName from public storefront payload
+  // Strip internal costPrice / costOverride / supplierId / sourceName from public storefront payload
   var activeProducts = readMartRows(prodSheet, "Mart_Products")
     .filter(function (p) {
       return p.active === true;
@@ -616,13 +690,19 @@ function buildAndCachePublicBundle(ss) {
         labels: p.labels,
         price: p.price,
         comparePrice: p.comparePrice,
+        wholesaleMinQty: Number(p.wholesaleMinQty) || 0,
+        wholesalePrice: Number(p.wholesalePrice) || 0,
         fulfillmentType: p.fulfillmentType || "own_stock",
         supplierAvailable: effectiveSupplierAvailable,
         lowStockThreshold: p.lowStockThreshold || 5,
         stock: p.stock,
         variantsEn: p.variantsEn,
         variantsBn: p.variantsBn,
+        colorsJson: p.colorsJson || "",
+        sizesList: p.sizesList || "",
+        variationMatrixJson: sanitizeVariationMatrixForPublic(p.variationMatrixJson),
         imageUrl: p.imageUrl,
+        galleryUrls: p.galleryUrls || "",
         descriptionEn: p.descriptionEn,
         descriptionBn: p.descriptionBn,
         featured: p.featured,
@@ -668,6 +748,7 @@ function generateMartId(sheetName) {
     Mart_Categories: "CAT",
     Mart_Labels: "LBL",
     Mart_Suppliers: "SUP",
+    Mart_Coupons: "CPN",
     Mart_Orders: "XM",
     Mart_Transactions: "TXN",
     Mart_CRM_Profiles: "CRM",
@@ -694,6 +775,131 @@ function phonesMatch(a, b) {
   return false;
 }
 
+function evaluateMartCoupon(ss, rawCode, rawSubtotal) {
+  var code = String(rawCode || "").trim().toUpperCase();
+  var subtotal = Math.max(0, Number(rawSubtotal) || 0);
+  if (!code) {
+    return { valid: false, reasonCode: "MISSING_COUPON_CODE", discountAmount: 0 };
+  }
+
+  var couponSheet = ensureMartSheet(ss, "Mart_Coupons");
+  var coupons = readMartRows(couponSheet, "Mart_Coupons");
+  var match = null;
+  for (var i = 0; i < coupons.length; i++) {
+    if (String(coupons[i].code || "").trim().toUpperCase() === code) {
+      match = coupons[i];
+      break;
+    }
+  }
+
+  if (!match) {
+    return { valid: false, reasonCode: "COUPON_NOT_FOUND", discountAmount: 0 };
+  }
+  if (match.active !== true) {
+    return { valid: false, reasonCode: "COUPON_INACTIVE", discountAmount: 0 };
+  }
+
+  var todayIso = new Date().toISOString().slice(0, 10);
+  if (match.expiryDate && String(match.expiryDate).trim() !== "" && todayIso > String(match.expiryDate).trim()) {
+    return { valid: false, reasonCode: "COUPON_EXPIRED", discountAmount: 0 };
+  }
+
+  var usageLimit = Number(match.usageLimit) || 0;
+  var usageCount = Number(match.usageCount) || 0;
+  if (usageLimit > 0 && usageCount >= usageLimit) {
+    return { valid: false, reasonCode: "COUPON_LIMIT_REACHED", discountAmount: 0 };
+  }
+
+  var minOrder = Number(match.minOrderAmount) || 0;
+  if (minOrder > 0 && subtotal < minOrder) {
+    return {
+      valid: false,
+      reasonCode: "COUPON_MIN_ORDER_NOT_MET",
+      minOrderAmount: minOrder,
+      discountAmount: 0
+    };
+  }
+
+  var discountVal = Math.max(0, Number(match.discountValue) || 0);
+  var rawDiscount = 0;
+  if (match.discountType === "fixed") {
+    rawDiscount = discountVal;
+  } else {
+    rawDiscount = Math.round((subtotal * discountVal) / 100);
+    var maxDiscount = Number(match.maxDiscount) || 0;
+    if (maxDiscount > 0) {
+      rawDiscount = Math.min(rawDiscount, maxDiscount);
+    }
+  }
+
+  var discountAmount = Math.min(subtotal, Math.max(0, rawDiscount));
+  return {
+    valid: true,
+    discountAmount: discountAmount,
+    coupon: {
+      code: match.code,
+      discountType: match.discountType,
+      discountValue: match.discountValue,
+      maxDiscount: match.maxDiscount,
+      minOrderAmount: match.minOrderAmount,
+      expiryDate: match.expiryDate
+    }
+  };
+}
+
+function incrementCouponUsage(ss, rawCode) {
+  var code = String(rawCode || "").trim().toUpperCase();
+  if (!code) return;
+  try {
+    var sheet = ensureMartSheet(ss, "Mart_Coupons");
+    var lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return;
+    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var codeCol = headers.indexOf("code") + 1;
+    var countCol = headers.indexOf("usageCount") + 1;
+    if (codeCol < 1 || countCol < 1) return;
+
+    var codeVals = sheet.getRange(2, codeCol, lastRow - 1, 1).getValues();
+    var countVals = sheet.getRange(2, countCol, lastRow - 1, 1).getValues();
+    for (var r = 0; r < codeVals.length; r++) {
+      if (String(codeVals[r][0] || "").trim().toUpperCase() === code) {
+        var nextCount = Math.max(0, Number(countVals[r][0]) || 0) + 1;
+        sheet.getRange(r + 2, countCol).setValue(nextCount);
+        break;
+      }
+    }
+  } catch (e) {
+    // Non-fatal coupon usage counter guard
+  }
+}
+
+function findVariantCellForProduct(prod, colorName, sizeName, variantSku) {
+  if (!prod || !prod.variationMatrixJson) return null;
+  try {
+    var matrix = JSON.parse(String(prod.variationMatrixJson));
+    if (!Array.isArray(matrix) || matrix.length === 0) return null;
+    var cNorm = String(colorName || "").trim().toLowerCase();
+    var sNorm = String(sizeName || "").trim().toLowerCase();
+    var skuNorm = String(variantSku || "").trim().toLowerCase();
+
+    for (var i = 0; i < matrix.length; i++) {
+      var v = matrix[i];
+      if (!v) continue;
+      if (skuNorm && v.sku && String(v.sku).trim().toLowerCase() === skuNorm) {
+        return v;
+      }
+      var vc = String(v.colorNameEn || "").trim().toLowerCase();
+      var vs = String(v.size || "").trim().toLowerCase();
+      if (vc === cNorm && vs === sNorm) {
+        return v;
+      }
+    }
+  } catch (e) {
+    // ignore invalid matrix json
+  }
+  return null;
+}
+
 function enrichOrderPayloadServerSide(ss, payload) {
   if (!payload || !payload.itemsJson) return payload;
   try {
@@ -714,20 +920,66 @@ function enrichOrderPayloadServerSide(ss, payload) {
       supMap[allSuppliers[s].id] = allSuppliers[s];
     }
 
+    var authoritativeSubtotal = 0;
     for (var i = 0; i < items.length; i++) {
       var item = items[i];
       var catProd = prodMap[String(item.productId || "")];
-      var fulfillmentType = item.fulfillmentType || (catProd ? catProd.fulfillmentType : "own_stock") || "own_stock";
-      var supplierId = item.supplierId !== undefined && item.supplierId !== "" ? item.supplierId : (catProd ? catProd.supplierId : "");
+      var fulfillmentType =
+        item.fulfillmentType || (catProd ? catProd.fulfillmentType : "own_stock") || "own_stock";
+      var supplierId =
+        item.supplierId !== undefined && item.supplierId !== ""
+          ? item.supplierId
+          : catProd
+          ? catProd.supplierId
+          : "";
       var supObj = supplierId ? supMap[supplierId] : null;
-      var supplierName = item.supplierName || (supObj ? supObj.name : "") || (catProd ? catProd.sourceName : "") || "";
-      var collectionMode = item.collectionMode || (catProd ? catProd.collectionMode : "") || (supObj ? supObj.payoutMode === "supplier_pays_us" ? "supplier_collects" : "store_collects" : "store_collects");
-      var unitCost = item.unitCost !== undefined ? Number(item.unitCost) : (catProd ? Number(catProd.costPrice) || 0 : 0);
-      var qty = Math.max(1, Number(item.quantity) || 1);
-      var unitPrice = Number(item.unitPrice) || (catProd ? Number(catProd.price) || 0 : 0);
-      var lineTotal = Number(item.lineTotal) || unitPrice * qty;
-      var lineCost = unitCost * qty;
+      var supplierName =
+        item.supplierName || (supObj ? supObj.name : "") || (catProd ? catProd.sourceName : "") || "";
+      var collectionMode =
+        item.collectionMode ||
+        (catProd ? catProd.collectionMode : "") ||
+        (supObj
+          ? supObj.payoutMode === "supplier_pays_us"
+            ? "supplier_collects"
+            : "store_collects"
+          : "store_collects");
 
+      var qty = Math.max(1, Number(item.quantity) || 1);
+      var matchedCell = catProd
+        ? findVariantCellForProduct(catProd, item.colorName, item.sizeName, item.variantSku)
+        : null;
+
+      var baseUnitPrice = catProd ? Number(catProd.price) || 0 : Number(item.unitPrice) || 0;
+      if (matchedCell && Number(matchedCell.priceOverride) > 0) {
+        baseUnitPrice = Number(matchedCell.priceOverride);
+      }
+
+      var isWholesale = false;
+      if (
+        catProd &&
+        Number(catProd.wholesaleMinQty) > 0 &&
+        Number(catProd.wholesalePrice) > 0 &&
+        qty >= Number(catProd.wholesaleMinQty)
+      ) {
+        baseUnitPrice = Number(catProd.wholesalePrice);
+        isWholesale = true;
+      }
+
+      var unitPrice = baseUnitPrice > 0 ? baseUnitPrice : Number(item.unitPrice) || 0;
+      var unitCost = catProd ? Number(catProd.costPrice) || 0 : Number(item.unitCost) || 0;
+      if (matchedCell && Number(matchedCell.costOverride) > 0) {
+        unitCost = Number(matchedCell.costOverride);
+      }
+
+      var lineTotal = unitPrice * qty;
+      var lineCost = unitCost * qty;
+      authoritativeSubtotal += lineTotal;
+
+      item.sku = matchedCell && matchedCell.sku ? String(matchedCell.sku) : item.sku || (catProd ? catProd.sku : "");
+      item.variantSku = matchedCell && matchedCell.sku ? String(matchedCell.sku) : item.variantSku || "";
+      item.unitPrice = unitPrice;
+      item.lineTotal = lineTotal;
+      item.isWholesale = isWholesale;
       item.fulfillmentType = fulfillmentType;
       item.supplierId = supplierId;
       item.supplierName = supplierName;
@@ -741,6 +993,25 @@ function enrichOrderPayloadServerSide(ss, payload) {
     }
 
     payload.itemsJson = JSON.stringify(items);
+    payload.subtotal = authoritativeSubtotal;
+
+    var rawDiscountCode = String(payload.discountCode || "").trim().toUpperCase();
+    var discountAmount = 0;
+    if (rawDiscountCode) {
+      var couponEval = evaluateMartCoupon(ss, rawDiscountCode, authoritativeSubtotal);
+      if (couponEval.valid) {
+        discountAmount = couponEval.discountAmount;
+        payload.discountCode = rawDiscountCode;
+      } else {
+        payload.discountCode = "";
+      }
+    } else {
+      payload.discountCode = "";
+    }
+    payload.discountAmount = discountAmount;
+
+    var deliveryCharge = Math.max(0, Number(payload.deliveryCharge) || 0);
+    payload.totalAmount = Math.max(0, authoritativeSubtotal - discountAmount + deliveryCharge);
   } catch (err) {
     // Keep original payload if enrichment fails
   }
@@ -760,11 +1031,13 @@ function decrementStockForOrder(ss, itemsJsonStr) {
     var idCol = headers.indexOf("id") + 1;
     var stockCol = headers.indexOf("stock") + 1;
     var ftCol = headers.indexOf("fulfillmentType") + 1;
+    var matrixCol = headers.indexOf("variationMatrixJson") + 1;
     if (idCol < 1 || stockCol < 1) return;
 
     var idVals = prodSheet.getRange(2, idCol, lastRow - 1, 1).getValues();
     var stockVals = prodSheet.getRange(2, stockCol, lastRow - 1, 1).getValues();
     var ftVals = ftCol > 0 ? prodSheet.getRange(2, ftCol, lastRow - 1, 1).getValues() : null;
+    var matrixVals = matrixCol > 0 ? prodSheet.getRange(2, matrixCol, lastRow - 1, 1).getValues() : null;
 
     for (var i = 0; i < items.length; i++) {
       var item = items[i];
@@ -774,14 +1047,61 @@ function decrementStockForOrder(ss, itemsJsonStr) {
 
       for (var r = 0; r < idVals.length; r++) {
         if (String(idVals[r][0]) === pid) {
-          var rowFt = ftVals ? String(ftVals[r][0] || "own_stock").trim() : (item.fulfillmentType || "own_stock");
+          var rowFt = ftVals
+            ? String(ftVals[r][0] || "own_stock").trim()
+            : item.fulfillmentType || "own_stock";
           // Strictly skip physical stock decrement for dropshipped items
           if (rowFt === "dropship" || item.fulfillmentType === "dropship") {
             break;
           }
-          var nextStock = Math.max(0, (Number(stockVals[r][0]) || 0) - qty);
-          prodSheet.getRange(r + 2, stockCol).setValue(nextStock);
-          stockVals[r][0] = nextStock;
+
+          // Decrement variation matrix cell stock if present
+          var matrixUpdated = false;
+          if (matrixCol > 0 && matrixVals && matrixVals[r][0]) {
+            try {
+              var matrixArr = JSON.parse(String(matrixVals[r][0]));
+              if (Array.isArray(matrixArr) && matrixArr.length > 0) {
+                var cNorm = String(item.colorName || "").trim().toLowerCase();
+                var sNorm = String(item.sizeName || "").trim().toLowerCase();
+                var skuNorm = String(item.variantSku || "").trim().toLowerCase();
+                var cellMatched = false;
+                var totalMatrixStock = 0;
+
+                for (var m = 0; m < matrixArr.length; m++) {
+                  var cell = matrixArr[m];
+                  if (!cell) continue;
+                  var isHit =
+                    (skuNorm && cell.sku && String(cell.sku).trim().toLowerCase() === skuNorm) ||
+                    (String(cell.colorNameEn || "").trim().toLowerCase() === cNorm &&
+                      String(cell.size || "").trim().toLowerCase() === sNorm);
+                  if (!cellMatched && isHit) {
+                    cell.stock = Math.max(0, (Number(cell.stock) || 0) - qty);
+                    cellMatched = true;
+                  }
+                  if (cell.active !== false) {
+                    totalMatrixStock += Math.max(0, Number(cell.stock) || 0);
+                  }
+                }
+
+                if (cellMatched) {
+                  var updatedJson = JSON.stringify(matrixArr);
+                  prodSheet.getRange(r + 2, matrixCol).setValue(updatedJson);
+                  matrixVals[r][0] = updatedJson;
+                  prodSheet.getRange(r + 2, stockCol).setValue(totalMatrixStock);
+                  stockVals[r][0] = totalMatrixStock;
+                  matrixUpdated = true;
+                }
+              }
+            } catch (e) {
+              // Fallback to scalar stock
+            }
+          }
+
+          if (!matrixUpdated) {
+            var nextStock = Math.max(0, (Number(stockVals[r][0]) || 0) - qty);
+            prodSheet.getRange(r + 2, stockCol).setValue(nextStock);
+            stockVals[r][0] = nextStock;
+          }
           break;
         }
       }
@@ -803,7 +1123,7 @@ function doGet(e) {
       var folders = ensureDriveFoldersReady();
       return jsonOut({
         ok: true,
-        service: "Xeetrix Mart Enterprise Sourcing, Accounting & CRM Backend",
+        service: "Xeetrix Mart Enterprise Commerce Backend",
         spreadsheetName: ss.getName(),
         driveRootFolder: folders.rootFolder.getName()
       });
@@ -834,7 +1154,20 @@ function doGet(e) {
       });
     }
 
-    // 2. Privacy-Verified Order Tracking (Order ID + Phone required)
+    // 2. Public Coupon Validation Endpoint
+    if (action === "checkMartCoupon") {
+      var evalRes = evaluateMartCoupon(ss, params.code, params.subtotal);
+      return jsonOut({
+        ok: true,
+        valid: evalRes.valid,
+        reasonCode: evalRes.reasonCode || "",
+        minOrderAmount: evalRes.minOrderAmount || 0,
+        discountAmount: evalRes.discountAmount || 0,
+        coupon: evalRes.coupon || null
+      });
+    }
+
+    // 3. Privacy-Verified Order Tracking (Order ID + Phone required)
     if (action === "trackMartOrder") {
       var orderIdQuery = String(params.orderId || "").trim().toUpperCase();
       var phoneQuery = String(params.phone || "").trim();
@@ -866,7 +1199,7 @@ function doGet(e) {
       });
     }
 
-    // 3. Dedicated Mart Enterprise Admin Bundle
+    // 4. Dedicated Mart Enterprise Admin Bundle
     if (action === "martAdmin") {
       if (!isAuthorizedMartAdmin(token)) {
         return jsonOut({ ok: false, error: "Unauthorized Mart API token." });
@@ -875,6 +1208,7 @@ function doGet(e) {
       var catSheet = ensureMartSheet(ss, "Mart_Categories");
       var labelSheet = ensureMartSheet(ss, "Mart_Labels");
       var supSheet = ensureMartSheet(ss, "Mart_Suppliers");
+      var couponSheet = ensureMartSheet(ss, "Mart_Coupons");
       var ordAdminSheet = ensureMartSheet(ss, "Mart_Orders");
       var txnSheet = ensureMartSheet(ss, "Mart_Transactions");
       var crmProfSheet = ensureMartSheet(ss, "Mart_CRM_Profiles");
@@ -888,6 +1222,7 @@ function doGet(e) {
           categories: sortTaxonomyByOrder(readMartRows(catSheet, "Mart_Categories")),
           labels: sortTaxonomyByOrder(readMartRows(labelSheet, "Mart_Labels")),
           suppliers: readMartRows(supSheet, "Mart_Suppliers"),
+          coupons: readMartRows(couponSheet, "Mart_Coupons"),
           orders: readMartRows(ordAdminSheet, "Mart_Orders"),
           transactions: readMartRows(txnSheet, "Mart_Transactions"),
           crmProfiles: readMartRows(crmProfSheet, "Mart_CRM_Profiles"),
@@ -919,7 +1254,7 @@ function doPost(e) {
     var token = body.token || "";
     var ss = getBoundSpreadsheet();
 
-    // Upload image straight into cached Xeetrix_Mart_Storage/(Products|Categories)
+    // Upload image straight into cached Xeetrix_Mart_Storage/(Products|Categories|PaymentQR)
     if (action === "uploadFile") {
       if (!isAuthorizedMartAdmin(token)) {
         return jsonOut({ ok: false, error: "Unauthorized Mart API token." });
@@ -939,8 +1274,12 @@ function doPost(e) {
       }
 
       var folders = ensureDriveFoldersReady();
-      var targetFolder =
-        folderType === "categories" ? folders.categoriesFolder : folders.productsFolder;
+      var targetFolder = folders.productsFolder;
+      if (folderType === "categories") {
+        targetFolder = folders.categoriesFolder;
+      } else if (folderType === "payment") {
+        targetFolder = folders.paymentFolder;
+      }
 
       var bytes = Utilities.base64Decode(base64Data);
       var blob = Utilities.newBlob(bytes, mimeType, fileName);
@@ -997,13 +1336,18 @@ function doPost(e) {
           val = false;
         } else if (col === "tone" && (payload.tone === undefined || payload.tone === "")) {
           val = "emerald";
+        } else if (col === "discountType" && !payload.discountType) {
+          val = "percent";
         } else if (col === "fulfillmentType" && !payload.fulfillmentType) {
           val = "own_stock";
         } else if (col === "collectionMode" && !payload.collectionMode) {
           val = "store_collects";
         } else if (col === "tierOverride" && !payload.tierOverride) {
           val = "auto";
-        } else if (col === "lowStockThreshold" && (payload.lowStockThreshold === undefined || payload.lowStockThreshold === "")) {
+        } else if (
+          col === "lowStockThreshold" &&
+          (payload.lowStockThreshold === undefined || payload.lowStockThreshold === "")
+        ) {
           val = 5;
         } else if (col === "sortOrder" && payload.sortOrder === undefined) {
           val = 0;
@@ -1013,7 +1357,6 @@ function doPost(e) {
         record[col] = normalizeMartCell(col, val);
       }
 
-      // Align values dynamically to actual Row 1 headers (supports legacy + upgraded sheets cleanly)
       var actualHeaders = sheet.getRange(1, 1, 1, Math.max(1, sheet.getLastColumn())).getValues()[0];
       var rowValues = [];
       for (var ah = 0; ah < actualHeaders.length; ah++) {
@@ -1023,8 +1366,13 @@ function doPost(e) {
 
       sheet.appendRow(rowValues);
 
-      if (sheetName === "Mart_Orders" && payload.itemsJson) {
-        decrementStockForOrder(ss, String(payload.itemsJson));
+      if (sheetName === "Mart_Orders") {
+        if (payload.itemsJson) {
+          decrementStockForOrder(ss, String(payload.itemsJson));
+        }
+        if (record.discountCode) {
+          incrementCouponUsage(ss, String(record.discountCode));
+        }
       }
 
       invalidateMartCache();

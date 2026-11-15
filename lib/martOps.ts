@@ -12,7 +12,9 @@ import {
   MartProduct,
   MartSupplier,
   MartTransaction,
+  MartVariationVariant,
   parseOrderItems,
+  parseVariationMatrix,
 } from "./martApi";
 import { MART_ENTERPRISE_DICTIONARY } from "./martEnterpriseI18n";
 import { MartLang, parseCsvSlugs } from "./martI18n";
@@ -28,20 +30,38 @@ export function normalizePhoneKey(phone?: string): string {
   return digits;
 }
 
+export function getEffectiveProductStock(product: MartProduct): number {
+  const matrix = parseVariationMatrix(product.variationMatrixJson);
+  if (matrix.length > 0) {
+    return matrix
+      .filter((v) => v.active)
+      .reduce((sum, v) => sum + Math.max(0, Number(v.stock) || 0), 0);
+  }
+  return Math.max(0, Number(product.stock) || 0);
+}
+
 export function isProductOrderable(product: MartProduct): boolean {
   if (!product.active) return false;
   if (product.fulfillmentType === "dropship") {
     return product.supplierAvailable !== false;
   }
-  return (Number(product.stock) || 0) > 0;
+  return getEffectiveProductStock(product) > 0;
 }
 
-export function getProductOrderableMaxQty(product: MartProduct): number {
-  if (!isProductOrderable(product)) return 0;
+export function getProductOrderableMaxQty(
+  product: MartProduct,
+  variant?: MartVariationVariant
+): number {
+  if (!product.active) return 0;
   if (product.fulfillmentType === "dropship") {
+    if (product.supplierAvailable === false) return 0;
+    if (variant && !variant.active) return 0;
     return UNLIMITED_DROPSHIP_MAX_QTY;
   }
-  return Math.max(0, Number(product.stock) || 0);
+  if (variant) {
+    return variant.active ? Math.max(0, Number(variant.stock) || 0) : 0;
+  }
+  return getEffectiveProductStock(product);
 }
 
 export interface ResolvedOrderItem extends MartOrderItem {
@@ -60,6 +80,8 @@ export interface ResolvedOrderFinancials {
   order: MartOrder;
   items: ResolvedOrderItem[];
   validSales: number;
+  discountAmount: number;
+  netSales: number;
   validCost: number;
   ownStockCost: number;
   dropshipCost: number;
@@ -150,17 +172,25 @@ export function resolveOrderFinancials(
   const allItemsExcluded =
     items.length > 0 &&
     items.every((i) => i.resolvedStatus === "Cancelled" || i.resolvedStatus === "Returned");
+  const isFullyCancelledOrReturned = orderCancelled || allItemsExcluded;
+  const rawDiscount = isFullyCancelledOrReturned
+    ? 0
+    : Math.max(0, Number(order.discountAmount) || 0);
+  const discountAmount = Math.min(validSales, rawDiscount);
+  const netSales = Math.max(0, validSales - discountAmount);
 
   return {
     order,
     items,
     validSales,
+    discountAmount,
+    netSales,
     validCost,
     ownStockCost,
     dropshipCost,
-    grossProfit: validSales - validCost,
+    grossProfit: netSales - validCost,
     hasReturnedOrCancelledItems,
-    isFullyCancelledOrReturned: orderCancelled || allItemsExcluded,
+    isFullyCancelledOrReturned,
   };
 }
 
@@ -519,6 +549,7 @@ export function buildSupplierSummaries(params: {
 
 export interface AccountingSummary {
   productRevenue: number;
+  couponDiscounts: number;
   deliveryCollected: number;
   ownStockCogs: number;
   dropshipCogs: number;
@@ -566,6 +597,7 @@ export function computeAccountingSummary(params: {
   };
 
   let productRevenue = 0;
+  let couponDiscounts = 0;
   let deliveryCollected = 0;
   let ownStockCogs = 0;
   let dropshipCogs = 0;
@@ -573,7 +605,8 @@ export function computeAccountingSummary(params: {
   orders.forEach((o) => {
     if (!inRange(o.createdAt)) return;
     const fin = resolveOrderFinancials(o, prodMap, supMap);
-    productRevenue += fin.validSales;
+    productRevenue += fin.netSales;
+    couponDiscounts += fin.discountAmount;
     ownStockCogs += fin.ownStockCost;
     dropshipCogs += fin.dropshipCost;
     if (!fin.isFullyCancelledOrReturned) {
@@ -650,6 +683,7 @@ export function computeAccountingSummary(params: {
 
   return {
     productRevenue,
+    couponDiscounts,
     deliveryCollected,
     ownStockCogs,
     dropshipCogs,

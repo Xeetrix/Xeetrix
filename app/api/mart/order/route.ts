@@ -10,6 +10,10 @@ interface IncomingOrderItem {
   nameEn?: string;
   nameBn?: string;
   variant?: string;
+  colorName?: string;
+  sizeName?: string;
+  variantSku?: string;
+  isWholesale?: boolean;
   unitPrice?: number;
   quantity?: number;
   lineTotal?: number;
@@ -36,6 +40,8 @@ export async function POST(req: NextRequest) {
     const body = (await req.json()) as {
       items?: IncomingOrderItem[];
       subtotal?: number;
+      discountCode?: string;
+      discountAmount?: number;
       deliveryArea?: string;
       deliveryCharge?: number;
       totalAmount?: number;
@@ -43,6 +49,7 @@ export async function POST(req: NextRequest) {
       phone?: string;
       address?: string;
       paymentMethod?: string;
+      paymentProvider?: string;
       transactionId?: string;
       notes?: string;
     };
@@ -53,6 +60,9 @@ export async function POST(req: NextRequest) {
     const address = String(body.address || "").trim();
     const deliveryArea = String(body.deliveryArea || "Inside Dhaka").trim();
     const paymentMethod = String(body.paymentMethod || "Cash on Delivery").trim();
+    const paymentProvider = String(body.paymentProvider || "").trim();
+    const discountCode = String(body.discountCode || "").trim().toUpperCase();
+    const discountAmount = Math.max(0, Number(body.discountAmount) || 0);
 
     if (rawItems.length === 0 || !customerName || !phone || !address) {
       return NextResponse.json(
@@ -65,7 +75,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Only keep safe storefront-submitted fields; Apps Script enriches authoritative costPrice/supplier on server
+    // Only keep safe storefront-submitted fields; Apps Script enriches authoritative costPrice/supplier/pricing/coupon on server
     const cleanItems = rawItems.map((item) => ({
       productId: String(item.productId || ""),
       sku: String(item.sku || ""),
@@ -73,9 +83,15 @@ export async function POST(req: NextRequest) {
       nameEn: String(item.nameEn || item.name || "Item"),
       nameBn: String(item.nameBn || ""),
       variant: String(item.variant || ""),
+      colorName: String(item.colorName || ""),
+      sizeName: String(item.sizeName || ""),
+      variantSku: String(item.variantSku || ""),
+      isWholesale: Boolean(item.isWholesale),
       unitPrice: Number(item.unitPrice) || 0,
       quantity: Math.max(1, Number(item.quantity) || 1),
-      lineTotal: Number(item.lineTotal) || (Number(item.unitPrice) || 0) * Math.max(1, Number(item.quantity) || 1),
+      lineTotal:
+        Number(item.lineTotal) ||
+        (Number(item.unitPrice) || 0) * Math.max(1, Number(item.quantity) || 1),
       imageUrl: String(item.imageUrl || ""),
       fulfillmentType: item.fulfillmentType === "dropship" ? "dropship" : "own_stock",
       itemStatus: "Pending",
@@ -99,6 +115,8 @@ export async function POST(req: NextRequest) {
           itemsSummary,
           totalItems,
           subtotal: Number(body.subtotal) || 0,
+          discountCode,
+          discountAmount,
           deliveryArea,
           deliveryCharge: Number(body.deliveryCharge) || 0,
           totalAmount: Number(body.totalAmount) || 0,
@@ -106,6 +124,7 @@ export async function POST(req: NextRequest) {
           phone,
           address,
           paymentMethod,
+          paymentProvider,
           transactionId: String(body.transactionId || "").trim(),
           notes: String(body.notes || "").trim(),
           status: "Pending",
@@ -114,9 +133,43 @@ export async function POST(req: NextRequest) {
       false
     );
 
+    let safeRecord: Record<string, unknown> | undefined = undefined;
+    if (res.record && typeof res.record === "object") {
+      safeRecord = { ...res.record };
+      if (typeof safeRecord.itemsJson === "string") {
+        try {
+          const parsed = JSON.parse(safeRecord.itemsJson);
+          if (Array.isArray(parsed)) {
+            safeRecord.itemsJson = JSON.stringify(
+              parsed.map((it: Record<string, unknown>) => ({
+                productId: it.productId,
+                sku: it.sku,
+                name: it.name,
+                nameEn: it.nameEn,
+                nameBn: it.nameBn,
+                variant: it.variant,
+                colorName: it.colorName,
+                sizeName: it.sizeName,
+                variantSku: it.variantSku,
+                isWholesale: it.isWholesale,
+                unitPrice: it.unitPrice,
+                quantity: it.quantity,
+                lineTotal: it.lineTotal,
+                imageUrl: it.imageUrl,
+                itemStatus: it.itemStatus,
+              }))
+            );
+          }
+        } catch {
+          // Leave intact if unparseable
+        }
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       id: res.id,
+      ...(safeRecord ? { record: safeRecord } : {}),
     });
   } catch (err) {
     return NextResponse.json(

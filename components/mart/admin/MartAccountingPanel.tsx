@@ -48,7 +48,9 @@ export function MartAccountingPanel({
   onNotify,
 }: MartAccountingPanelProps) {
   const { lang, t } = useMartI18n();
-  const tacc = MART_ENTERPRISE_DICTIONARY[lang].accounts;
+  const ent = MART_ENTERPRISE_DICTIONARY[lang];
+  const tacc = ent.accounts;
+  const tcop = ent.coupons;
 
   const todayIso = new Date().toISOString().slice(0, 10);
   const [datePreset, setDatePreset] = useState<DatePreset>("all");
@@ -255,6 +257,11 @@ export function MartAccountingPanel({
           <div className="text-[11px] text-slate-500 font-mono tabular-nums">
             {tacc.deliveryCollectedSub}: {formatMartPrice(pnl.deliveryCollected, lang)}
           </div>
+          {pnl.couponDiscounts > 0 && (
+            <div className="text-[11px] text-slate-500 font-mono tabular-nums">
+              {tcop.discountRowLabel}: − {formatMartPrice(pnl.couponDiscounts, lang)}
+            </div>
+          )}
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-1">
@@ -344,6 +351,14 @@ export function MartAccountingPanel({
                 {formatMartPrice(pnl.productRevenue, lang)}
               </span>
             </div>
+            {pnl.couponDiscounts > 0 && (
+              <div className="py-2 flex justify-between gap-2 text-slate-500">
+                <span>{tcop.discountRowLabel}</span>
+                <span className="font-mono tabular-nums">
+                  − {formatMartPrice(pnl.couponDiscounts, lang)}
+                </span>
+              </div>
+            )}
             <div className="py-2 flex justify-between gap-2">
               <span className="text-slate-600">{tacc.rowOwnStockCogs}</span>
               <span className="font-mono text-slate-700 tabular-nums">

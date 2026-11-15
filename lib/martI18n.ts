@@ -227,6 +227,7 @@ export interface MartDictionary {
       orders: string;
       products: string;
       taxonomy: string;
+      coupons: string;
       suppliers: string;
       accounts: string;
       customers: string;
@@ -666,6 +667,7 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
         orders: "Orders & Fulfillment",
         products: "Products & Sourcing",
         taxonomy: "Categories & Labels",
+        coupons: "Coupons & Promo",
         suppliers: "Suppliers & Dropship",
         accounts: "Accounts & P&L",
         customers: "Client CRM & Risk",
@@ -1127,6 +1129,7 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
         orders: "অর্ডার ও ফুলফিলমেন্ট",
         products: "পণ্য ও সোর্সিং",
         taxonomy: "ক্যাটাগরি ও লেবেল",
+        coupons: "কুপন ও প্রমো কোড",
         suppliers: "সাপ্লাইয়ার ও ড্রপশিপ",
         accounts: "হিসাব-নিকাশ ও P&L",
         customers: "ক্লায়েন্ট CRM ও ঝুঁকি",

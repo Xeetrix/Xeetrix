@@ -301,6 +301,128 @@ export interface MartEnterpriseDictionary {
     errLogSummary: string;
     csvHeaders: string[];
   };
+  variations: {
+    sectionTitle: string;
+    sectionSubtitle: string;
+    toggleBuilderBtn: string;
+    galleryTitle: string;
+    galleryHint: string;
+    addImageUrlPlaceholder: string;
+    addImageBtn: string;
+    uploadGalleryBtn: string;
+    primaryImageLabel: string;
+    colorsTitle: string;
+    addColorBtn: string;
+    colorNameEnLabel: string;
+    colorNameEnPlaceholder: string;
+    colorNameBnLabel: string;
+    colorNameBnPlaceholder: string;
+    colorHexLabel: string;
+    colorImageLabel: string;
+    sizesLabel: string;
+    sizesPlaceholder: string;
+    generateMatrixBtn: string;
+    clearMatrixBtn: string;
+    matrixTitle: string;
+    matrixHint: string;
+    colCombination: string;
+    colVariantSku: string;
+    colPriceOverride: string;
+    colCostOverride: string;
+    colStock: string;
+    colActive: string;
+    wholesaleTitle: string;
+    wholesaleMinQtyLabel: string;
+    wholesalePriceLabel: string;
+    wholesaleHint: string;
+    wholesaleCardHintPrefix: string;
+    wholesaleActiveBadge: string;
+    wholesaleUnlockPrefix: string;
+    wholesaleUnlockMiddle: string;
+    wholesaleUnitSuffix: string;
+    selectColorLabel: string;
+    selectSizeLabel: string;
+    selectedVariantOutOfStock: string;
+    colorsCountSuffix: string;
+    sizesCountSuffix: string;
+  };
+  coupons: {
+    title: string;
+    subtitle: string;
+    addTitle: string;
+    codeLabel: string;
+    codePlaceholder: string;
+    discountTypeLabel: string;
+    percentOption: string;
+    fixedOption: string;
+    discountValueLabel: string;
+    maxDiscountLabel: string;
+    minOrderLabel: string;
+    expiryDateLabel: string;
+    usageLimitLabel: string;
+    notesLabel: string;
+    notesPlaceholder: string;
+    createBtn: string;
+    creatingBtn: string;
+    emptyTitle: string;
+    colCode: string;
+    colOffer: string;
+    colRules: string;
+    colUsage: string;
+    colStatus: string;
+    colActions: string;
+    unlimitedUsage: string;
+    noMinOrder: string;
+    noExpiry: string;
+    minOrderPrefix: string;
+    maxCapPrefix: string;
+    checkoutLabel: string;
+    checkoutPlaceholder: string;
+    applyBtn: string;
+    applyingBtn: string;
+    removeBtn: string;
+    appliedPrefix: string;
+    discountRowLabel: string;
+    msgCreated: string;
+    msgUpdated: string;
+    msgDeleted: string;
+    errMissingCode: string;
+    errReasons: {
+      MISSING_COUPON_CODE: string;
+      COUPON_NOT_FOUND: string;
+      COUPON_INACTIVE: string;
+      COUPON_EXPIRED: string;
+      COUPON_LIMIT_REACHED: string;
+      COUPON_MIN_ORDER_NOT_MET: string;
+      DEFAULT: string;
+    };
+  };
+  qrPayment: {
+    adminSectionTitle: string;
+    adminSectionSubtitle: string;
+    bkashQrUrlLabel: string;
+    bkashMerchantLabel: string;
+    bkashMerchantPlaceholder: string;
+    banglaQrUrlLabel: string;
+    banglaQrAccountLabel: string;
+    banglaQrAccountPlaceholder: string;
+    uploadQrBtn: string;
+    qrUploadedMsg: string;
+    checkoutOnlineOption: string;
+    selectQrTypeLabel: string;
+    bkashQrTab: string;
+    banglaQrTab: string;
+    manualMobileTab: string;
+    scanPayTitle: string;
+    amountToPayLabel: string;
+    merchantNoLabel: string;
+    copyNoBtn: string;
+    copiedNoBtn: string;
+    downloadQrBtn: string;
+    noQrConfiguredHint: string;
+    trxRequiredHint: string;
+    qrHelpText: string;
+  };
 }
 
 export const MART_ENTERPRISE_DICTIONARY: Record<MartLang, MartEnterpriseDictionary> = {
@@ -631,6 +753,128 @@ export const MART_ENTERPRISE_DICTIONARY: Record<MartLang, MartEnterpriseDictiona
         "Follow-up Task",
       ],
     },
+    variations: {
+      sectionTitle: "Color & Size Variations, Multi-Image Gallery & Wholesale Pricing",
+      sectionSubtitle: "Optional for standard items — ideal for garments, footwear & bulk items.",
+      toggleBuilderBtn: "Variations & Wholesale",
+      galleryTitle: "Additional Product Gallery Photos",
+      galleryHint: "Upload extra angles or paste URLs. Customers can browse thumbnails and link photos to colors.",
+      addImageUrlPlaceholder: "Paste extra image URL (https://...)",
+      addImageBtn: "Add URL",
+      uploadGalleryBtn: "Upload Extra Photo to Drive",
+      primaryImageLabel: "Primary Photo",
+      colorsTitle: "Color Swatches",
+      addColorBtn: "+ Add Color",
+      colorNameEnLabel: "Color (EN)",
+      colorNameEnPlaceholder: "e.g. Midnight Black",
+      colorNameBnLabel: "Color (BN)",
+      colorNameBnPlaceholder: "যেমন: কালো",
+      colorHexLabel: "Swatch",
+      colorImageLabel: "Linked Photo URL (Optional)",
+      sizesLabel: "Sizes (Comma-separated)",
+      sizesPlaceholder: "e.g. S, M, L, XL, XXL or 38, 40, 42",
+      generateMatrixBtn: "Build Color × Size Matrix",
+      clearMatrixBtn: "Clear Matrix",
+      matrixTitle: "Color × Size Price & Stock Matrix (Optional)",
+      matrixHint: "Leave Price or Cost Override as 0 to inherit base product pricing.",
+      colCombination: "Color / Size",
+      colVariantSku: "Variant SKU",
+      colPriceOverride: "Price Override (৳)",
+      colCostOverride: "Cost Override (৳)",
+      colStock: "Stock",
+      colActive: "Active",
+      wholesaleTitle: "Wholesale / Bulk Tier Rate (Optional)",
+      wholesaleMinQtyLabel: "Min Wholesale Qty",
+      wholesalePriceLabel: "Wholesale Unit Price (৳)",
+      wholesaleHint: "When a buyer orders this quantity or more, this rate applies automatically.",
+      wholesaleCardHintPrefix: "Wholesale",
+      wholesaleActiveBadge: "Wholesale Rate Applied",
+      wholesaleUnlockPrefix: "Buy",
+      wholesaleUnlockMiddle: "+ pcs at",
+      wholesaleUnitSuffix: "/ pc",
+      selectColorLabel: "Color",
+      selectSizeLabel: "Size",
+      selectedVariantOutOfStock: "This selected color/size combination is currently out of stock.",
+      colorsCountSuffix: "colors",
+      sizesCountSuffix: "sizes",
+    },
+    coupons: {
+      title: "Discount Coupons & Promo Codes (Mart_Coupons)",
+      subtitle: "Create percentage or flat BDT promo codes with minimum order rules, usage limits, and expiry dates.",
+      addTitle: "Create New Promo Coupon",
+      codeLabel: "Coupon Code *",
+      codePlaceholder: "e.g. WINTER10 or EID200",
+      discountTypeLabel: "Discount Type",
+      percentOption: "Percentage (%)",
+      fixedOption: "Flat Amount (৳)",
+      discountValueLabel: "Discount Value *",
+      maxDiscountLabel: "Max Discount Cap (৳)",
+      minOrderLabel: "Min Subtotal (৳)",
+      expiryDateLabel: "Expiry Date",
+      usageLimitLabel: "Max Total Uses (0 = Unlimited)",
+      notesLabel: "Campaign Note",
+      notesPlaceholder: "e.g. Winter jacket launch offer",
+      createBtn: "Publish Coupon",
+      creatingBtn: "Publishing...",
+      emptyTitle: "No promo coupons created yet. Add your first discount code above.",
+      colCode: "Promo Code",
+      colOffer: "Discount Offer",
+      colRules: "Conditions",
+      colUsage: "Used / Limit",
+      colStatus: "Status",
+      colActions: "Actions",
+      unlimitedUsage: "Unlimited",
+      noMinOrder: "No min order",
+      noExpiry: "No expiry",
+      minOrderPrefix: "Min",
+      maxCapPrefix: "Cap",
+      checkoutLabel: "Promo / Coupon Code",
+      checkoutPlaceholder: "Enter promo code (e.g. WINTER10)",
+      applyBtn: "Apply",
+      applyingBtn: "Checking...",
+      removeBtn: "Remove",
+      appliedPrefix: "Coupon applied",
+      discountRowLabel: "Coupon Discount",
+      msgCreated: "Coupon created in Mart_Coupons.",
+      msgUpdated: "Coupon status updated.",
+      msgDeleted: "Coupon deleted.",
+      errMissingCode: "Coupon code and positive discount value are required.",
+      errReasons: {
+        MISSING_COUPON_CODE: "Please enter a valid coupon code.",
+        COUPON_NOT_FOUND: "Coupon code not found.",
+        COUPON_INACTIVE: "This coupon code is currently paused.",
+        COUPON_EXPIRED: "This coupon code has expired.",
+        COUPON_LIMIT_REACHED: "This coupon has reached its maximum redemption limit.",
+        COUPON_MIN_ORDER_NOT_MET: "Minimum order subtotal requirement not met for this coupon.",
+        DEFAULT: "Coupon code could not be applied.",
+      },
+    },
+    qrPayment: {
+      adminSectionTitle: "Official bKash Merchant QR & Bangla QR Payments",
+      adminSectionSubtitle: "Upload official QR code images to Drive so customers can preview, download, and scan directly at checkout.",
+      bkashQrUrlLabel: "Official bKash Merchant QR Image URL",
+      bkashMerchantLabel: "bKash Merchant / Payment Number",
+      bkashMerchantPlaceholder: "e.g. 017XXXXXXXX",
+      banglaQrUrlLabel: "Official Bangla QR Image URL (Interoperable Bank/MFS)",
+      banglaQrAccountLabel: "Bangla QR Merchant Name / Bank Label",
+      banglaQrAccountPlaceholder: "e.g. Xeetrix Mart · National Bangla QR",
+      uploadQrBtn: "Upload QR to Drive",
+      qrUploadedMsg: "QR code uploaded cleanly to Google Drive.",
+      checkoutOnlineOption: "Online / QR Pay",
+      selectQrTypeLabel: "Choose QR / Online Payment Option",
+      bkashQrTab: "bKash Merchant QR",
+      banglaQrTab: "Bangla QR (All Banks & MFS)",
+      manualMobileTab: "Nagad / Rocket",
+      scanPayTitle: "Scan QR or Download Image to Your App",
+      amountToPayLabel: "Payable Amount",
+      merchantNoLabel: "Merchant Number",
+      copyNoBtn: "Copy",
+      copiedNoBtn: "Copied",
+      downloadQrBtn: "Download QR Image",
+      noQrConfiguredHint: "QR image not uploaded yet. Use merchant/receiver number below or Cash on Delivery.",
+      trxRequiredHint: "After paying, enter your TrxID below for fast verification.",
+      qrHelpText: "Works inside bKash, Nagad, Rocket, CellFin, and banking apps via QR gallery upload.",
+    },
   },
   bn: {
     sourcing: {
@@ -958,6 +1202,128 @@ export const MART_ENTERPRISE_DICTIONARY: Record<MartLang, MartEnterpriseDictiona
         "পরবর্তী ফলোআপ",
         "ফলোআপ টাস্ক",
       ],
+    },
+    variations: {
+      sectionTitle: "কালার ও সাইজ ভ্যারিয়েশন, একাধিক ছবি গ্যালারি এবং পাইকারি মূল্য",
+      sectionSubtitle: "পোশাক, জুতা বা প্রযোজ্য পণ্যের জন্য ঐচ্ছিক — সাধারণ পণ্যে ফাঁকা রাখা যাবে।",
+      toggleBuilderBtn: "কালার, সাইজ ও পাইকারি রেট",
+      galleryTitle: "অতিরিক্ত গ্যালারি ছবি (একাধিক ছবি)",
+      galleryHint: "অতিরিক্ত অ্যাঙ্গেলের ছবি আপলোড করুন। কাস্টমার থাম্বনেইল দেখতে ও কালার অনুযায়ী ছবি বদলাতে পারবে।",
+      addImageUrlPlaceholder: "অতিরিক্ত ছবির লিংক দিন (https://...)",
+      addImageBtn: "লিংক যোগ",
+      uploadGalleryBtn: "Drive-এ গ্যালারি ছবি আপলোড",
+      primaryImageLabel: "মূল ছবি",
+      colorsTitle: "কালার সোয়াচসমূহ",
+      addColorBtn: "+ নতুন কালার",
+      colorNameEnLabel: "কালার (ইংরেজি)",
+      colorNameEnPlaceholder: "যেমন: Black",
+      colorNameBnLabel: "কালার (বাংলা)",
+      colorNameBnPlaceholder: "যেমন: কালো",
+      colorHexLabel: "রং",
+      colorImageLabel: "এই কালারের ছবির লিংক (ঐচ্ছিক)",
+      sizesLabel: "সাইজ তালিকা (কমা দিয়ে আলাদা)",
+      sizesPlaceholder: "যেমন: S, M, L, XL, XXL অথবা 38, 40, 42",
+      generateMatrixBtn: "কালার × সাইজ ম্যাট্রিক্স তৈরি করুন",
+      clearMatrixBtn: "ম্যাট্রিক্স মুছুন",
+      matrixTitle: "কালার × সাইজ প্রাইস ও স্টক ম্যাট্রিক্স (ঐচ্ছিক)",
+      matrixHint: "মূল পণ্যের দাম ব্যবহার করতে চাইলে Price বা Cost ঘরে 0 রাখুন।",
+      colCombination: "কালার / সাইজ",
+      colVariantSku: "ভ্যারিয়েন্ট SKU",
+      colPriceOverride: "ভিন্ন বিক্রয় মূল্য (৳)",
+      colCostOverride: "ভিন্ন ক্রয়মূল্য (৳)",
+      colStock: "স্টক",
+      colActive: "সক্রিয়",
+      wholesaleTitle: "পাইকারি / বাল্ক অর্ডার রেট (ঐচ্ছিক)",
+      wholesaleMinQtyLabel: "ন্যূনতম পাইকারি পরিমাণ",
+      wholesalePriceLabel: "পাইকারি একক মূল্য (৳)",
+      wholesaleHint: "ক্রেতা এই পরিমাণ বা তার বেশি অর্ডার করলে স্বয়ংক্রিয়ভাবে পাইকারি রেট কার্যকর হবে।",
+      wholesaleCardHintPrefix: "পাইকারি",
+      wholesaleActiveBadge: "পাইকারি রেট প্রযোজ্য হয়েছে",
+      wholesaleUnlockPrefix: "ন্যূনতম",
+      wholesaleUnlockMiddle: "+ পিস কিনলে",
+      wholesaleUnitSuffix: "/ পিস",
+      selectColorLabel: "কালার",
+      selectSizeLabel: "সাইজ",
+      selectedVariantOutOfStock: "নির্বাচিত এই কালার/সাইজটি বর্তমানে স্টকে নেই।",
+      colorsCountSuffix: "টি কালার",
+      sizesCountSuffix: "টি সাইজ",
+    },
+    coupons: {
+      title: "ডিসকাউন্ট কুপন ও প্রমো কোড (Mart_Coupons)",
+      subtitle: "শতকরা (%) বা নির্দিষ্ট টাকা (৳) ডিসকাউন্ট কুপন, ন্যূনতম অর্ডার শর্ত, ব্যবহার সীমা ও মেয়াদ নির্ধারণ করুন।",
+      addTitle: "নতুন ডিসকাউন্ট কুপন তৈরি করুন",
+      codeLabel: "কুপন কোড *",
+      codePlaceholder: "যেমন: WINTER10 বা EID200",
+      discountTypeLabel: "ডিসকাউন্টের ধরন",
+      percentOption: "শতকরা (%)",
+      fixedOption: "নির্দিষ্ট টাকা (৳)",
+      discountValueLabel: "ডিসকাউন্ট পরিমাণ *",
+      maxDiscountLabel: "সর্বোচ্চ ডিসকাউন্ট সীমা (৳)",
+      minOrderLabel: "ন্যূনতম অর্ডার মূল্য (৳)",
+      expiryDateLabel: "শেষ হওয়ার তারিখ",
+      usageLimitLabel: "ব্যবহার সীমা (0 = আনলিমিটেড)",
+      notesLabel: "ক্যাম্পেইন নোট",
+      notesPlaceholder: "যেমন: শীতকালীন কালেকশন বিশেষ ছাড়",
+      createBtn: "কুপন প্রকাশ করুন",
+      creatingBtn: "প্রকাশ হচ্ছে...",
+      emptyTitle: "এখনো কোনো কুপন কোড তৈরি করা হয়নি। উপর থেকে প্রথম ডিসকাউন্ট কুপন তৈরি করুন।",
+      colCode: "কুপন কোড",
+      colOffer: "ডিসকাউন্ট অফার",
+      colRules: "শর্তাবলি",
+      colUsage: "ব্যবহৃত / সীমা",
+      colStatus: "অবস্থা",
+      colActions: "অ্যাকশন",
+      unlimitedUsage: "আনলিমিটেড",
+      noMinOrder: "শর্ত নেই",
+      noExpiry: "মেয়াদহীন",
+      minOrderPrefix: "ন্যূনতম",
+      maxCapPrefix: "সর্বোচ্চ",
+      checkoutLabel: "কুপন / প্রমো কোড",
+      checkoutPlaceholder: "কুপন কোড লিখুন (যেমন: WINTER10)",
+      applyBtn: "প্রয়োগ করুন",
+      applyingBtn: "যাচাই হচ্ছে...",
+      removeBtn: "বাতিল",
+      appliedPrefix: "কুপন যুক্ত হয়েছে",
+      discountRowLabel: "কুপন ছাড়",
+      msgCreated: "কুপন কোড Mart_Coupons-এ তৈরি হয়েছে।",
+      msgUpdated: "কুপনের স্ট্যাটাস আপডেট হয়েছে।",
+      msgDeleted: "কুপন মুছে ফেলা হয়েছে।",
+      errMissingCode: "সঠিক কুপন কোড এবং ধনাত্মক ডিসকাউন্ট মান লিখুন।",
+      errReasons: {
+        MISSING_COUPON_CODE: "অনুগ্রহ করে একটি সঠিক কুপন কোড লিখুন।",
+        COUPON_NOT_FOUND: "এই কুপন কোডটি পাওয়া যায়নি।",
+        COUPON_INACTIVE: "এই কুপন কোডটি বর্তমানে বন্ধ রয়েছে।",
+        COUPON_EXPIRED: "এই কুপন কোডের মেয়াদ শেষ হয়ে গেছে।",
+        COUPON_LIMIT_REACHED: "এই কুপন কোডটির ব্যবহার সীমা পূর্ণ হয়ে গেছে।",
+        COUPON_MIN_ORDER_NOT_MET: "এই কুপনের জন্য ন্যূনতম অর্ডার মূল্য পূর্ণ হয়নি।",
+        DEFAULT: "কুপন কোডটি প্রয়োগ করা যায়নি।",
+      },
+    },
+    qrPayment: {
+      adminSectionTitle: "অফিশিয়াল বিকাশ মার্চেন্ট QR ও Bangla QR পেমেন্ট সেটআপ",
+      adminSectionSubtitle: "আপনার অফিশিয়াল বিকাশ মার্চেন্ট ও Bangla QR কোড ছবি Google Drive-এ আপলোড করুন যাতে ক্রেতারা স্ক্যান বা ডাউনলোড করতে পারেন।",
+      bkashQrUrlLabel: "অফিশিয়াল বিকাশ মার্চেন্ট QR কোড ছবির লিংক",
+      bkashMerchantLabel: "বিকাশ মার্চেন্ট পেমেন্ট নম্বর",
+      bkashMerchantPlaceholder: "যেমন: 017XXXXXXXX",
+      banglaQrUrlLabel: "অফিশিয়াল Bangla QR কোড ছবির লিংক (সব ব্যাংক ও MFS)",
+      banglaQrAccountLabel: "Bangla QR মার্চেন্ট নাম / বিবরণ",
+      banglaQrAccountPlaceholder: "যেমন: Xeetrix Mart · National Bangla QR",
+      uploadQrBtn: "Drive-এ QR আপলোড",
+      qrUploadedMsg: "QR কোড ছবি Google Drive-এ আপলোড সম্পন্ন হয়েছে।",
+      checkoutOnlineOption: "অনলাইন / QR পেমেন্ট",
+      selectQrTypeLabel: "অনলাইন ও QR পেমেন্ট মাধ্যম নির্বাচন করুন",
+      bkashQrTab: "বিকাশ মার্চেন্ট QR",
+      banglaQrTab: "Bangla QR (ব্যাংক ও MFS)",
+      manualMobileTab: "নগদ / রকেট",
+      scanPayTitle: "QR স্ক্যান করুন অথবা ছবি ডাউনলোড করে অ্যাপ থেকে পেমেন্ট করুন",
+      amountToPayLabel: "প্রদেয় টাকা",
+      merchantNoLabel: "মার্চেন্ট নম্বর",
+      copyNoBtn: "কপি করুন",
+      copiedNoBtn: "কপি হয়েছে",
+      downloadQrBtn: "QR ছবি ডাউনলোড",
+      noQrConfiguredHint: "QR ছবি এখনো সেটআপ করা হয়নি। নিচের নম্বর ব্যবহার করুন অথবা ক্যাশ অন ডেলিভারি নিন।",
+      trxRequiredHint: "পেমেন্ট করার পর দ্রুত ভেরিফিকেশনের জন্য TrxID লিখুন।",
+      qrHelpText: "বিকাশ, নগদ, রকেট, সেলফিন বা যেকোনো ব্যাংক অ্যাপে Scan / Gallery Upload দিয়ে পেমেন্ট করা যাবে।",
     },
   },
 };

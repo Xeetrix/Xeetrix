@@ -23,13 +23,19 @@ import {
   Clock,
   Check,
   RotateCw,
+  Download,
+  Copy,
+  Ticket,
+  QrCode,
 } from "lucide-react";
 import { MartHeader } from "./MartHeader";
 import { MartFooter } from "./MartFooter";
 import { useMartI18n } from "./MartI18nProvider";
+import { MART_ENTERPRISE_DICTIONARY } from "@/lib/martEnterpriseI18n";
 import {
   DEFAULT_MART_SETTINGS,
   fetchMartPublicData,
+  findMatchingVariant,
   getCachedMartPublicSnapshot,
   MART_CONTACT_EMAIL,
   MART_CONTACT_PHONE,
@@ -43,12 +49,19 @@ import {
   MartOrderStatus,
   MartPaymentMethod,
   MartProduct,
+  MartProductColor,
   MartSettings,
   normalizeMartImageUrl,
+  parseGalleryUrls,
   parseOrderItems,
+  parseProductColors,
+  parseProductSizes,
   parseProductVariants,
+  parseVariationMatrix,
   placeMartOrder,
+  resolveProductPricing,
   trackMartOrder,
+  validateMartCoupon,
 } from "@/lib/martApi";
 import {
   formatMartDate,
@@ -59,7 +72,11 @@ import {
   toLocalizedDigits,
   translateMartError,
 } from "@/lib/martI18n";
-import { getProductOrderableMaxQty, isProductOrderable } from "@/lib/martOps";
+import {
+  getEffectiveProductStock,
+  getProductOrderableMaxQty,
+  isProductOrderable,
+} from "@/lib/martOps";
 
 const CART_STORAGE_KEY = "xeetrix_mart_cart_v2";
 
@@ -67,21 +84,31 @@ interface CartItem {
   key: string;
   productId: string;
   sku: string;
+  variantSku?: string;
   nameEn: string;
   nameBn: string;
   variant: string;
+  colorName?: string;
+  sizeName?: string;
   unitPrice: number;
   maxStock: number;
   fulfillmentType?: "own_stock" | "dropship";
+  wholesaleMinQty?: number;
+  wholesalePrice?: number;
   imageUrl: string;
   quantity: number;
 }
 
 type SortOption = "featured" | "price_asc" | "price_desc" | "newest";
+type OnlineChannel = "bkash_qr" | "bangla_qr" | "manual";
 
 function ProductMedia({ src, alt, className = "" }: { src: string; alt: string; className?: string }) {
   const [failed, setFailed] = useState(false);
   const resolved = normalizeMartImageUrl(src);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [resolved]);
 
   if (!resolved || failed) {
     return (
@@ -116,6 +143,10 @@ const ORDER_STEPS: MartOrderStatus[] = [
 
 export function MartStorefront() {
   const { lang, t } = useMartI18n();
+  const ent = MART_ENTERPRISE_DICTIONARY[lang];
+  const tvar = ent.variations;
+  const tcop = ent.coupons;
+  const tqr = ent.qrPayment;
 
   const [products, setProducts] = useState<MartProduct[]>([]);
   const [categories, setCategories] = useState<MartCategory[]>([]);
@@ -137,13 +168,32 @@ export function MartStorefront() {
 
   // Quick View Modal State
   const [quickViewProduct, setQuickViewProduct] = useState<MartProduct | null>(null);
+  const [quickViewActiveImage, setQuickViewActiveImage] = useState("");
+  const [quickViewSelectedColor, setQuickViewSelectedColor] =
+    useState<MartProductColor | null>(null);
+  const [quickViewSelectedSize, setQuickViewSelectedSize] = useState("");
   const [quickViewVariant, setQuickViewVariant] = useState("");
   const [quickViewQty, setQuickViewQty] = useState(1);
+
+  // Coupon State
+  const [couponInput, setCouponInput] = useState("");
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [couponError, setCouponError] = useState<string | null>(null);
+  const [appliedCoupon, setAppliedCoupon] = useState<{
+    code: string;
+    discountAmount: number;
+    minOrderAmount: number;
+    discountType: "percent" | "fixed";
+    discountValue: number;
+    maxDiscount: number;
+  } | null>(null);
 
   // Checkout State
   const [deliveryArea, setDeliveryArea] = useState<MartDeliveryArea>("Inside Dhaka");
   const [paymentMethod, setPaymentMethod] = useState<MartPaymentMethod>("Cash on Delivery");
-  const [mobileChannel, setMobileChannel] = useState("bKash");
+  const [onlineChannel, setOnlineChannel] = useState<OnlineChannel>("bkash_qr");
+  const [manualChannel, setManualChannel] = useState<"Nagad" | "Rocket">("Nagad");
+  const [copiedAccountNo, setCopiedAccountNo] = useState(false);
   const [transactionId, setTransactionId] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [phone, setPhone] = useState("");
@@ -159,8 +209,11 @@ export function MartStorefront() {
     deliveryArea: MartDeliveryArea;
     deliveryCharge: number;
     subtotal: number;
+    discountCode?: string;
+    discountAmount?: number;
     totalAmount: number;
     paymentMethod: string;
+    paymentProvider?: string;
     transactionId: string;
     items: MartOrderItem[];
     createdAt: string;
@@ -398,15 +451,74 @@ export function MartStorefront() {
     labelMap,
   ]);
 
+  const productMap = useMemo(() => {
+    const map = new Map<string, MartProduct>();
+    products.forEach((p) => map.set(p.id, p));
+    return map;
+  }, [products]);
+
+  function resolveCartItemUnit(item: CartItem): {
+    effectiveUnitPrice: number;
+    isWholesaleApplied: boolean;
+    minWholesaleQty: number;
+    wholesaleRate: number;
+  } {
+    const liveProd = productMap.get(item.productId);
+    const minQty = liveProd
+      ? Number(liveProd.wholesaleMinQty) || 0
+      : Number(item.wholesaleMinQty) || 0;
+    const wholesaleRate = liveProd
+      ? Number(liveProd.wholesalePrice) || 0
+      : Number(item.wholesalePrice) || 0;
+
+    let basePrice = item.unitPrice;
+    if (liveProd) {
+      const matrix = parseVariationMatrix(liveProd.variationMatrixJson);
+      const cell = findMatchingVariant(matrix, item.colorName, item.sizeName);
+      basePrice =
+        cell && cell.priceOverride > 0 ? cell.priceOverride : Number(liveProd.price) || item.unitPrice;
+    }
+
+    const isWholesaleApplied = minQty > 0 && wholesaleRate > 0 && item.quantity >= minQty;
+    return {
+      effectiveUnitPrice: isWholesaleApplied ? wholesaleRate : basePrice,
+      isWholesaleApplied,
+      minWholesaleQty: minQty,
+      wholesaleRate,
+    };
+  }
+
   const cartCount = useMemo(
     () => cart.reduce((sum, item) => sum + item.quantity, 0),
     [cart]
   );
 
   const cartSubtotal = useMemo(
-    () => cart.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0),
-    [cart]
+    () =>
+      cart.reduce((sum, item) => {
+        const { effectiveUnitPrice } = resolveCartItemUnit(item);
+        return sum + effectiveUnitPrice * item.quantity;
+      }, 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [cart, productMap]
   );
+
+  const effectiveDiscount = useMemo(() => {
+    if (!appliedCoupon || cartSubtotal <= 0) return 0;
+    if (appliedCoupon.minOrderAmount > 0 && cartSubtotal < appliedCoupon.minOrderAmount) {
+      return 0;
+    }
+    let raw = 0;
+    if (appliedCoupon.discountType === "fixed") {
+      raw = appliedCoupon.discountValue;
+    } else {
+      raw = Math.round((cartSubtotal * appliedCoupon.discountValue) / 100);
+      if (appliedCoupon.maxDiscount > 0) {
+        raw = Math.min(raw, appliedCoupon.maxDiscount);
+      }
+    }
+    return Math.min(cartSubtotal, Math.max(0, raw));
+  }, [appliedCoupon, cartSubtotal]);
 
   const insideDhakaFee = Math.max(0, Number(settings.insideDhakaCharge) || 70);
   const outsideDhakaFee = Math.max(0, Number(settings.outsideDhakaCharge) || 130);
@@ -416,7 +528,7 @@ export function MartStorefront() {
       : deliveryArea === "Inside Dhaka"
       ? insideDhakaFee
       : outsideDhakaFee;
-  const grandTotal = cartSubtotal + deliveryFee;
+  const grandTotal = Math.max(0, cartSubtotal - effectiveDiscount) + deliveryFee;
 
   // Bilingual Settings Resolution
   const activePromoText = pickLocalized(settings.promoTextEn, settings.promoTextBn, lang);
@@ -424,23 +536,66 @@ export function MartStorefront() {
   const activeHeroSubtitle = pickLocalized(settings.heroSubtitleEn, settings.heroSubtitleBn, lang);
   const activeHeroCta = pickLocalized(settings.heroCtaTextEn, settings.heroCtaTextBn, lang);
 
-  function addToCart(product: MartProduct, variantChoice = "", qtyToAdd = 1, openDrawer = false) {
+  function addToCart(
+    product: MartProduct,
+    options?: {
+      variantChoice?: string;
+      color?: MartProductColor | null;
+      size?: string;
+      qtyToAdd?: number;
+      openDrawer?: boolean;
+      overrideImage?: string;
+    }
+  ) {
     if (!isProductOrderable(product)) return;
-    const maxCap = Math.max(1, getProductOrderableMaxQty(product));
+    const colors = parseProductColors(product.colorsJson);
+    const sizes = parseProductSizes(product.sizesList);
+    const matrix = parseVariationMatrix(product.variationMatrixJson);
+
+    const selectedColor = options?.color !== undefined ? options.color : colors[0] || null;
+    const selectedSize = options?.size !== undefined ? options.size : sizes[0] || "";
+    const matchedCell = findMatchingVariant(matrix, selectedColor?.nameEn, selectedSize);
+
+    if (matchedCell && !matchedCell.active) return;
+
+    const maxCap = Math.max(1, getProductOrderableMaxQty(product, matchedCell));
+    if (product.fulfillmentType !== "dropship" && matchedCell && matchedCell.stock <= 0) {
+      return;
+    }
+
     const localizedVariants = parseProductVariants(
       pickLocalized(product.variantsEn, product.variantsBn, lang)
     );
+    const colorLabel = selectedColor
+      ? pickLocalized(selectedColor.nameEn, selectedColor.nameBn, lang)
+      : "";
+    const structuredVariant = [colorLabel, selectedSize].filter(Boolean).join(" / ");
     const chosenVariant =
-      variantChoice || (localizedVariants.length > 0 ? localizedVariants[0] : "");
-    const itemKey = `${product.id}__${chosenVariant}`;
+      structuredVariant ||
+      options?.variantChoice ||
+      (localizedVariants.length > 0 ? localizedVariants[0] : "");
+
+    const qtyToAdd = Math.max(1, options?.qtyToAdd || 1);
+    const unitPricing = resolveProductPricing(product, matchedCell, 1);
+    const itemKey = `${product.id}__${selectedColor?.nameEn || ""}__${selectedSize}__${
+      options?.variantChoice || ""
+    }`;
     const displayName = pickLocalized(product.nameEn, product.nameBn, lang, product.sku);
+    const resolvedImage =
+      options?.overrideImage || selectedColor?.imageUrl || product.imageUrl;
 
     setCart((prev) => {
       const existing = prev.find((i) => i.key === itemKey);
       if (existing) {
         return prev.map((i) =>
           i.key === itemKey
-            ? { ...i, maxStock: maxCap, quantity: Math.min(maxCap, i.quantity + qtyToAdd) }
+            ? {
+                ...i,
+                maxStock: maxCap,
+                wholesaleMinQty: product.wholesaleMinQty,
+                wholesalePrice: product.wholesalePrice,
+                quantity: Math.min(maxCap, i.quantity + qtyToAdd),
+              }
             : i
         );
       }
@@ -449,14 +604,19 @@ export function MartStorefront() {
         {
           key: itemKey,
           productId: product.id,
-          sku: product.sku,
+          sku: matchedCell?.sku || product.sku,
+          variantSku: matchedCell?.sku || "",
           nameEn: product.nameEn || product.nameBn,
           nameBn: product.nameBn || product.nameEn,
           variant: chosenVariant,
-          unitPrice: product.price,
+          colorName: selectedColor?.nameEn || "",
+          sizeName: selectedSize || "",
+          unitPrice: unitPricing.baseUnitPrice,
           maxStock: maxCap,
           fulfillmentType: product.fulfillmentType === "dropship" ? "dropship" : "own_stock",
-          imageUrl: product.imageUrl,
+          wholesaleMinQty: product.wholesaleMinQty,
+          wholesalePrice: product.wholesalePrice,
+          imageUrl: resolvedImage,
           quantity: Math.min(maxCap, qtyToAdd),
         },
       ];
@@ -469,7 +629,7 @@ export function MartStorefront() {
       setAddedBanner((prev) => (prev === bannerMsg ? null : prev));
     }, 3000);
 
-    if (openDrawer) {
+    if (options?.openDrawer) {
       setCartOpen(true);
     }
   }
@@ -492,12 +652,71 @@ export function MartStorefront() {
   }
 
   function openQuickView(product: MartProduct) {
-    const variants = parseProductVariants(
+    const colors = parseProductColors(product.colorsJson);
+    const sizes = parseProductSizes(product.sizesList);
+    const gallery = parseGalleryUrls(product.galleryUrls, product.imageUrl);
+    const legacyVariants = parseProductVariants(
       pickLocalized(product.variantsEn, product.variantsBn, lang)
     );
+    const firstColor = colors[0] || null;
     setQuickViewProduct(product);
-    setQuickViewVariant(variants.length > 0 ? variants[0] : "");
+    setQuickViewSelectedColor(firstColor);
+    setQuickViewSelectedSize(sizes[0] || "");
+    setQuickViewActiveImage(firstColor?.imageUrl || gallery[0] || product.imageUrl || "");
+    setQuickViewVariant(
+      colors.length === 0 && sizes.length === 0 && legacyVariants.length > 0
+        ? legacyVariants[0]
+        : ""
+    );
     setQuickViewQty(1);
+  }
+
+  async function handleApplyCoupon() {
+    setCouponError(null);
+    const clean = couponInput.trim().toUpperCase();
+    if (!clean) {
+      setCouponError(tcop.errReasons.MISSING_COUPON_CODE);
+      return;
+    }
+    setCouponLoading(true);
+    try {
+      const res = await validateMartCoupon(clean, cartSubtotal);
+      if (!res.valid) {
+        const reasonKey = (res.reasonCode || "DEFAULT") as keyof typeof tcop.errReasons;
+        const msg = tcop.errReasons[reasonKey] || tcop.errReasons.DEFAULT;
+        setCouponError(
+          reasonKey === "COUPON_MIN_ORDER_NOT_MET" && res.minOrderAmount
+            ? `${msg} (${formatMartPrice(res.minOrderAmount, lang)})`
+            : msg
+        );
+        return;
+      }
+      setAppliedCoupon({
+        code: res.coupon?.code || clean,
+        discountAmount: res.discountAmount,
+        minOrderAmount: Number(res.coupon?.minOrderAmount) || 0,
+        discountType: res.coupon?.discountType === "fixed" ? "fixed" : "percent",
+        discountValue: Number(res.coupon?.discountValue) || 0,
+        maxDiscount: Number(res.coupon?.maxDiscount) || 0,
+      });
+      setCouponInput(res.coupon?.code || clean);
+    } catch (err) {
+      const apiErr = err as MartApiError;
+      setCouponError(translateMartError(apiErr?.message, lang, apiErr?.code));
+    } finally {
+      setCouponLoading(false);
+    }
+  }
+
+  function handleCopyPaymentNumber(text: string) {
+    if (!text) return;
+    try {
+      navigator.clipboard.writeText(text);
+      setCopiedAccountNo(true);
+      setTimeout(() => setCopiedAccountNo(false), 2000);
+    } catch {
+      // Ignore clipboard permission errors
+    }
   }
 
   async function handleCheckoutSubmit(e: React.FormEvent) {
@@ -513,23 +732,48 @@ export function MartStorefront() {
       return;
     }
 
-    const orderItems: MartOrderItem[] = cart.map((item) => ({
-      productId: item.productId,
-      sku: item.sku,
-      name: pickLocalized(item.nameEn, item.nameBn, lang),
-      nameEn: item.nameEn,
-      nameBn: item.nameBn,
-      variant: item.variant,
-      unitPrice: item.unitPrice,
-      quantity: item.quantity,
-      lineTotal: item.unitPrice * item.quantity,
-      fulfillmentType: item.fulfillmentType || "own_stock",
-      imageUrl: item.imageUrl,
-    }));
+    const orderItems: MartOrderItem[] = cart.map((item) => {
+      const { effectiveUnitPrice, isWholesaleApplied } = resolveCartItemUnit(item);
+      return {
+        productId: item.productId,
+        sku: item.sku,
+        variantSku: item.variantSku || "",
+        name: pickLocalized(item.nameEn, item.nameBn, lang),
+        nameEn: item.nameEn,
+        nameBn: item.nameBn,
+        variant: item.variant,
+        colorName: item.colorName || "",
+        sizeName: item.sizeName || "",
+        isWholesale: isWholesaleApplied,
+        unitPrice: effectiveUnitPrice,
+        quantity: item.quantity,
+        lineTotal: effectiveUnitPrice * item.quantity,
+        fulfillmentType: item.fulfillmentType || "own_stock",
+        imageUrl: item.imageUrl,
+      };
+    });
+
+    const activeProvider =
+      paymentMethod === "Mobile Banking"
+        ? onlineChannel === "bkash_qr"
+          ? tqr.bkashQrTab
+          : onlineChannel === "bangla_qr"
+          ? tqr.banglaQrTab
+          : manualChannel
+        : "";
+
+    const serverProviderValue =
+      paymentMethod === "Mobile Banking"
+        ? onlineChannel === "bkash_qr"
+          ? "bKash Merchant QR"
+          : onlineChannel === "bangla_qr"
+          ? "Bangla QR"
+          : manualChannel
+        : "";
 
     const paymentLabel =
       paymentMethod === "Mobile Banking"
-        ? `${t.cart.mobileBankingOption} (${mobileChannel})`
+        ? `${tqr.checkoutOnlineOption} (${activeProvider})`
         : t.cart.codOption;
 
     setSubmittingOrder(true);
@@ -537,6 +781,8 @@ export function MartStorefront() {
       const res = await placeMartOrder({
         items: orderItems,
         subtotal: cartSubtotal,
+        discountCode: effectiveDiscount > 0 && appliedCoupon ? appliedCoupon.code : "",
+        discountAmount: effectiveDiscount,
         deliveryArea,
         deliveryCharge: deliveryFee,
         totalAmount: grandTotal,
@@ -544,12 +790,16 @@ export function MartStorefront() {
         phone: phone.trim(),
         address: address.trim(),
         paymentMethod,
+        paymentProvider: serverProviderValue,
         transactionId: paymentMethod === "Mobile Banking" ? transactionId.trim() : "",
         notes:
-          paymentMethod === "Mobile Banking" && mobileChannel
-            ? `[${mobileChannel}] ${notes.trim()}`.trim()
+          paymentMethod === "Mobile Banking" && serverProviderValue
+            ? `[${serverProviderValue}] ${notes.trim()}`.trim()
             : notes.trim(),
       });
+
+      const srv = res.record;
+      const confirmedItems = srv?.itemsJson ? parseOrderItems(srv.itemsJson) : orderItems;
 
       setConfirmedInvoice({
         orderId: res.id,
@@ -557,16 +807,22 @@ export function MartStorefront() {
         phone: phone.trim(),
         address: address.trim(),
         deliveryArea,
-        deliveryCharge: deliveryFee,
-        subtotal: cartSubtotal,
-        totalAmount: grandTotal,
+        deliveryCharge: srv ? Number(srv.deliveryCharge) || deliveryFee : deliveryFee,
+        subtotal: srv ? Number(srv.subtotal) || cartSubtotal : cartSubtotal,
+        discountCode: srv?.discountCode ?? (effectiveDiscount > 0 ? appliedCoupon?.code : ""),
+        discountAmount:
+          srv?.discountAmount !== undefined ? Number(srv.discountAmount) || 0 : effectiveDiscount,
+        totalAmount: srv ? Number(srv.totalAmount) || grandTotal : grandTotal,
         paymentMethod: paymentLabel,
+        paymentProvider: srv?.paymentProvider || serverProviderValue,
         transactionId: paymentMethod === "Mobile Banking" ? transactionId.trim() : "",
-        items: orderItems,
+        items: confirmedItems.length > 0 ? confirmedItems : orderItems,
         createdAt: new Date().toISOString(),
       });
 
       setCart([]);
+      setAppliedCoupon(null);
+      setCouponInput("");
       setCustomerName("");
       setPhone("");
       setAddress("");
@@ -998,6 +1254,10 @@ export function MartStorefront() {
                     product.comparePrice > 0 && product.comparePrice > product.price;
                   const isDropship = product.fulfillmentType === "dropship";
                   const outOfStock = !isProductOrderable(product);
+                  const effectiveStock = getEffectiveProductStock(product);
+                  const colors = parseProductColors(product.colorsJson);
+                  const sizes = parseProductSizes(product.sizesList);
+                  const hasWholesale = product.wholesaleMinQty > 0 && product.wholesalePrice > 0;
                   const prodName = pickLocalized(
                     product.nameEn,
                     product.nameBn,
@@ -1051,7 +1311,7 @@ export function MartStorefront() {
                                 ? t.catalog.outOfStock
                                 : isDropship
                                 ? t.catalog.availableToOrder
-                                : `${toLocalizedDigits(product.stock, lang)} ${t.catalog.inStockSuffix}`}
+                                : `${toLocalizedDigits(effectiveStock, lang)} ${t.catalog.inStockSuffix}`}
                             </span>
                           </div>
 
@@ -1065,7 +1325,30 @@ export function MartStorefront() {
                             </button>
                           </h2>
 
-                          {variants.length > 0 && (
+                          {colors.length > 0 && (
+                            <div className="flex items-center gap-1.5 pt-0.5">
+                              {colors.slice(0, 5).map((clr) => (
+                                <span
+                                  key={clr.id}
+                                  title={pickLocalized(clr.nameEn, clr.nameBn, lang)}
+                                  className="inline-block h-3.5 w-3.5 rounded-full border border-slate-300"
+                                  style={{ backgroundColor: clr.hex || "#0B5336" }}
+                                />
+                              ))}
+                              {colors.length > 5 && (
+                                <span className="font-mono text-[10px] text-slate-400">
+                                  +{toLocalizedDigits(colors.length - 5, lang)}
+                                </span>
+                              )}
+                              {sizes.length > 0 && (
+                                <span className="text-[11px] text-slate-500 ml-1">
+                                  · {sizes.slice(0, 4).join(", ")}
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {colors.length === 0 && variants.length > 0 && (
                             <div className="text-xs text-slate-500">
                               {t.catalog.optionsPrefix}: {variants.join(" · ")}
                             </div>
@@ -1075,6 +1358,14 @@ export function MartStorefront() {
                             <p className="text-sm text-slate-600 line-clamp-2 leading-relaxed">
                               {prodDesc}
                             </p>
+                          )}
+
+                          {hasWholesale && (
+                            <div className="text-[11px] font-semibold text-[#0B5336] font-mono tabular-nums">
+                              {tvar.wholesaleCardHintPrefix}:{" "}
+                              {formatMartPrice(product.wholesalePrice, lang)} (
+                              {toLocalizedDigits(product.wholesaleMinQty, lang)}+)
+                            </div>
                           )}
                         </div>
                       </div>
@@ -1111,7 +1402,7 @@ export function MartStorefront() {
                           <button
                             type="button"
                             disabled={outOfStock}
-                            onClick={() => addToCart(product, "", 1, false)}
+                            onClick={() => addToCart(product, { qtyToAdd: 1, openDrawer: false })}
                             className="inline-flex items-center gap-1.5 rounded-xl bg-[#0B5336] px-4 py-2.5 text-xs font-semibold text-white hover:bg-[#08412A] disabled:opacity-50 transition-colors min-h-[40px] whitespace-nowrap"
                           >
                             <ShoppingCart className="h-3.5 w-3.5" />
@@ -1135,197 +1426,371 @@ export function MartStorefront() {
         }}
       />
 
-      {/* PRODUCT QUICK VIEW MODAL */}
-      {quickViewProduct && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="quick-view-title"
-        >
-          <div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 bg-slate-50">
-              <div className="text-xs font-semibold text-slate-500">
-                {[
-                  ...parseCsvSlugs(quickViewProduct.categories).map((slug) => {
-                    const c = categoryMap.get(slug);
-                    return c ? pickLocalized(c.nameEn, c.nameBn, lang, slug) : slug;
-                  }),
-                  ...parseCsvSlugs(quickViewProduct.labels).map((slug) => {
-                    const l = labelMap.get(slug);
-                    return l ? pickLocalized(l.nameEn, l.nameBn, lang, slug) : slug;
-                  }),
-                ].join(" · ")}
-                {quickViewProduct.sku
-                  ? ` · ${t.common.sku} ${quickViewProduct.sku}`
-                  : ""}
+      {/* PRODUCT QUICK VIEW MODAL WITH GALLERY, COLOR SWATCHES, SIZES & WHOLESALE PRICING */}
+      {quickViewProduct && (() => {
+        const qGallery = parseGalleryUrls(
+          quickViewProduct.galleryUrls,
+          quickViewProduct.imageUrl
+        );
+        const qColors = parseProductColors(quickViewProduct.colorsJson);
+        const qSizes = parseProductSizes(quickViewProduct.sizesList);
+        const qMatrix = parseVariationMatrix(quickViewProduct.variationMatrixJson);
+        const activeCell = findMatchingVariant(
+          qMatrix,
+          quickViewSelectedColor?.nameEn,
+          quickViewSelectedSize
+        );
+        const qPricing = resolveProductPricing(quickViewProduct, activeCell, quickViewQty);
+        const qMaxQty = Math.max(1, getProductOrderableMaxQty(quickViewProduct, activeCell));
+        const qVariantOut =
+          !isProductOrderable(quickViewProduct) ||
+          (activeCell
+            ? !activeCell.active ||
+              (quickViewProduct.fulfillmentType !== "dropship" && activeCell.stock <= 0)
+            : false);
+        const qMinWholesale = Number(quickViewProduct.wholesaleMinQty) || 0;
+        const qWholesalePrice = Number(quickViewProduct.wholesalePrice) || 0;
+        const legacyVars = parseProductVariants(
+          pickLocalized(quickViewProduct.variantsEn, quickViewProduct.variantsBn, lang)
+        );
+        const activeDisplayStock = activeCell
+          ? activeCell.stock
+          : getEffectiveProductStock(quickViewProduct);
+
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="quick-view-title"
+          >
+            <div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 bg-slate-50">
+                <div className="text-xs font-semibold text-slate-500">
+                  {[
+                    ...parseCsvSlugs(quickViewProduct.categories).map((slug) => {
+                      const c = categoryMap.get(slug);
+                      return c ? pickLocalized(c.nameEn, c.nameBn, lang, slug) : slug;
+                    }),
+                    ...parseCsvSlugs(quickViewProduct.labels).map((slug) => {
+                      const l = labelMap.get(slug);
+                      return l ? pickLocalized(l.nameEn, l.nameBn, lang, slug) : slug;
+                    }),
+                  ].join(" · ")}
+                  {(activeCell?.sku || quickViewProduct.sku)
+                    ? ` · ${t.common.sku} ${activeCell?.sku || quickViewProduct.sku}`
+                    : ""}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setQuickViewProduct(null)}
+                  aria-label={t.quickView.closeAria}
+                  className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-200 hover:text-slate-900"
+                >
+                  <X className="h-5 w-5" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setQuickViewProduct(null)}
-                aria-label={t.quickView.closeAria}
-                className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-200 hover:text-slate-900"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
 
-            <div className="overflow-y-auto p-6 grid grid-cols-1 md:grid-cols-12 gap-6">
-              <div className="md:col-span-6 aspect-[4/3] rounded-xl bg-slate-100 overflow-hidden border border-slate-200">
-                <ProductMedia
-                  src={quickViewProduct.imageUrl}
-                  alt={pickLocalized(quickViewProduct.nameEn, quickViewProduct.nameBn, lang)}
-                />
-              </div>
-
-              <div className="md:col-span-6 flex flex-col justify-between space-y-5">
-                <div className="space-y-3">
-                  <h2
-                    id="quick-view-title"
-                    className="font-display text-2xl font-bold text-slate-900 leading-snug"
-                  >
-                    {pickLocalized(quickViewProduct.nameEn, quickViewProduct.nameBn, lang)}
-                  </h2>
-
-                  <div className="flex items-baseline gap-3">
-                    <span className="font-mono text-2xl font-bold text-[#0B5336] tabular-nums">
-                      {formatMartPrice(quickViewProduct.price, lang)}
-                    </span>
-                    {quickViewProduct.comparePrice > quickViewProduct.price && (
-                      <span className="font-mono text-sm text-slate-400 line-through tabular-nums">
-                        {formatMartPrice(quickViewProduct.comparePrice, lang)}
-                      </span>
-                    )}
+              <div className="overflow-y-auto p-6 grid grid-cols-1 md:grid-cols-12 gap-6">
+                {/* Multi-Image Gallery Viewer */}
+                <div className="md:col-span-6 space-y-3">
+                  <div className="aspect-[4/3] rounded-xl bg-slate-100 overflow-hidden border border-slate-200">
+                    <ProductMedia
+                      src={quickViewActiveImage || quickViewProduct.imageUrl}
+                      alt={pickLocalized(quickViewProduct.nameEn, quickViewProduct.nameBn, lang)}
+                    />
                   </div>
-
-                  <div className="text-xs font-mono text-slate-600 tabular-nums">
-                    {t.quickView.availabilityLabel}:{" "}
-                    <span
-                      className={
-                        isProductOrderable(quickViewProduct)
-                          ? "font-semibold text-[#0B5336]"
-                          : "font-semibold text-red-600"
-                      }
-                    >
-                      {!isProductOrderable(quickViewProduct)
-                        ? t.quickView.outOfStock
-                        : quickViewProduct.fulfillmentType === "dropship"
-                        ? t.quickView.availableReady
-                        : `${toLocalizedDigits(quickViewProduct.stock, lang)} ${t.quickView.unitsInStockSuffix}`}
-                    </span>
-                  </div>
-
-                  <p className="text-sm text-slate-600 leading-relaxed pt-1">
-                    {pickLocalized(
-                      quickViewProduct.descriptionEn,
-                      quickViewProduct.descriptionBn,
-                      lang,
-                      t.quickView.defaultDesc
-                    )}
-                  </p>
-
-                  {parseProductVariants(
-                    pickLocalized(quickViewProduct.variantsEn, quickViewProduct.variantsBn, lang)
-                  ).length > 0 && (
-                    <div className="pt-2 space-y-2">
-                      <label className="block text-xs font-semibold text-slate-700">
-                        {t.quickView.selectVariant}
-                      </label>
-                      <div className="flex flex-wrap gap-2">
-                        {parseProductVariants(
-                          pickLocalized(
-                            quickViewProduct.variantsEn,
-                            quickViewProduct.variantsBn,
-                            lang
-                          )
-                        ).map((variant) => (
+                  {qGallery.length > 1 && (
+                    <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                      {qGallery.map((imgUrl, idx) => {
+                        const active = imgUrl === (quickViewActiveImage || quickViewProduct.imageUrl);
+                        return (
                           <button
-                            key={variant}
+                            key={`${imgUrl}-${idx}`}
                             type="button"
-                            onClick={() => setQuickViewVariant(variant)}
-                            className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
-                              quickViewVariant === variant
-                                ? "border-[#0B5336] bg-[#0B5336] text-white"
-                                : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                            onClick={() => setQuickViewActiveImage(imgUrl)}
+                            className={`h-14 w-14 rounded-lg overflow-hidden border-2 shrink-0 transition-colors ${
+                              active ? "border-[#0B5336]" : "border-slate-200 hover:border-slate-400"
                             }`}
                           >
-                            {variant}
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={normalizeMartImageUrl(imgUrl)}
+                              alt={pickLocalized(
+                                quickViewProduct.nameEn,
+                                quickViewProduct.nameBn,
+                                lang
+                              )}
+                              referrerPolicy="no-referrer"
+                              className="h-full w-full object-cover"
+                            />
                           </button>
-                        ))}
-                      </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
 
-                <div className="space-y-3 pt-4 border-t border-slate-200">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-slate-700">
-                      {t.quickView.quantity}
-                    </span>
-                    <div className="inline-flex items-center rounded-xl border border-slate-200 bg-slate-50">
-                      <button
-                        type="button"
-                        onClick={() => setQuickViewQty((q) => Math.max(1, q - 1))}
-                        aria-label={t.quickView.decreaseQtyAria}
-                        className="p-2 text-slate-600 hover:text-slate-900"
-                      >
-                        <Minus className="h-3.5 w-3.5" />
-                      </button>
-                      <span className="w-10 text-center font-mono text-sm font-bold tabular-nums">
-                        {toLocalizedDigits(quickViewQty, lang)}
+                {/* Product Details + Interactive Variations */}
+                <div className="md:col-span-6 flex flex-col justify-between space-y-5">
+                  <div className="space-y-3">
+                    <h2
+                      id="quick-view-title"
+                      className="font-display text-2xl font-bold text-slate-900 leading-snug"
+                    >
+                      {pickLocalized(quickViewProduct.nameEn, quickViewProduct.nameBn, lang)}
+                    </h2>
+
+                    <div className="flex flex-wrap items-baseline gap-3">
+                      <span className="font-mono text-2xl font-bold text-[#0B5336] tabular-nums">
+                        {formatMartPrice(qPricing.unitPrice, lang)}
                       </span>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setQuickViewQty((q) =>
-                            Math.min(
-                              Math.max(1, getProductOrderableMaxQty(quickViewProduct)),
-                              q + 1
-                            )
-                          )
-                        }
-                        aria-label={t.quickView.increaseQtyAria}
-                        className="p-2 text-slate-600 hover:text-slate-900"
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                      </button>
+                      {qPricing.comparePrice > qPricing.unitPrice && (
+                        <span className="font-mono text-sm text-slate-400 line-through tabular-nums">
+                          {formatMartPrice(qPricing.comparePrice, lang)}
+                        </span>
+                      )}
+                      {qPricing.isWholesale && (
+                        <span className="rounded bg-brand-50 border border-brand-200 px-2 py-0.5 text-[11px] font-semibold text-[#0B5336]">
+                          {tvar.wholesaleActiveBadge}
+                        </span>
+                      )}
                     </div>
+
+                    {qMinWholesale > 0 && qWholesalePrice > 0 && !qPricing.isWholesale && (
+                      <div className="rounded-lg border border-brand-200 bg-brand-50 px-3 py-1.5 text-[11px] font-medium text-[#0B5336] font-mono tabular-nums">
+                        {tvar.wholesaleUnlockPrefix}{" "}
+                        {toLocalizedDigits(qMinWholesale, lang)} {tvar.wholesaleUnlockMiddle}{" "}
+                        <strong>{formatMartPrice(qWholesalePrice, lang)}</strong>{" "}
+                        {tvar.wholesaleUnitSuffix}
+                      </div>
+                    )}
+
+                    <div className="text-xs font-mono text-slate-600 tabular-nums">
+                      {t.quickView.availabilityLabel}:{" "}
+                      <span
+                        className={
+                          !qVariantOut
+                            ? "font-semibold text-[#0B5336]"
+                            : "font-semibold text-red-600"
+                        }
+                      >
+                        {qVariantOut
+                          ? t.quickView.outOfStock
+                          : quickViewProduct.fulfillmentType === "dropship"
+                          ? t.quickView.availableReady
+                          : `${toLocalizedDigits(activeDisplayStock, lang)} ${t.quickView.unitsInStockSuffix}`}
+                      </span>
+                    </div>
+
+                    <p className="text-sm text-slate-600 leading-relaxed pt-1">
+                      {pickLocalized(
+                        quickViewProduct.descriptionEn,
+                        quickViewProduct.descriptionBn,
+                        lang,
+                        t.quickView.defaultDesc
+                      )}
+                    </p>
+
+                    {/* Structured Color Swatches */}
+                    {qColors.length > 0 && (
+                      <div className="pt-2 space-y-2">
+                        <div className="text-xs font-semibold text-slate-700">
+                          {tvar.selectColorLabel}:{" "}
+                          <span className="text-slate-900">
+                            {quickViewSelectedColor
+                              ? pickLocalized(
+                                  quickViewSelectedColor.nameEn,
+                                  quickViewSelectedColor.nameBn,
+                                  lang
+                                )
+                              : ""}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {qColors.map((clr) => {
+                            const selected = quickViewSelectedColor?.id === clr.id;
+                            const label = pickLocalized(clr.nameEn, clr.nameBn, lang);
+                            return (
+                              <button
+                                key={clr.id}
+                                type="button"
+                                onClick={() => {
+                                  setQuickViewSelectedColor(clr);
+                                  if (clr.imageUrl) {
+                                    setQuickViewActiveImage(clr.imageUrl);
+                                  }
+                                }}
+                                className={`inline-flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                                  selected
+                                    ? "border-[#0B5336] bg-brand-50 text-[#0B5336]"
+                                    : "border-slate-200 bg-white text-slate-700 hover:border-slate-400"
+                                }`}
+                              >
+                                <span
+                                  className="h-3.5 w-3.5 rounded-full border border-slate-300 shrink-0"
+                                  style={{ backgroundColor: clr.hex || "#0B5336" }}
+                                />
+                                <span>{label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Structured Size Matrix Chips */}
+                    {qSizes.length > 0 && (
+                      <div className="pt-2 space-y-2">
+                        <div className="text-xs font-semibold text-slate-700">
+                          {tvar.selectSizeLabel}:{" "}
+                          <span className="font-mono text-slate-900">{quickViewSelectedSize}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {qSizes.map((sz) => {
+                            const cell = findMatchingVariant(
+                              qMatrix,
+                              quickViewSelectedColor?.nameEn,
+                              sz
+                            );
+                            const cellDisabled =
+                              cell &&
+                              (!cell.active ||
+                                (quickViewProduct.fulfillmentType !== "dropship" &&
+                                  cell.stock <= 0));
+                            const selected = quickViewSelectedSize === sz;
+                            return (
+                              <button
+                                key={sz}
+                                type="button"
+                                onClick={() => setQuickViewSelectedSize(sz)}
+                                className={`rounded-lg border px-3 py-1.5 text-xs font-mono font-semibold transition-colors ${
+                                  selected
+                                    ? "border-[#0B5336] bg-[#0B5336] text-white"
+                                    : cellDisabled
+                                    ? "border-slate-200 bg-slate-100 text-slate-400 line-through"
+                                    : "border-slate-200 bg-white text-slate-700 hover:border-slate-400"
+                                }`}
+                              >
+                                {sz}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Legacy Single-Line Variants Fallback (when no colors/sizes configured) */}
+                    {qColors.length === 0 && qSizes.length === 0 && legacyVars.length > 0 && (
+                      <div className="pt-2 space-y-2">
+                        <label className="block text-xs font-semibold text-slate-700">
+                          {t.quickView.selectVariant}
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          {legacyVars.map((variant) => (
+                            <button
+                              key={variant}
+                              type="button"
+                              onClick={() => setQuickViewVariant(variant)}
+                              className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                                quickViewVariant === variant
+                                  ? "border-[#0B5336] bg-[#0B5336] text-white"
+                                  : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                              }`}
+                            >
+                              {variant}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {qVariantOut && isProductOrderable(quickViewProduct) && (
+                      <p className="text-xs font-medium text-red-600">
+                        {tvar.selectedVariantOutOfStock}
+                      </p>
+                    )}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      type="button"
-                      disabled={!isProductOrderable(quickViewProduct)}
-                      onClick={() => {
-                        addToCart(quickViewProduct, quickViewVariant, quickViewQty, false);
-                        setQuickViewProduct(null);
-                      }}
-                      className="btn-outline py-3 text-xs gap-1.5 disabled:opacity-50"
-                    >
-                      <ShoppingCart className="h-4 w-4" />
-                      <span>{t.quickView.addToCart}</span>
-                    </button>
+                  <div className="space-y-3 pt-4 border-t border-slate-200">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-slate-700">
+                        {t.quickView.quantity}
+                      </span>
+                      <div className="inline-flex items-center rounded-xl border border-slate-200 bg-slate-50">
+                        <button
+                          type="button"
+                          onClick={() => setQuickViewQty((q) => Math.max(1, q - 1))}
+                          aria-label={t.quickView.decreaseQtyAria}
+                          className="p-2 text-slate-600 hover:text-slate-900"
+                        >
+                          <Minus className="h-3.5 w-3.5" />
+                        </button>
+                        <span className="w-10 text-center font-mono text-sm font-bold tabular-nums">
+                          {toLocalizedDigits(quickViewQty, lang)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setQuickViewQty((q) => Math.min(qMaxQty, q + 1))
+                          }
+                          aria-label={t.quickView.increaseQtyAria}
+                          className="p-2 text-slate-600 hover:text-slate-900"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
 
-                    <button
-                      type="button"
-                      disabled={!isProductOrderable(quickViewProduct)}
-                      onClick={() => {
-                        addToCart(quickViewProduct, quickViewVariant, quickViewQty, true);
-                        setQuickViewProduct(null);
-                      }}
-                      className="btn-primary py-3 text-xs disabled:opacity-50"
-                    >
-                      {!isProductOrderable(quickViewProduct)
-                        ? t.quickView.soldOut
-                        : t.quickView.buyNow}
-                    </button>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        disabled={qVariantOut}
+                        onClick={() => {
+                          addToCart(quickViewProduct, {
+                            variantChoice: quickViewVariant,
+                            color: quickViewSelectedColor,
+                            size: quickViewSelectedSize,
+                            qtyToAdd: quickViewQty,
+                            openDrawer: false,
+                            overrideImage:
+                              quickViewSelectedColor?.imageUrl || quickViewProduct.imageUrl,
+                          });
+                          setQuickViewProduct(null);
+                        }}
+                        className="btn-outline py-3 text-xs gap-1.5 disabled:opacity-50"
+                      >
+                        <ShoppingCart className="h-4 w-4" />
+                        <span>{t.quickView.addToCart}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={qVariantOut}
+                        onClick={() => {
+                          addToCart(quickViewProduct, {
+                            variantChoice: quickViewVariant,
+                            color: quickViewSelectedColor,
+                            size: quickViewSelectedSize,
+                            qtyToAdd: quickViewQty,
+                            openDrawer: true,
+                            overrideImage:
+                              quickViewSelectedColor?.imageUrl || quickViewProduct.imageUrl,
+                          });
+                          setQuickViewProduct(null);
+                        }}
+                        className="btn-primary py-3 text-xs disabled:opacity-50"
+                      >
+                        {qVariantOut ? t.quickView.soldOut : t.quickView.buyNow}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* SLIDE-OVER CART & MULTI-PRODUCT CHECKOUT DRAWER */}
       {cartOpen && (
@@ -1412,7 +1877,9 @@ export function MartStorefront() {
                         </div>
                         <div>
                           {t.cart.paymentPrefix}:{" "}
-                          <span className="font-semibold">{confirmedInvoice.paymentMethod}</span>
+                          <span className="font-semibold">
+                            {confirmedInvoice.paymentMethod}
+                          </span>
                         </div>
                         {confirmedInvoice.transactionId && (
                           <div className="font-mono text-slate-600">
@@ -1436,6 +1903,11 @@ export function MartStorefront() {
                             <td className="py-2">
                               <div className="font-medium text-slate-900">
                                 {pickLocalized(it.nameEn || it.name, it.nameBn, lang)}
+                                {it.isWholesale && (
+                                  <span className="ml-1.5 text-[10px] font-semibold text-[#0B5336]">
+                                    [{tvar.wholesaleCardHintPrefix}]
+                                  </span>
+                                )}
                               </div>
                               {it.variant && (
                                 <div className="text-[11px] text-slate-500">{it.variant}</div>
@@ -1459,6 +1931,19 @@ export function MartStorefront() {
                           {formatMartPrice(confirmedInvoice.subtotal, lang)}
                         </span>
                       </div>
+                      {(Number(confirmedInvoice.discountAmount) || 0) > 0 && (
+                        <div className="flex justify-between text-[#0B5336] font-medium">
+                          <span>
+                            {tcop.discountRowLabel}
+                            {confirmedInvoice.discountCode
+                              ? ` (${confirmedInvoice.discountCode})`
+                              : ""}
+                          </span>
+                          <span className="font-mono tabular-nums">
+                            − {formatMartPrice(Number(confirmedInvoice.discountAmount) || 0, lang)}
+                          </span>
+                        </div>
+                      )}
                       <div className="flex justify-between text-slate-600">
                         <span>{t.cart.deliveryFee}</span>
                         <span className="font-mono tabular-nums">
@@ -1512,10 +1997,17 @@ export function MartStorefront() {
                 </div>
               ) : (
                 <>
-                  {/* Cart Items List */}
+                  {/* Cart Items List with Automatic Wholesale Rate */}
                   <div className="space-y-3">
                     {cart.map((item) => {
                       const itemTitle = pickLocalized(item.nameEn, item.nameBn, lang);
+                      const {
+                        effectiveUnitPrice,
+                        isWholesaleApplied,
+                        minWholesaleQty,
+                        wholesaleRate,
+                      } = resolveCartItemUnit(item);
+
                       return (
                         <div
                           key={item.key}
@@ -1528,12 +2020,25 @@ export function MartStorefront() {
                             <div className="text-sm font-semibold text-slate-900 truncate">
                               {itemTitle}
                             </div>
-                            <div className="text-xs text-slate-500">
-                              {item.variant ? `${item.variant} · ` : ""}
+                            <div className="text-xs text-slate-500 flex flex-wrap items-center gap-1.5">
+                              {item.variant && <span>{item.variant} ·</span>}
                               <span className="font-mono tabular-nums">
-                                {formatMartPrice(item.unitPrice, lang)}
+                                {formatMartPrice(effectiveUnitPrice, lang)}
                               </span>
+                              {isWholesaleApplied && (
+                                <span className="text-[10px] font-semibold text-[#0B5336]">
+                                  [{tvar.wholesaleActiveBadge}]
+                                </span>
+                              )}
                             </div>
+                            {!isWholesaleApplied && minWholesaleQty > 0 && wholesaleRate > 0 && (
+                              <div className="text-[10px] text-[#0B5336] font-mono tabular-nums mt-0.5">
+                                {tvar.wholesaleUnlockPrefix}{" "}
+                                {toLocalizedDigits(minWholesaleQty, lang)}{" "}
+                                {tvar.wholesaleUnlockMiddle}{" "}
+                                {formatMartPrice(wholesaleRate, lang)}
+                              </div>
+                            )}
 
                             <div className="flex items-center justify-between mt-2">
                               <div className="inline-flex items-center rounded-lg border border-slate-200 bg-white">
@@ -1558,7 +2063,7 @@ export function MartStorefront() {
 
                               <div className="flex items-center gap-3">
                                 <span className="font-mono text-xs font-bold text-slate-900 tabular-nums">
-                                  {formatMartPrice(item.unitPrice * item.quantity, lang)}
+                                  {formatMartPrice(effectiveUnitPrice * item.quantity, lang)}
                                 </span>
                                 <button
                                   type="button"
@@ -1670,7 +2175,7 @@ export function MartStorefront() {
                       />
                     </div>
 
-                    {/* Payment Method Selector */}
+                    {/* Payment Method Selector + Official bKash Merchant QR & Bangla QR */}
                     <div className="space-y-2.5">
                       <label className="block text-xs font-semibold text-slate-700">
                         {t.cart.paymentMethodLabel}
@@ -1696,49 +2201,259 @@ export function MartStorefront() {
                               : "border-slate-200 bg-white text-slate-700"
                           }`}
                         >
-                          {t.cart.mobileBankingOption}
+                          {tqr.checkoutOnlineOption}
                         </button>
                       </div>
 
                       {paymentMethod === "Mobile Banking" && (
                         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 space-y-3">
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div>
-                              <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                                {t.cart.providerLabel}
-                              </label>
-                              <select
-                                value={mobileChannel}
-                                onChange={(e) => setMobileChannel(e.target.value)}
-                                className="input min-h-[38px] py-1.5 text-xs"
-                              >
-                                <option value="bKash">bKash</option>
-                                <option value="Nagad">Nagad</option>
-                                <option value="Rocket">Rocket</option>
-                              </select>
+                          <div>
+                            <div className="text-[11px] font-semibold text-slate-600 mb-1.5">
+                              {tqr.selectQrTypeLabel}
                             </div>
-                            <div>
-                              <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                                {t.cart.trxIdLabel}
-                              </label>
-                              <input
-                                type="text"
-                                value={transactionId}
-                                onChange={(e) => setTransactionId(e.target.value)}
-                                placeholder={t.cart.trxIdPlaceholder}
-                                className="input min-h-[38px] py-1.5 text-xs font-mono"
-                              />
+                            <div className="grid grid-cols-3 gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setOnlineChannel("bkash_qr")}
+                                className={`rounded-lg border px-2 py-2 text-[11px] font-semibold transition-colors ${
+                                  onlineChannel === "bkash_qr"
+                                    ? "border-[#0B5336] bg-[#0B5336] text-white"
+                                    : "border-slate-200 bg-white text-slate-700"
+                                }`}
+                              >
+                                {tqr.bkashQrTab}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setOnlineChannel("bangla_qr")}
+                                className={`rounded-lg border px-2 py-2 text-[11px] font-semibold transition-colors ${
+                                  onlineChannel === "bangla_qr"
+                                    ? "border-[#0B5336] bg-[#0B5336] text-white"
+                                    : "border-slate-200 bg-white text-slate-700"
+                                }`}
+                              >
+                                {tqr.banglaQrTab}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setOnlineChannel("manual")}
+                                className={`rounded-lg border px-2 py-2 text-[11px] font-semibold transition-colors ${
+                                  onlineChannel === "manual"
+                                    ? "border-[#0B5336] bg-[#0B5336] text-white"
+                                    : "border-slate-200 bg-white text-slate-700"
+                                }`}
+                              >
+                                {tqr.manualMobileTab}
+                              </button>
                             </div>
                           </div>
-                          {settings.mobileBankingNumber && (
-                            <p className="text-[11px] text-slate-600">
-                              {t.cart.sendMoneyPrefix}{" "}
-                              <span className="font-mono font-bold text-slate-900">
-                                {settings.mobileBankingNumber}
-                              </span>
-                            </p>
+
+                          {(onlineChannel === "bkash_qr" || onlineChannel === "bangla_qr") && (() => {
+                            const isBkashQr = onlineChannel === "bkash_qr";
+                            const qrUrl = isBkashQr ? settings.bkashQrUrl : settings.banglaQrUrl;
+                            const acctNumber = isBkashQr
+                              ? settings.bkashMerchantNumber || settings.mobileBankingNumber
+                              : settings.mobileBankingNumber;
+                            const acctInfo = !isBkashQr ? settings.banglaQrAccountInfo : "";
+
+                            return (
+                              <div className="rounded-xl border border-slate-200 bg-white p-3.5 space-y-3">
+                                <div className="flex items-center justify-between gap-2 text-xs">
+                                  <span className="font-semibold text-slate-800 flex items-center gap-1.5">
+                                    <QrCode className="h-3.5 w-3.5 text-[#0B5336]" />
+                                    <span>{tqr.scanPayTitle}</span>
+                                  </span>
+                                  <span className="font-mono font-bold text-[#0B5336] tabular-nums">
+                                    {tqr.amountToPayLabel}: {formatMartPrice(grandTotal, lang)}
+                                  </span>
+                                </div>
+
+                                {qrUrl ? (
+                                  <div className="flex flex-col sm:flex-row items-center gap-4">
+                                    <div className="h-40 w-40 rounded-xl border border-slate-200 bg-white p-1.5 shrink-0">
+                                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                                      <img
+                                        src={normalizeMartImageUrl(qrUrl)}
+                                        alt={isBkashQr ? tqr.bkashQrTab : tqr.banglaQrTab}
+                                        referrerPolicy="no-referrer"
+                                        className="h-full w-full object-contain"
+                                      />
+                                    </div>
+                                    <div className="flex-1 space-y-2 text-xs w-full">
+                                      {acctInfo && (
+                                        <div className="font-semibold text-slate-800">
+                                          {acctInfo}
+                                        </div>
+                                      )}
+                                      {acctNumber && (
+                                        <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5">
+                                          <div>
+                                            <div className="text-[10px] text-slate-500">
+                                              {tqr.merchantNoLabel}
+                                            </div>
+                                            <div className="font-mono font-bold text-slate-900 tabular-nums">
+                                              {acctNumber}
+                                            </div>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleCopyPaymentNumber(acctNumber)}
+                                            className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:border-[#0B5336] whitespace-nowrap"
+                                          >
+                                            <Copy className="h-3 w-3" />
+                                            <span>
+                                              {copiedAccountNo ? tqr.copiedNoBtn : tqr.copyNoBtn}
+                                            </span>
+                                          </button>
+                                        </div>
+                                      )}
+                                      <a
+                                        href={`/api/mart/qr-download?type=${
+                                          isBkashQr ? "bkash" : "bangla"
+                                        }`}
+                                        download
+                                        className="btn-outline w-full py-2 text-xs gap-1.5"
+                                      >
+                                        <Download className="h-3.5 w-3.5 text-[#0B5336]" />
+                                        <span>{tqr.downloadQrBtn}</span>
+                                      </a>
+                                      <p className="text-[11px] text-slate-500 leading-relaxed">
+                                        {tqr.qrHelpText}
+                                      </p>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="space-y-2">
+                                    <p className="text-xs text-slate-500">
+                                      {tqr.noQrConfiguredHint}
+                                    </p>
+                                    {acctNumber && (
+                                      <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+                                        <span className="font-mono font-bold text-slate-900">
+                                          {acctNumber}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleCopyPaymentNumber(acctNumber)}
+                                          className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700"
+                                        >
+                                          <Copy className="h-3 w-3" />
+                                          <span>
+                                            {copiedAccountNo ? tqr.copiedNoBtn : tqr.copyNoBtn}
+                                          </span>
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
+
+                          {onlineChannel === "manual" && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+                              <div>
+                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                  {t.cart.providerLabel}
+                                </label>
+                                <select
+                                  value={manualChannel}
+                                  onChange={(e) =>
+                                    setManualChannel(e.target.value as "Nagad" | "Rocket")
+                                  }
+                                  className="input min-h-[38px] py-1.5 text-xs"
+                                >
+                                  <option value="Nagad">Nagad</option>
+                                  <option value="Rocket">Rocket</option>
+                                </select>
+                              </div>
+                              {settings.mobileBankingNumber && (
+                                <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">
+                                  <span className="font-mono font-bold text-slate-900">
+                                    {settings.mobileBankingNumber}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleCopyPaymentNumber(settings.mobileBankingNumber)
+                                    }
+                                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#0B5336]"
+                                  >
+                                    <Copy className="h-3 w-3" />
+                                    <span>
+                                      {copiedAccountNo ? tqr.copiedNoBtn : tqr.copyNoBtn}
+                                    </span>
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                           )}
+
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                              {t.cart.trxIdLabel}
+                            </label>
+                            <input
+                              type="text"
+                              value={transactionId}
+                              onChange={(e) => setTransactionId(e.target.value)}
+                              placeholder={t.cart.trxIdPlaceholder}
+                              className="input min-h-[38px] py-1.5 text-xs font-mono bg-white"
+                            />
+                            <p className="text-[11px] text-slate-500 mt-1">{tqr.trxRequiredHint}</p>
+                          </div>
                         </div>
+                      )}
+                    </div>
+
+                    {/* Promo / Discount Coupon Box */}
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 space-y-2">
+                      <label className="block text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                        <Ticket className="h-3.5 w-3.5 text-[#0B5336]" />
+                        <span>{tcop.checkoutLabel}</span>
+                      </label>
+                      {appliedCoupon ? (
+                        <div className="flex items-center justify-between gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-xs">
+                          <span className="font-mono font-semibold text-[#0B5336]">
+                            {tcop.appliedPrefix}: {appliedCoupon.code} (−
+                            {formatMartPrice(effectiveDiscount, lang)})
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAppliedCoupon(null);
+                              setCouponInput("");
+                              setCouponError(null);
+                            }}
+                            className="text-red-600 hover:underline font-semibold whitespace-nowrap"
+                          >
+                            {tcop.removeBtn}
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={couponInput}
+                            onChange={(e) => {
+                              setCouponInput(e.target.value.toUpperCase());
+                              setCouponError(null);
+                            }}
+                            placeholder={tcop.checkoutPlaceholder}
+                            className="input min-h-[38px] py-1.5 text-xs font-mono uppercase bg-white flex-1"
+                          />
+                          <button
+                            type="button"
+                            disabled={couponLoading}
+                            onClick={handleApplyCoupon}
+                            className="btn-outline px-4 py-1.5 text-xs whitespace-nowrap min-h-[38px]"
+                          >
+                            {couponLoading ? tcop.applyingBtn : tcop.applyBtn}
+                          </button>
+                        </div>
+                      )}
+                      {couponError && (
+                        <p className="text-[11px] font-medium text-red-600">{couponError}</p>
                       )}
                     </div>
 
@@ -1763,6 +2478,16 @@ export function MartStorefront() {
                           {formatMartPrice(cartSubtotal, lang)}
                         </span>
                       </div>
+                      {effectiveDiscount > 0 && appliedCoupon && (
+                        <div className="flex justify-between text-[#0B5336] font-medium">
+                          <span>
+                            {tcop.discountRowLabel} ({appliedCoupon.code})
+                          </span>
+                          <span className="font-mono tabular-nums">
+                            − {formatMartPrice(effectiveDiscount, lang)}
+                          </span>
+                        </div>
+                      )}
                       <div className="flex justify-between text-slate-600">
                         <span>
                           {t.cart.deliveryFee} (
@@ -1945,9 +2670,21 @@ export function MartStorefront() {
                     ) : (
                       <div className="text-slate-600">{trackedOrder.itemsSummary}</div>
                     )}
+                    {(Number(trackedOrder.discountAmount) || 0) > 0 && (
+                      <div className="flex justify-between text-[#0B5336] font-medium pt-1">
+                        <span>
+                          {tcop.discountRowLabel}
+                          {trackedOrder.discountCode ? ` (${trackedOrder.discountCode})` : ""}
+                        </span>
+                        <span className="font-mono tabular-nums">
+                          − {formatMartPrice(Number(trackedOrder.discountAmount) || 0, lang)}
+                        </span>
+                      </div>
+                    )}
                     <div className="flex justify-between font-bold text-slate-900 pt-2 border-t border-slate-200">
                       <span>
-                        {t.track.totalPayableLabel} ({trackedOrder.paymentMethod})
+                        {t.track.totalPayableLabel} ({trackedOrder.paymentMethod}
+                        {trackedOrder.paymentProvider ? ` · ${trackedOrder.paymentProvider}` : ""})
                       </span>
                       <span className="font-mono text-[#0B5336] tabular-nums">
                         {formatMartPrice(trackedOrder.totalAmount, lang)}

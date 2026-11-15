@@ -23,6 +23,7 @@ const ALLOWED_MUTATION_SHEETS = new Set([
   "Mart_Categories",
   "Mart_Labels",
   "Mart_Suppliers",
+  "Mart_Coupons",
   "Mart_Orders",
   "Mart_Transactions",
   "Mart_CRM_Profiles",
@@ -54,6 +55,7 @@ export async function GET(req: NextRequest) {
           categories: [],
           labels: [],
           suppliers: [],
+          coupons: [],
           orders: [],
           transactions: [],
           crmProfiles: [],
@@ -90,6 +92,7 @@ export async function GET(req: NextRequest) {
         categories?: unknown[];
         labels?: unknown[];
         suppliers?: unknown[];
+        coupons?: unknown[];
         orders?: unknown[];
         transactions?: unknown[];
         crmProfiles?: unknown[];
@@ -111,6 +114,7 @@ export async function GET(req: NextRequest) {
           categories: Array.isArray(json.data.categories) ? json.data.categories : [],
           labels: Array.isArray(json.data.labels) ? json.data.labels : [],
           suppliers: Array.isArray(json.data.suppliers) ? json.data.suppliers : [],
+          coupons: Array.isArray(json.data.coupons) ? json.data.coupons : [],
           orders: Array.isArray(json.data.orders) ? json.data.orders : [],
           transactions: Array.isArray(json.data.transactions) ? json.data.transactions : [],
           crmProfiles: Array.isArray(json.data.crmProfiles) ? json.data.crmProfiles : [],
