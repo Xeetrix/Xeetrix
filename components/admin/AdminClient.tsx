@@ -5,7 +5,6 @@ import Link from "next/link";
 import {
   Lock,
   LayoutDashboard,
-  ShoppingBag,
   Plane,
   TrendingUp,
   Mail,
@@ -21,6 +20,7 @@ import {
   FileText,
   Eye,
   EyeOff,
+  Globe2,
 } from "lucide-react";
 import {
   AdminEcosystemData,
@@ -31,8 +31,6 @@ import {
   fetchAdminEcosystemData,
   fileToBase64,
   InvestorLeadStatus,
-  MartOrderStatus,
-  normalizeDriveImageUrl,
   SiteSettings,
   TravelBookingStatus,
   updateSheetRecordStatus,
@@ -41,7 +39,7 @@ import {
 } from "@/lib/googleApi";
 import { HoldingLogo } from "@/components/holding/HoldingLogo";
 
-type AdminSection = "overview" | "mart" | "travels" | "investors" | "inquiries";
+type AdminSection = "overview" | "travels" | "investors" | "inquiries";
 
 const SESSION_KEY = "xeetrix_admin_session_v1";
 
@@ -62,17 +60,6 @@ export function AdminClient() {
   const [data, setData] = useState<AdminEcosystemData | null>(null);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<{ type: "success" | "error"; text: string } | null>(null);
-
-  // Mart New Product Form
-  const [prodName, setProdName] = useState("");
-  const [prodCategory, setProdCategory] = useState("Electronics");
-  const [prodPrice, setProdPrice] = useState("");
-  const [prodComparePrice, setProdComparePrice] = useState("");
-  const [prodStock, setProdStock] = useState("25");
-  const [prodImageUrl, setProdImageUrl] = useState("");
-  const [prodDesc, setProdDesc] = useState("");
-  const [uploadingImage, setUploadingImage] = useState(false);
-  const [savingProduct, setSavingProduct] = useState(false);
 
   // Travels New Route Form
   const [originCode, setOriginCode] = useState("DAC");
@@ -157,134 +144,6 @@ export function AdminClient() {
     }
     setAuthenticated(false);
     setData(null);
-  }
-
-  async function handleProductImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploadingImage(true);
-    try {
-      const base64Data = await fileToBase64(file);
-      const uploaded = await uploadAssetToDrive({
-        fileName: file.name,
-        mimeType: file.type || "image/jpeg",
-        base64Data,
-        folderType: "products",
-      });
-      setProdImageUrl(uploaded.url);
-      showNotice("success", `Image uploaded to Google Drive (${uploaded.fileId}).`);
-    } catch (err) {
-      showNotice(
-        "error",
-        err instanceof Error ? err.message : "Google Drive upload requires Apps Script URL."
-      );
-    } finally {
-      setUploadingImage(false);
-      e.target.value = "";
-    }
-  }
-
-  async function handleAddProduct(e: React.FormEvent) {
-    e.preventDefault();
-    if (!prodName.trim() || !prodPrice) {
-      showNotice("error", "Product name and BDT price are required.");
-      return;
-    }
-
-    setSavingProduct(true);
-    try {
-      const payload = {
-        name: prodName.trim(),
-        category: prodCategory.trim() || "General Retail",
-        price: Number(prodPrice) || 0,
-        comparePrice: Number(prodComparePrice) || 0,
-        stock: Number(prodStock) || 0,
-        imageUrl: prodImageUrl.trim(),
-        description: prodDesc.trim(),
-        active: true,
-      };
-      const res = await createSheetRecord("Mart_Products", payload);
-      setData((prev) =>
-        prev
-          ? {
-              ...prev,
-              martProducts: [
-                { id: res.id, ...payload, createdAt: new Date().toISOString() },
-                ...prev.martProducts,
-              ],
-            }
-          : prev
-      );
-      setProdName("");
-      setProdPrice("");
-      setProdComparePrice("");
-      setProdStock("25");
-      setProdImageUrl("");
-      setProdDesc("");
-      showNotice(
-        "success",
-        res.simulated
-          ? `Preview product ${res.id} added locally (connect Apps Script for persistence).`
-          : `Product ${res.id} saved to Mart_Products sheet.`
-      );
-    } catch (err) {
-      showNotice("error", err instanceof Error ? err.message : "Failed to save product.");
-    } finally {
-      setSavingProduct(false);
-    }
-  }
-
-  async function handleToggleProduct(id: string, currentActive: boolean) {
-    try {
-      await updateSheetRecordStatus("Mart_Products", id, { active: !currentActive });
-      setData((prev) =>
-        prev
-          ? {
-              ...prev,
-              martProducts: prev.martProducts.map((p) =>
-                p.id === id ? { ...p, active: !currentActive } : p
-              ),
-            }
-          : prev
-      );
-      showNotice("success", `Product ${id} ${!currentActive ? "activated" : "paused"}.`);
-    } catch (err) {
-      showNotice("error", err instanceof Error ? err.message : "Failed to update product.");
-    }
-  }
-
-  async function handleDeleteProduct(id: string) {
-    try {
-      await deleteSheetRecord("Mart_Products", id);
-      setData((prev) =>
-        prev
-          ? {
-              ...prev,
-              martProducts: prev.martProducts.filter((p) => p.id !== id),
-            }
-          : prev
-      );
-      showNotice("success", `Product ${id} removed.`);
-    } catch (err) {
-      showNotice("error", err instanceof Error ? err.message : "Failed to delete product.");
-    }
-  }
-
-  async function handleOrderStatus(id: string, status: MartOrderStatus) {
-    try {
-      await updateSheetRecordStatus("Mart_Orders", id, { status });
-      setData((prev) =>
-        prev
-          ? {
-              ...prev,
-              martOrders: prev.martOrders.map((o) => (o.id === id ? { ...o, status } : o)),
-            }
-          : prev
-      );
-      showNotice("success", `Order ${id} updated to ${status}.`);
-    } catch (err) {
-      showNotice("error", err instanceof Error ? err.message : "Failed to update order.");
-    }
   }
 
   async function handleAddRoute(e: React.FormEvent) {
@@ -455,7 +314,7 @@ export function AdminClient() {
   if (!authReady) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center text-sm text-slate-500">
-        Initializing Admin Control Center...
+        Initializing Holding &amp; Travels Control Center...
       </div>
     );
   }
@@ -470,10 +329,11 @@ export function AdminClient() {
               <HoldingLogo />
             </Link>
             <h1 className="font-display text-2xl font-bold text-slate-900 pt-2">
-              Executive Admin Control Center
+              Holding &amp; Travels Admin Console
             </h1>
             <p className="text-sm text-slate-600">
-              Restricted holding-group portal for Xeetrix Mart, Travels, Investors &amp; Inquiries.
+              Restricted executive portal for Xeetrix Holding Group, Investor Relations &amp;
+              Xeetrix Travels.
             </p>
           </div>
 
@@ -488,7 +348,7 @@ export function AdminClient() {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Admin Passcode
+                  Executive Passcode
                 </label>
                 <div className="relative">
                   <Lock className="h-4 w-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -529,23 +389,22 @@ export function AdminClient() {
     );
   }
 
-  // Computed KPI Metrics
-  const martOrders = data?.martOrders || [];
-  const martProducts = data?.martProducts || [];
+  // Computed KPI Metrics (Holding + Travels Only)
   const travelBookings = data?.travelBookings || [];
   const travelRoutes = data?.travelRoutes || [];
   const investorLeads = data?.investorLeads || [];
   const corporateInquiries = data?.corporateInquiries || [];
 
-  const totalMartRevenue = martOrders
-    .filter((o) => o.status !== "Cancelled")
-    .reduce((sum, o) => sum + (Number(o.totalAmount) || 0), 0);
-
   const pendingTravelQuotes = travelBookings.filter((b) => b.status === "Pending").length;
+  const ticketedBookings = travelBookings.filter((b) => b.status === "Ticketed").length;
+  const pendingInquiries = corporateInquiries.filter((c) => c.status === "Pending").length;
 
-  const navItems: { id: AdminSection; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  const navItems: {
+    id: AdminSection;
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
+  }[] = [
     { id: "overview", label: "Group Overview", icon: LayoutDashboard },
-    { id: "mart", label: "Xeetrix Mart Manager", icon: ShoppingBag },
     { id: "travels", label: "Xeetrix Travels Manager", icon: Plane },
     { id: "investors", label: "Investors & Drive Assets", icon: TrendingUp },
     { id: "inquiries", label: "Corporate Inquiries", icon: Mail },
@@ -553,7 +412,7 @@ export function AdminClient() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col lg:flex-row">
-      {/* Sidebar Navigation (260px) */}
+      {/* Sidebar Navigation (264px) */}
       <aside className="w-full lg:w-[264px] shrink-0 bg-slate-900 text-slate-200 border-b lg:border-b-0 lg:border-r border-slate-800 flex flex-col justify-between">
         <div className="p-5 space-y-6">
           <div className="flex items-center justify-between">
@@ -596,7 +455,13 @@ export function AdminClient() {
         <div className="hidden lg:block p-5 border-t border-slate-800 space-y-3">
           <div className="text-xs text-slate-400">
             Backend:{" "}
-            <span className={data?.isLiveBackend ? "text-emerald-400 font-semibold" : "text-gold-400 font-semibold"}>
+            <span
+              className={
+                data?.isLiveBackend
+                  ? "text-emerald-400 font-semibold"
+                  : "text-gold-400 font-semibold"
+              }
+            >
               {data?.isLiveBackend ? "Google Sheets Live" : "Local Preview Mode"}
             </span>
           </div>
@@ -684,28 +549,28 @@ export function AdminClient() {
                   <strong>Preview Mode Active:</strong> Configure{" "}
                   <span className="font-mono">NEXT_PUBLIC_GOOGLE_SCRIPT_URL</span> in your Vercel
                   environment (see <span className="font-mono">GOOGLE_BACKEND_SETUP.md</span>) to
-                  read and write directly to your live 7-tab Google Sheet &amp; Google Drive.
+                  sync Holding Group, Investor Relations, and Travels data live with Google Sheets.
                 </div>
               )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                 <div className="rounded-2xl border border-slate-200 bg-white p-6">
-                  <div className="text-xs font-medium text-slate-500">Mart Orders &amp; Revenue</div>
+                  <div className="text-xs font-medium text-slate-500">Published Flight Routes</div>
                   <div className="mt-2 font-mono text-2xl font-bold text-slate-900 tabular-nums">
-                    {formatBDT(totalMartRevenue)}
+                    {travelRoutes.length}
                   </div>
                   <div className="mt-1 text-xs text-slate-500 tabular-nums">
-                    {martOrders.length} COD order(s) · {martProducts.length} SKUs
+                    {travelRoutes.filter((r) => r.active).length} active corridors
                   </div>
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-white p-6">
-                  <div className="text-xs font-medium text-slate-500">Pending Flight Quotes</div>
+                  <div className="text-xs font-medium text-slate-500">Flight Quote Requests</div>
                   <div className="mt-2 font-mono text-2xl font-bold text-[#0B5336] tabular-nums">
                     {pendingTravelQuotes}
                   </div>
                   <div className="mt-1 text-xs text-slate-500 tabular-nums">
-                    {travelBookings.length} total booking requests · {travelRoutes.length} routes
+                    Pending · {ticketedBookings} ticketed of {travelBookings.length} total
                   </div>
                 </div>
 
@@ -725,328 +590,77 @@ export function AdminClient() {
                   <div className="mt-2 font-mono text-2xl font-bold text-slate-900 tabular-nums">
                     {corporateInquiries.length}
                   </div>
-                  <div className="mt-1 text-xs text-slate-500">Desk: info@xeetrix.com</div>
+                  <div className="mt-1 text-xs text-slate-500 tabular-nums">
+                    {pendingInquiries} pending · Desk: info@xeetrix.com
+                  </div>
                 </div>
               </div>
 
               {/* Quick Navigation Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <button
-                  type="button"
-                  onClick={() => setActiveSection("mart")}
-                  className="text-left rounded-2xl border border-slate-200 bg-white p-6 hover:border-[#0B5336] transition-colors"
-                >
-                  <div className="font-display font-semibold text-slate-900">
-                    Manage Xeetrix Mart Products &amp; COD Orders
-                  </div>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Upload product images to Google Drive, adjust stock, and mark orders Confirmed
-                    or Delivered.
-                  </p>
-                </button>
-
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <button
                   type="button"
                   onClick={() => setActiveSection("travels")}
                   className="text-left rounded-2xl border border-slate-200 bg-white p-6 hover:border-[#0B5336] transition-colors"
                 >
                   <div className="font-display font-semibold text-slate-900">
-                    Manage Xeetrix Travels Routes &amp; Flight Quotes
+                    Manage Xeetrix Travels Routes &amp; Quotes
                   </div>
                   <p className="mt-1 text-xs text-slate-500">
-                    Publish daily fares (KUL-DAC, DAC-JED, DAC-DXB) and update quote statuses.
+                    Publish daily fares (KUL-DAC, DAC-JED, DAC-DXB) and update booking statuses.
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveSection("investors")}
+                  className="text-left rounded-2xl border border-slate-200 bg-white p-6 hover:border-[#0B5336] transition-colors"
+                >
+                  <div className="font-display font-semibold text-slate-900">
+                    Investor Leads &amp; Pitch Deck Drive
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Upload the latest corporate Pitch Deck PDF to Drive and update Holding KPIs.
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveSection("inquiries")}
+                  className="text-left rounded-2xl border border-slate-200 bg-white p-6 hover:border-[#0B5336] transition-colors"
+                >
+                  <div className="font-display font-semibold text-slate-900">
+                    Corporate &amp; Partnership Inquiries
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Review incoming inquiries routed to info@xeetrix.com and update resolution status.
                   </p>
                 </button>
               </div>
-            </div>
-          )}
 
-          {/* SECTION 2: XEETRIX MART MANAGER */}
-          {activeSection === "mart" && (
-            <div className="space-y-8">
-              {/* Add Product Form */}
-              <div className="rounded-2xl border border-slate-200 bg-white p-6 space-y-5">
-                <h2 className="font-display text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <Plus className="h-4 w-4 text-[#0B5336]" />
-                  <span>Add Product to Mart_Products</span>
-                </h2>
-
-                <form onSubmit={handleAddProduct} className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                        Product Name *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={prodName}
-                        onChange={(e) => setProdName(e.target.value)}
-                        placeholder="e.g. Fast GaN Charger 65W"
-                        className="input"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                        Category *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={prodCategory}
-                        onChange={(e) => setProdCategory(e.target.value)}
-                        placeholder="Electronics / Essentials"
-                        className="input"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                        Price (BDT ৳) *
-                      </label>
-                      <input
-                        type="number"
-                        required
-                        value={prodPrice}
-                        onChange={(e) => setProdPrice(e.target.value)}
-                        placeholder="1850"
-                        className="input font-mono"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                        Compare Price (BDT ৳)
-                      </label>
-                      <input
-                        type="number"
-                        value={prodComparePrice}
-                        onChange={(e) => setProdComparePrice(e.target.value)}
-                        placeholder="2400"
-                        className="input font-mono"
-                      />
-                    </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-[#0B5336]">
+                    <Globe2 className="h-5 w-5" />
                   </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                        Stock Quantity *
-                      </label>
-                      <input
-                        type="number"
-                        required
-                        value={prodStock}
-                        onChange={(e) => setProdStock(e.target.value)}
-                        className="input font-mono"
-                      />
-                    </div>
-
-                    <div className="lg:col-span-2">
-                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                        Product Image URL (Auto-filled on Drive Upload)
-                      </label>
-                      <input
-                        type="text"
-                        value={prodImageUrl}
-                        onChange={(e) => setProdImageUrl(e.target.value)}
-                        placeholder="https://lh3.googleusercontent.com/d/..."
-                        className="input font-mono text-xs"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="btn-outline w-full px-4 py-2.5 text-xs gap-2 cursor-pointer">
-                        <Upload className="h-3.5 w-3.5 text-[#0B5336]" />
-                        <span>{uploadingImage ? "Uploading..." : "Upload to Google Drive"}</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          disabled={uploadingImage}
-                          onChange={handleProductImageUpload}
-                          className="sr-only"
-                        />
-                      </label>
-                    </div>
-                  </div>
-
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                      Short Product Description
-                    </label>
-                    <input
-                      type="text"
-                      value={prodDesc}
-                      onChange={(e) => setProdDesc(e.target.value)}
-                      placeholder="Key specifications and warranty terms..."
-                      className="input"
-                    />
+                    <div className="text-sm font-semibold text-slate-900">
+                      Retail Operations Managed Separately
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      Xeetrix Mart e-commerce products, inventory, and orders are administered in
+                      their dedicated standalone portal.
+                    </p>
                   </div>
-
-                  <button
-                    type="submit"
-                    disabled={savingProduct}
-                    className="btn-primary px-6 py-2.5 text-xs"
-                  >
-                    {savingProduct ? "Saving Product..." : "Publish Product"}
-                  </button>
-                </form>
-              </div>
-
-              {/* Product Catalog Table */}
-              <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-                <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
-                  <h3 className="font-display text-base font-bold text-slate-900">
-                    Catalog SKUs ({martProducts.length})
-                  </h3>
                 </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-500">
-                      <tr>
-                        <th className="px-4 py-3 font-semibold">Product</th>
-                        <th className="px-4 py-3 font-semibold">Category</th>
-                        <th className="px-4 py-3 font-semibold text-right">Price</th>
-                        <th className="px-4 py-3 font-semibold text-right">Stock</th>
-                        <th className="px-4 py-3 font-semibold">Visibility</th>
-                        <th className="px-4 py-3 font-semibold text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {martProducts.map((p) => (
-                        <tr key={p.id} className="hover:bg-slate-50">
-                          <td className="px-4 py-3 font-medium text-slate-900">
-                            <div className="flex items-center gap-3">
-                              <div className="h-9 w-9 rounded-lg bg-slate-100 overflow-hidden shrink-0 border border-slate-200">
-                                {p.imageUrl ? (
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img
-                                    src={normalizeDriveImageUrl(p.imageUrl)}
-                                    alt={p.name}
-                                    referrerPolicy="no-referrer"
-                                    className="h-full w-full object-cover"
-                                  />
-                                ) : null}
-                              </div>
-                              <div>
-                                <div className="font-semibold text-slate-900">{p.name}</div>
-                                <div className="font-mono text-[11px] text-slate-400">{p.id}</div>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-slate-600">{p.category}</td>
-                          <td className="px-4 py-3 text-right font-mono font-semibold tabular-nums">
-                            {formatBDT(p.price)}
-                          </td>
-                          <td className="px-4 py-3 text-right font-mono tabular-nums">{p.stock}</td>
-                          <td className="px-4 py-3">
-                            <button
-                              type="button"
-                              onClick={() => handleToggleProduct(p.id, p.active)}
-                              className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold border ${
-                                p.active
-                                  ? "border-brand-200 bg-brand-50 text-[#0B5336]"
-                                  : "border-slate-200 bg-slate-100 text-slate-500"
-                              }`}
-                            >
-                              {p.active ? "Active" : "Paused"}
-                            </button>
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteProduct(p.id)}
-                              aria-label={`Delete ${p.name}`}
-                              className="inline-flex items-center gap-1 text-red-600 hover:text-red-800 font-medium"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                              <span>Delete</span>
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Mart Orders Table */}
-              <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-                <div className="px-6 py-4 border-b border-slate-200">
-                  <h3 className="font-display text-base font-bold text-slate-900">
-                    Cash-on-Delivery Orders ({martOrders.length})
-                  </h3>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-500">
-                      <tr>
-                        <th className="px-4 py-3 font-semibold">Order ID</th>
-                        <th className="px-4 py-3 font-semibold">Customer &amp; Address</th>
-                        <th className="px-4 py-3 font-semibold">Product</th>
-                        <th className="px-4 py-3 font-semibold text-right">Total</th>
-                        <th className="px-4 py-3 font-semibold">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {martOrders.length === 0 ? (
-                        <tr>
-                          <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
-                            No COD orders recorded yet.
-                          </td>
-                        </tr>
-                      ) : (
-                        martOrders.map((order) => (
-                          <tr key={order.id} className="hover:bg-slate-50">
-                            <td className="px-4 py-3 font-mono font-semibold text-slate-900">
-                              {order.id}
-                            </td>
-                            <td className="px-4 py-3">
-                              <div className="font-semibold text-slate-900">
-                                {order.customerName}
-                              </div>
-                              <div className="font-mono text-[11px] text-slate-500">
-                                {order.phone}
-                              </div>
-                              <div className="text-[11px] text-slate-500 max-w-xs truncate">
-                                {order.address}
-                              </div>
-                            </td>
-                            <td className="px-4 py-3">
-                              <div className="font-medium text-slate-900">{order.productName}</div>
-                              <div className="text-[11px] text-slate-500 font-mono">
-                                Qty: {order.quantity}
-                              </div>
-                            </td>
-                            <td className="px-4 py-3 text-right font-mono font-bold tabular-nums">
-                              {formatBDT(order.totalAmount)}
-                            </td>
-                            <td className="px-4 py-3">
-                              <select
-                                value={order.status}
-                                onChange={(e) =>
-                                  handleOrderStatus(order.id, e.target.value as MartOrderStatus)
-                                }
-                                className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold"
-                              >
-                                <option value="Pending">Pending</option>
-                                <option value="Confirmed">Confirmed</option>
-                                <option value="Delivered">Delivered</option>
-                                <option value="Cancelled">Cancelled</option>
-                              </select>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                <Link href="/mart/admin" className="btn-outline px-4 py-2 text-xs">
+                  Open Mart Admin Portal
+                </Link>
               </div>
             </div>
           )}
 
-          {/* SECTION 3: XEETRIX TRAVELS MANAGER */}
+          {/* SECTION 2: XEETRIX TRAVELS MANAGER */}
           {activeSection === "travels" && (
             <div className="space-y-8">
               {/* Add Travel Route Form */}
@@ -1307,7 +921,7 @@ export function AdminClient() {
             </div>
           )}
 
-          {/* SECTION 4: INVESTORS & DRIVE ASSETS MANAGER */}
+          {/* SECTION 3: INVESTORS & DRIVE ASSETS MANAGER */}
           {activeSection === "investors" && (
             <div className="space-y-8">
               {/* Pitch Deck Upload & Group KPI Settings */}
@@ -1319,7 +933,8 @@ export function AdminClient() {
                   </h2>
                   <p className="text-xs text-slate-600 leading-relaxed">
                     Upload the latest corporate Pitch Deck PDF directly to Google Drive. The public
-                    download link is stored automatically in <span className="font-mono">Site_Settings</span>.
+                    download link is stored automatically in{" "}
+                    <span className="font-mono">Site_Settings</span>.
                   </p>
 
                   <label className="btn-primary w-full py-3 text-xs gap-2 cursor-pointer">
@@ -1510,7 +1125,7 @@ export function AdminClient() {
             </div>
           )}
 
-          {/* SECTION 5: CORPORATE INQUIRIES */}
+          {/* SECTION 4: CORPORATE INQUIRIES */}
           {activeSection === "inquiries" && (
             <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
               <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">

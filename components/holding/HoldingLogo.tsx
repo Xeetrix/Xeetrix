@@ -27,7 +27,7 @@ export function HoldingLogo({ inverted = false, className }: HoldingLogoProps) {
             alt="Xeetrix emblem"
             referrerPolicy="no-referrer"
             onError={() => setImgError(true)}
-            className="h-full w-full object-contain p-1"
+            className="h-full w-full object-cover"
           />
         ) : (
           <BrandGlobeIcon className="h-5 w-5" color="currentColor" strokeWidth={28} />

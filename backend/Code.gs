@@ -1,44 +1,64 @@
 /**
- * Xeetrix Holding Group — Google Apps Script Backend (backend/Code.gs)
+ * Xeetrix Ecosystem & Xeetrix Mart — Google Apps Script Backend (backend/Code.gs)
  *
- * Zero-cost REST API backed by Google Sheets (7 tabs) & Google Drive.
+ * Zero-cost REST API backed by Google Sheets (9 tabs) & Google Drive.
  * Deploy as Web App:
  *   Execute as: Me
  *   Who has access: Anyone
  *
  * Optional Security:
  *   In Apps Script Project Settings -> Script Properties, you may set:
- *   - ADMIN_API_TOKEN : shared secret required for admin mutations & adminData
+ *   - ADMIN_API_TOKEN : shared secret required for admin mutations & admin endpoints
  *   - DRIVE_ROOT_FOLDER_NAME : defaults to "Xeetrix_Assets"
  */
 
 var SHEET_SCHEMA = {
+  // === Xeetrix Mart (Standalone E-Commerce Module) ===
   Mart_Products: [
     "id",
+    "sku",
     "name",
     "category",
     "price",
     "comparePrice",
     "stock",
+    "variants",
     "imageUrl",
     "description",
+    "featured",
+    "active",
+    "createdAt"
+  ],
+  Mart_Categories: [
+    "id",
+    "name",
+    "slug",
+    "description",
+    "imageUrl",
     "active",
     "createdAt"
   ],
   Mart_Orders: [
     "id",
-    "productId",
-    "productName",
-    "quantity",
-    "unitPrice",
+    "itemsJson",
+    "itemsSummary",
+    "totalItems",
+    "subtotal",
+    "deliveryArea",
+    "deliveryCharge",
     "totalAmount",
     "customerName",
     "phone",
     "address",
+    "paymentMethod",
+    "transactionId",
     "notes",
     "status",
     "createdAt"
   ],
+  Mart_Settings: ["key", "value", "updatedAt"],
+
+  // === Xeetrix Holding & Travels ===
   Travel_Routes: [
     "id",
     "originCode",
@@ -102,12 +122,23 @@ var PUBLIC_CREATE_SHEETS = [
   "Corporate_Inquiries"
 ];
 
-var DEFAULT_SETTINGS = {
+var DEFAULT_SITE_SETTINGS = {
   pitchDeckUrl: "",
   kpiVentures: "3",
   kpiClientsServed: "54,000+",
   kpiGlobalRoutes: "120+",
   kpiAnnualGrowth: "42%"
+};
+
+var DEFAULT_MART_SETTINGS = {
+  heroTitle: "Everyday Essentials & Authentic Electronics",
+  heroSubtitle:
+    "Verified quality products delivered nationwide across Bangladesh with transparent BDT pricing and flexible Cash on Delivery.",
+  heroCtaText: "Shop Collection",
+  promoText: "Nationwide Delivery · Cash on Delivery & Mobile Banking Available",
+  insideDhakaCharge: "70",
+  outsideDhakaCharge: "130",
+  mobileBankingNumber: ""
 };
 
 function jsonResponse(payload) {
@@ -149,8 +180,8 @@ function ensureSheetWithHeaders(ss, sheetName) {
 }
 
 /**
- * Run this function once in the Apps Script Editor to initialize all 7 tabs,
- * headers, and baseline Site_Settings rows.
+ * Run this function once in the Apps Script Editor to initialize all 9 tabs,
+ * Row 1 headers, and default Site_Settings & Mart_Settings rows.
  */
 function setupXeetrixWorkbook() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -158,21 +189,34 @@ function setupXeetrixWorkbook() {
   for (var i = 0; i < tabNames.length; i++) {
     ensureSheetWithHeaders(ss, tabNames[i]);
   }
-  var settingsSheet = ss.getSheetByName("Site_Settings");
-  var existing = readSettingsMap(settingsSheet);
+
   var now = new Date().toISOString();
-  var keys = Object.keys(DEFAULT_SETTINGS);
-  for (var j = 0; j < keys.length; j++) {
-    var k = keys[j];
-    if (existing[k] === undefined) {
-      settingsSheet.appendRow([k, DEFAULT_SETTINGS[k], now]);
+
+  var siteSettingsSheet = ss.getSheetByName("Site_Settings");
+  var existingSite = readKeyValMap(siteSettingsSheet);
+  var siteKeys = Object.keys(DEFAULT_SITE_SETTINGS);
+  for (var j = 0; j < siteKeys.length; j++) {
+    var sk = siteKeys[j];
+    if (existingSite[sk] === undefined) {
+      siteSettingsSheet.appendRow([sk, DEFAULT_SITE_SETTINGS[sk], now]);
     }
   }
-  return "Xeetrix 7-tab workbook initialized.";
+
+  var martSettingsSheet = ss.getSheetByName("Mart_Settings");
+  var existingMart = readKeyValMap(martSettingsSheet);
+  var martKeys = Object.keys(DEFAULT_MART_SETTINGS);
+  for (var m = 0; m < martKeys.length; m++) {
+    var mk = martKeys[m];
+    if (existingMart[mk] === undefined) {
+      martSettingsSheet.appendRow([mk, DEFAULT_MART_SETTINGS[mk], now]);
+    }
+  }
+
+  return "Xeetrix 9-tab workbook initialized successfully.";
 }
 
 function normalizeCellValue(header, val) {
-  if (header === "active") {
+  if (header === "active" || header === "featured") {
     if (typeof val === "boolean") return val;
     var s = String(val).toLowerCase().trim();
     return s === "true" || s === "1" || s === "yes";
@@ -181,8 +225,9 @@ function normalizeCellValue(header, val) {
     header === "price" ||
     header === "comparePrice" ||
     header === "stock" ||
-    header === "quantity" ||
-    header === "unitPrice" ||
+    header === "totalItems" ||
+    header === "subtotal" ||
+    header === "deliveryCharge" ||
     header === "totalAmount" ||
     header === "startingFareBDT" ||
     header === "passengers"
@@ -199,11 +244,22 @@ function readSheetRows(sheet, sheetName) {
   if (!sheet || lastRow <= 1) {
     return [];
   }
-  var values = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
+  var numCols = Math.max(headers.length, sheet.getLastColumn());
+  var rawHeaders = sheet.getRange(1, 1, 1, numCols).getValues()[0];
+  var values = sheet.getRange(2, 1, lastRow - 1, numCols).getValues();
+
+  // Map header positions dynamically so minor column reordering never breaks reads
+  var headerIndexMap = {};
+  for (var colIdx = 0; colIdx < rawHeaders.length; colIdx++) {
+    var colName = String(rawHeaders[colIdx] || "").trim();
+    if (colName) {
+      headerIndexMap[colName] = colIdx;
+    }
+  }
+
   var rows = [];
   for (var r = 0; r < values.length; r++) {
     var row = values[r];
-    // Skip completely empty rows
     var hasAny = false;
     for (var c = 0; c < row.length; c++) {
       if (row[c] !== "" && row[c] !== null && row[c] !== undefined) {
@@ -216,15 +272,16 @@ function readSheetRows(sheet, sheetName) {
     var obj = {};
     for (var h = 0; h < headers.length; h++) {
       var header = headers[h];
-      obj[header] = normalizeCellValue(header, row[h]);
+      var mappedIdx = headerIndexMap[header];
+      var cellVal = mappedIdx !== undefined ? row[mappedIdx] : row[h];
+      obj[header] = normalizeCellValue(header, cellVal);
     }
     rows.push(obj);
   }
-  // Return newest first
   return rows.reverse();
 }
 
-function readSettingsMap(sheet) {
+function readKeyValMap(sheet) {
   var map = {};
   if (!sheet || sheet.getLastRow() <= 1) {
     return map;
@@ -239,10 +296,28 @@ function readSettingsMap(sheet) {
   return map;
 }
 
+function mergeWithDefaults(defaults, actual) {
+  var merged = {};
+  var defKeys = Object.keys(defaults);
+  for (var i = 0; i < defKeys.length; i++) {
+    var dk = defKeys[i];
+    merged[dk] = actual[dk] !== undefined && actual[dk] !== "" ? actual[dk] : defaults[dk];
+  }
+  var actKeys = Object.keys(actual);
+  for (var j = 0; j < actKeys.length; j++) {
+    var ak = actKeys[j];
+    if (actual[ak] !== undefined) {
+      merged[ak] = actual[ak];
+    }
+  }
+  return merged;
+}
+
 function generateRecordId(sheetName) {
   var prefixMap = {
     Mart_Products: "PRD",
-    Mart_Orders: "ORD",
+    Mart_Categories: "CAT",
+    Mart_Orders: "XM",
     Travel_Routes: "RTE",
     Travel_Bookings: "TRV",
     Investor_Leads: "INV",
@@ -254,6 +329,59 @@ function generateRecordId(sheetName) {
   return prefix + "-" + stamp + "-" + rand;
 }
 
+function normalizePhoneDigits(phone) {
+  return String(phone || "").replace(/\D/g, "");
+}
+
+function phonesMatch(phoneA, phoneB) {
+  var a = normalizePhoneDigits(phoneA);
+  var b = normalizePhoneDigits(phoneB);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (a.length >= 8 && b.length >= 8) {
+    return a.slice(-8) === b.slice(-8);
+  }
+  return false;
+}
+
+function decrementMartProductStock(ss, itemsJsonStr) {
+  try {
+    var items = JSON.parse(itemsJsonStr || "[]");
+    if (!Array.isArray(items) || items.length === 0) return;
+
+    var prodSheet = ensureSheetWithHeaders(ss, "Mart_Products");
+    var lastRow = prodSheet.getLastRow();
+    if (lastRow <= 1) return;
+
+    var headers = prodSheet.getRange(1, 1, 1, prodSheet.getLastColumn()).getValues()[0];
+    var idCol = headers.indexOf("id") + 1;
+    var stockCol = headers.indexOf("stock") + 1;
+    if (idCol < 1 || stockCol < 1) return;
+
+    var idValues = prodSheet.getRange(2, idCol, lastRow - 1, 1).getValues();
+    var stockValues = prodSheet.getRange(2, stockCol, lastRow - 1, 1).getValues();
+
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      var pid = String(item.productId || "");
+      var qty = Math.max(0, Number(item.quantity) || 0);
+      if (!pid || qty <= 0) continue;
+
+      for (var r = 0; r < idValues.length; r++) {
+        if (String(idValues[r][0]) === pid) {
+          var currentStock = Number(stockValues[r][0]) || 0;
+          var nextStock = Math.max(0, currentStock - qty);
+          prodSheet.getRange(r + 2, stockCol).setValue(nextStock);
+          stockValues[r][0] = nextStock;
+          break;
+        }
+      }
+    }
+  } catch (err) {
+    // Non-fatal: never block order creation if stock sync encounters legacy formatting
+  }
+}
+
 function doGet(e) {
   try {
     var params = (e && e.parameter) || {};
@@ -261,81 +389,141 @@ function doGet(e) {
     var token = params.token || "";
     var ss = SpreadsheetApp.getActiveSpreadsheet();
 
+    // 1. Public Mart Storefront Data
+    if (action === "martPublic") {
+      var mProdSheet = ensureSheetWithHeaders(ss, "Mart_Products");
+      var mCatSheet = ensureSheetWithHeaders(ss, "Mart_Categories");
+      var mSetSheet = ensureSheetWithHeaders(ss, "Mart_Settings");
+
+      var allMartProds = readSheetRows(mProdSheet, "Mart_Products");
+      var activeMartProds = allMartProds.filter(function (p) {
+        return p.active === true;
+      });
+
+      var allMartCats = readSheetRows(mCatSheet, "Mart_Categories");
+      var activeMartCats = allMartCats.filter(function (c) {
+        return c.active === true;
+      });
+
+      var martSettings = mergeWithDefaults(DEFAULT_MART_SETTINGS, readKeyValMap(mSetSheet));
+
+      return jsonResponse({
+        ok: true,
+        data: {
+          products: activeMartProds,
+          categories: activeMartCats,
+          settings: martSettings
+        }
+      });
+    }
+
+    // 2. Public Mart Order Tracking (Requires Order ID + Phone)
+    if (action === "trackMartOrder") {
+      var orderIdQuery = String(params.orderId || "").trim().toUpperCase();
+      var phoneQuery = String(params.phone || "").trim();
+      if (!orderIdQuery || !phoneQuery) {
+        return jsonResponse({
+          ok: false,
+          error: "Order ID and phone number are required to track an order."
+        });
+      }
+
+      var ordSheet = ensureSheetWithHeaders(ss, "Mart_Orders");
+      var allOrders = readSheetRows(ordSheet, "Mart_Orders");
+      for (var o = 0; o < allOrders.length; o++) {
+        var ord = allOrders[o];
+        if (
+          String(ord.id || "").trim().toUpperCase() === orderIdQuery &&
+          phonesMatch(ord.phone, phoneQuery)
+        ) {
+          return jsonResponse({
+            ok: true,
+            order: {
+              id: ord.id,
+              itemsJson: ord.itemsJson,
+              itemsSummary: ord.itemsSummary,
+              totalItems: ord.totalItems,
+              subtotal: ord.subtotal,
+              deliveryArea: ord.deliveryArea,
+              deliveryCharge: ord.deliveryCharge,
+              totalAmount: ord.totalAmount,
+              customerName: ord.customerName,
+              phone: ord.phone,
+              address: ord.address,
+              paymentMethod: ord.paymentMethod,
+              transactionId: ord.transactionId,
+              notes: ord.notes,
+              status: ord.status,
+              createdAt: ord.createdAt
+            }
+          });
+        }
+      }
+
+      return jsonResponse({
+        ok: false,
+        error: "No matching order found. Please verify your Order ID and phone number."
+      });
+    }
+
+    // 3. Dedicated Mart Admin Data
+    if (action === "martAdmin") {
+      if (!isAuthorizedAdmin(token)) {
+        return jsonResponse({ ok: false, error: "Unauthorized admin API token." });
+      }
+      var admProdSheet = ensureSheetWithHeaders(ss, "Mart_Products");
+      var admCatSheet = ensureSheetWithHeaders(ss, "Mart_Categories");
+      var admOrdSheet = ensureSheetWithHeaders(ss, "Mart_Orders");
+      var admSetSheet = ensureSheetWithHeaders(ss, "Mart_Settings");
+
+      return jsonResponse({
+        ok: true,
+        data: {
+          products: readSheetRows(admProdSheet, "Mart_Products"),
+          categories: readSheetRows(admCatSheet, "Mart_Categories"),
+          orders: readSheetRows(admOrdSheet, "Mart_Orders"),
+          settings: mergeWithDefaults(DEFAULT_MART_SETTINGS, readKeyValMap(admSetSheet))
+        }
+      });
+    }
+
+    // 4. Holding & Travels Admin Data
     if (action === "adminData") {
       if (!isAuthorizedAdmin(token)) {
         return jsonResponse({ ok: false, error: "Unauthorized admin API token." });
       }
-      var productsSheet = ensureSheetWithHeaders(ss, "Mart_Products");
-      var ordersSheet = ensureSheetWithHeaders(ss, "Mart_Orders");
       var routesSheet = ensureSheetWithHeaders(ss, "Travel_Routes");
       var bookingsSheet = ensureSheetWithHeaders(ss, "Travel_Bookings");
       var leadsSheet = ensureSheetWithHeaders(ss, "Investor_Leads");
       var corpSheet = ensureSheetWithHeaders(ss, "Corporate_Inquiries");
       var settingsSheet = ensureSheetWithHeaders(ss, "Site_Settings");
 
-      var settings = readSettingsMap(settingsSheet);
-      var mergedSettings = {};
-      var defKeys = Object.keys(DEFAULT_SETTINGS);
-      for (var i = 0; i < defKeys.length; i++) {
-        mergedSettings[defKeys[i]] =
-          settings[defKeys[i]] !== undefined ? settings[defKeys[i]] : DEFAULT_SETTINGS[defKeys[i]];
-      }
-      var customKeys = Object.keys(settings);
-      for (var j = 0; j < customKeys.length; j++) {
-        mergedSettings[customKeys[j]] = settings[customKeys[j]];
-      }
-
       return jsonResponse({
         ok: true,
         data: {
-          martProducts: readSheetRows(productsSheet, "Mart_Products"),
-          martOrders: readSheetRows(ordersSheet, "Mart_Orders"),
           travelRoutes: readSheetRows(routesSheet, "Travel_Routes"),
           travelBookings: readSheetRows(bookingsSheet, "Travel_Bookings"),
           investorLeads: readSheetRows(leadsSheet, "Investor_Leads"),
           corporateInquiries: readSheetRows(corpSheet, "Corporate_Inquiries"),
-          siteSettings: mergedSettings
+          siteSettings: mergeWithDefaults(DEFAULT_SITE_SETTINGS, readKeyValMap(settingsSheet))
         }
       });
     }
 
-    // Default public bundle: action === "all"
-    var pubProductsSheet = ensureSheetWithHeaders(ss, "Mart_Products");
+    // 5. Default Holding Public Bundle: action === "all"
     var pubRoutesSheet = ensureSheetWithHeaders(ss, "Travel_Routes");
     var pubSettingsSheet = ensureSheetWithHeaders(ss, "Site_Settings");
 
-    var allProducts = readSheetRows(pubProductsSheet, "Mart_Products");
-    var activeProducts = [];
-    for (var p = 0; p < allProducts.length; p++) {
-      if (allProducts[p].active === true) {
-        activeProducts.push(allProducts[p]);
-      }
-    }
-
     var allRoutes = readSheetRows(pubRoutesSheet, "Travel_Routes");
-    var activeRoutes = [];
-    for (var r = 0; r < allRoutes.length; r++) {
-      if (allRoutes[r].active === true) {
-        activeRoutes.push(allRoutes[r]);
-      }
-    }
-
-    var pubSettings = readSettingsMap(pubSettingsSheet);
-    var mergedPubSettings = {};
-    var pubDefKeys = Object.keys(DEFAULT_SETTINGS);
-    for (var k = 0; k < pubDefKeys.length; k++) {
-      mergedPubSettings[pubDefKeys[k]] =
-        pubSettings[pubDefKeys[k]] !== undefined
-          ? pubSettings[pubDefKeys[k]]
-          : DEFAULT_SETTINGS[pubDefKeys[k]];
-    }
+    var activeRoutes = allRoutes.filter(function (r) {
+      return r.active === true;
+    });
 
     return jsonResponse({
       ok: true,
       data: {
-        martProducts: activeProducts,
         travelRoutes: activeRoutes,
-        siteSettings: mergedPubSettings
+        siteSettings: mergeWithDefaults(DEFAULT_SITE_SETTINGS, readKeyValMap(pubSettingsSheet))
       }
     });
   } catch (err) {
@@ -343,6 +531,31 @@ function doGet(e) {
       ok: false,
       error: err && err.message ? err.message : String(err)
     });
+  }
+}
+
+function upsertKeyValueSheet(sheet, incomingMap) {
+  var nowIso = new Date().toISOString();
+  var keysToUpdate = Object.keys(incomingMap);
+  for (var u = 0; u < keysToUpdate.length; u++) {
+    var settingKey = keysToUpdate[u];
+    var settingVal = String(incomingMap[settingKey] !== undefined ? incomingMap[settingKey] : "");
+    var sLastRow = sheet.getLastRow();
+    var updatedExisting = false;
+
+    if (sLastRow > 1) {
+      var existingKeys = sheet.getRange(2, 1, sLastRow - 1, 1).getValues();
+      for (var rowIdx = 0; rowIdx < existingKeys.length; rowIdx++) {
+        if (String(existingKeys[rowIdx][0]) === settingKey) {
+          sheet.getRange(rowIdx + 2, 2, 1, 2).setValues([[settingVal, nowIso]]);
+          updatedExisting = true;
+          break;
+        }
+      }
+    }
+    if (!updatedExisting) {
+      sheet.appendRow([settingKey, settingVal, nowIso]);
+    }
   }
 }
 
@@ -360,7 +573,7 @@ function doPost(e) {
     if (action === "createRecord") {
       var sheetName = String(body.sheet || "");
       var headers = SHEET_SCHEMA[sheetName];
-      if (!headers || sheetName === "Site_Settings") {
+      if (!headers || sheetName === "Site_Settings" || sheetName === "Mart_Settings") {
         return jsonResponse({ ok: false, error: "Invalid target sheet for createRecord." });
       }
       var isPublicSheet = PUBLIC_CREATE_SHEETS.indexOf(sheetName) !== -1;
@@ -386,6 +599,8 @@ function doPost(e) {
           val = "Pending";
         } else if (col === "active" && payload.active === undefined) {
           val = true;
+        } else if (col === "featured" && payload.featured === undefined) {
+          val = false;
         } else {
           val = payload[col] !== undefined ? payload[col] : "";
         }
@@ -395,10 +610,15 @@ function doPost(e) {
       }
 
       sheet.appendRow(rowValues);
+
+      if (sheetName === "Mart_Orders" && payload.itemsJson) {
+        decrementMartProductStock(ss, String(payload.itemsJson));
+      }
+
       return jsonResponse({ ok: true, id: recordId, record: record });
     }
 
-    if (action === "updateStatus") {
+    if (action === "updateStatus" || action === "updateRecord") {
       if (!isAuthorizedAdmin(token)) {
         return jsonResponse({ ok: false, error: "Unauthorized admin API token." });
       }
@@ -418,6 +638,7 @@ function doPost(e) {
         return jsonResponse({ ok: false, error: "Record not found." });
       }
 
+      var rawHeaders = updSheet.getRange(1, 1, 1, updSheet.getLastColumn()).getValues()[0];
       var ids = updSheet.getRange(2, 1, lastRow - 1, 1).getValues();
       var foundRowIndex = -1;
       for (var r = 0; r < ids.length; r++) {
@@ -437,11 +658,18 @@ function doPost(e) {
       if (body.active !== undefined) {
         updates.active = body.active;
       }
+      if (body.featured !== undefined) {
+        updates.featured = body.featured;
+      }
 
       var updateKeys = Object.keys(updates);
       for (var k = 0; k < updateKeys.length; k++) {
         var key = updateKeys[k];
-        var colIndex = updHeaders.indexOf(key);
+        if (key === "id" || key === "createdAt") continue;
+        var colIndex = rawHeaders.indexOf(key);
+        if (colIndex === -1) {
+          colIndex = updHeaders.indexOf(key);
+        }
         if (colIndex !== -1) {
           updSheet
             .getRange(foundRowIndex, colIndex + 1)
@@ -494,7 +722,6 @@ function doPost(e) {
         return jsonResponse({ ok: false, error: "Missing base64Data for upload." });
       }
 
-      // Strip data URL prefix if present
       var commaIdx = base64Data.indexOf(",");
       if (commaIdx !== -1) {
         base64Data = base64Data.substring(commaIdx + 1);
@@ -506,7 +733,12 @@ function doPost(e) {
       var rootIter = DriveApp.getFoldersByName(rootName);
       var rootFolder = rootIter.hasNext() ? rootIter.next() : DriveApp.createFolder(rootName);
 
-      var subName = folderType === "pitch_decks" ? "Investor_Pitch_Decks" : "Mart_Products";
+      var subName =
+        folderType === "pitch_decks"
+          ? "Investor_Pitch_Decks"
+          : folderType === "categories"
+          ? "Mart_Categories"
+          : "Mart_Products";
       var subIter = rootFolder.getFoldersByName(subName);
       var targetFolder = subIter.hasNext() ? subIter.next() : rootFolder.createFolder(subName);
 
@@ -526,6 +758,7 @@ function doPost(e) {
         fileId: fileId,
         fileName: driveFile.getName(),
         url: directUrl,
+        driveViewUrl: "https://drive.google.com/uc?export=view&id=" + fileId,
         viewUrl: "https://drive.google.com/file/d/" + fileId + "/view"
       });
     }
@@ -539,33 +772,26 @@ function doPost(e) {
       if (body.key) {
         incomingMap[String(body.key)] = body.value !== undefined ? String(body.value) : "";
       }
-
-      var nowIso = new Date().toISOString();
-      var keysToUpdate = Object.keys(incomingMap);
-      for (var u = 0; u < keysToUpdate.length; u++) {
-        var settingKey = keysToUpdate[u];
-        var settingVal = String(incomingMap[settingKey] !== undefined ? incomingMap[settingKey] : "");
-        var sLastRow = settingsSheet.getLastRow();
-        var updatedExisting = false;
-
-        if (sLastRow > 1) {
-          var existingKeys = settingsSheet.getRange(2, 1, sLastRow - 1, 1).getValues();
-          for (var rowIdx = 0; rowIdx < existingKeys.length; rowIdx++) {
-            if (String(existingKeys[rowIdx][0]) === settingKey) {
-              settingsSheet.getRange(rowIdx + 2, 2, 1, 2).setValues([[settingVal, nowIso]]);
-              updatedExisting = true;
-              break;
-            }
-          }
-        }
-        if (!updatedExisting) {
-          settingsSheet.appendRow([settingKey, settingVal, nowIso]);
-        }
-      }
-
+      upsertKeyValueSheet(settingsSheet, incomingMap);
       return jsonResponse({
         ok: true,
-        settings: readSettingsMap(settingsSheet)
+        settings: mergeWithDefaults(DEFAULT_SITE_SETTINGS, readKeyValMap(settingsSheet))
+      });
+    }
+
+    if (action === "updateMartSettings") {
+      if (!isAuthorizedAdmin(token)) {
+        return jsonResponse({ ok: false, error: "Unauthorized admin API token." });
+      }
+      var martSettingsSheet = ensureSheetWithHeaders(ss, "Mart_Settings");
+      var incomingMartMap = body.settings || {};
+      if (body.key) {
+        incomingMartMap[String(body.key)] = body.value !== undefined ? String(body.value) : "";
+      }
+      upsertKeyValueSheet(martSettingsSheet, incomingMartMap);
+      return jsonResponse({
+        ok: true,
+        settings: mergeWithDefaults(DEFAULT_MART_SETTINGS, readKeyValMap(martSettingsSheet))
       });
     }
 
