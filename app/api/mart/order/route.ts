@@ -7,11 +7,15 @@ interface IncomingOrderItem {
   productId?: string;
   sku?: string;
   name?: string;
+  nameEn?: string;
+  nameBn?: string;
   variant?: string;
   unitPrice?: number;
   quantity?: number;
   lineTotal?: number;
   imageUrl?: string;
+  fulfillmentType?: string;
+  itemStatus?: string;
 }
 
 export async function POST(req: NextRequest) {
@@ -43,14 +47,14 @@ export async function POST(req: NextRequest) {
       notes?: string;
     };
 
-    const items = Array.isArray(body.items) ? body.items : [];
+    const rawItems = Array.isArray(body.items) ? body.items : [];
     const customerName = String(body.customerName || "").trim();
     const phone = String(body.phone || "").trim();
     const address = String(body.address || "").trim();
     const deliveryArea = String(body.deliveryArea || "Inside Dhaka").trim();
     const paymentMethod = String(body.paymentMethod || "Cash on Delivery").trim();
 
-    if (items.length === 0 || !customerName || !phone || !address) {
+    if (rawItems.length === 0 || !customerName || !phone || !address) {
       return NextResponse.json(
         {
           ok: false,
@@ -61,26 +65,37 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const itemsSummary = items
+    // Only keep safe storefront-submitted fields; Apps Script enriches authoritative costPrice/supplier on server
+    const cleanItems = rawItems.map((item) => ({
+      productId: String(item.productId || ""),
+      sku: String(item.sku || ""),
+      name: String(item.name || item.nameEn || item.nameBn || "Item"),
+      nameEn: String(item.nameEn || item.name || "Item"),
+      nameBn: String(item.nameBn || ""),
+      variant: String(item.variant || ""),
+      unitPrice: Number(item.unitPrice) || 0,
+      quantity: Math.max(1, Number(item.quantity) || 1),
+      lineTotal: Number(item.lineTotal) || (Number(item.unitPrice) || 0) * Math.max(1, Number(item.quantity) || 1),
+      imageUrl: String(item.imageUrl || ""),
+      fulfillmentType: item.fulfillmentType === "dropship" ? "dropship" : "own_stock",
+      itemStatus: "Pending",
+    }));
+
+    const itemsSummary = cleanItems
       .map(
         (item) =>
-          `${String(item.name || "Item")}${item.variant ? ` (${item.variant})` : ""} × ${
-            Number(item.quantity) || 1
-          }`
+          `${item.name}${item.variant ? ` (${item.variant})` : ""} × ${item.quantity}`
       )
       .join(", ");
 
-    const totalItems = items.reduce(
-      (sum, item) => sum + Math.max(1, Number(item.quantity) || 1),
-      0
-    );
+    const totalItems = cleanItems.reduce((sum, item) => sum + item.quantity, 0);
 
     const res = await callMartScriptPost<{ id: string; record?: Record<string, unknown> }>(
       {
         action: "createRecord",
         sheet: "Mart_Orders",
         data: {
-          itemsJson: JSON.stringify(items),
+          itemsJson: JSON.stringify(cleanItems),
           itemsSummary,
           totalItems,
           subtotal: Number(body.subtotal) || 0,
@@ -102,7 +117,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       id: res.id,
-      record: res.record,
     });
   } catch (err) {
     return NextResponse.json(

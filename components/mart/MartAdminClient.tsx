@@ -27,10 +27,18 @@ import {
   EyeOff,
   Star,
   X,
+  Building2,
+  Calculator,
+  ChevronDown,
+  ChevronUp,
+  BellRing,
 } from "lucide-react";
 import { MartLogo } from "./MartLogo";
 import { MartLanguageSwitcher } from "./MartLanguageSwitcher";
 import { useMartI18n } from "./MartI18nProvider";
+import { MartSuppliersPanel } from "./admin/MartSuppliersPanel";
+import { MartAccountingPanel } from "./admin/MartAccountingPanel";
+import { MartCrmPanel } from "./admin/MartCrmPanel";
 import {
   clearStoredMartAdminPass,
   createMartRecord,
@@ -45,12 +53,19 @@ import {
   MartAdminBundle,
   MartApiError,
   MartCategory,
+  MartCollectionMode,
+  MartCrmLog,
+  MartCrmProfile,
+  MartFulfillmentType,
+  MartItemStatus,
   MartLabel,
   MartLabelTone,
   MartOrder,
   MartOrderStatus,
   MartProduct,
   MartSettings,
+  MartSupplier,
+  MartTransaction,
   normalizeMartImageUrl,
   parseOrderItems,
   slugifyCategory,
@@ -68,14 +83,37 @@ import {
   toLocalizedDigits,
   translateMartError,
 } from "@/lib/martI18n";
+import { MART_ENTERPRISE_DICTIONARY } from "@/lib/martEnterpriseI18n";
+import {
+  buildCustomerCrmSummaries,
+  buildFollowUpQueue,
+  buildSupplierSummaries,
+  computeAccountingSummary,
+  DashboardFollowUpItem,
+  normalizePhoneKey,
+  ResolvedOrderFinancials,
+  resolveOrderFinancials,
+} from "@/lib/martOps";
 
 type MartAdminSection =
   | "analytics"
   | "orders"
   | "products"
   | "taxonomy"
-  | "settings"
-  | "customers";
+  | "suppliers"
+  | "accounts"
+  | "customers"
+  | "settings";
+
+const MART_ITEM_STATUSES: MartItemStatus[] = [
+  "Pending",
+  "Forwarded to Supplier",
+  "Packaging",
+  "Shipped",
+  "Delivered",
+  "Returned",
+  "Cancelled",
+];
 
 const MART_SESSION_KEY = "xeetrix_mart_admin_session_v1";
 
@@ -108,6 +146,10 @@ function StatusLabel({
 
 export function MartAdminClient() {
   const { lang, t } = useMartI18n();
+  const ent = MART_ENTERPRISE_DICTIONARY[lang];
+  const tsrc = ent.sourcing;
+  const tord = ent.orderItems;
+  const tcrm = ent.crm;
 
   const [authenticated, setAuthenticated] = useState(false);
   const [authReady, setAuthReady] = useState(false);
@@ -121,12 +163,13 @@ export function MartAdminClient() {
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
-  // Order Filters & Printable Invoice Modal
+  // Order Filters, Expandable Item Fulfillment Panel & Printable Invoice Modal
   const [orderSearch, setOrderSearch] = useState("");
   const [orderStatusFilter, setOrderStatusFilter] = useState<"All" | MartOrderStatus>("All");
+  const [expandedOrderIds, setExpandedOrderIds] = useState<Record<string, boolean>>({});
   const [invoiceOrder, setInvoiceOrder] = useState<MartOrder | null>(null);
 
-  // Product Form (Add or Edit — Bilingual + Multi-Category + Multi-Label)
+  // Product Form (Add or Edit — Bilingual + Multi-Category + Multi-Label + Hybrid Sourcing/Costing)
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [prodSku, setProdSku] = useState("");
   const [prodNameEn, setProdNameEn] = useState("");
@@ -135,6 +178,15 @@ export function MartAdminClient() {
   const [prodLabels, setProdLabels] = useState<string[]>([]);
   const [prodPrice, setProdPrice] = useState("");
   const [prodComparePrice, setProdComparePrice] = useState("");
+  const [prodCostPrice, setProdCostPrice] = useState("");
+  const [prodFulfillmentType, setProdFulfillmentType] =
+    useState<MartFulfillmentType>("own_stock");
+  const [prodSupplierId, setProdSupplierId] = useState("");
+  const [prodSourceName, setProdSourceName] = useState("");
+  const [prodCollectionMode, setProdCollectionMode] =
+    useState<MartCollectionMode>("store_collects");
+  const [prodSupplierAvailable, setProdSupplierAvailable] = useState(true);
+  const [prodLowStockThreshold, setProdLowStockThreshold] = useState("5");
   const [prodStock, setProdStock] = useState("20");
   const [prodVariantsEn, setProdVariantsEn] = useState("");
   const [prodVariantsBn, setProdVariantsBn] = useState("");
@@ -171,8 +223,9 @@ export function MartAdminClient() {
   const [settingsForm, setSettingsForm] = useState<MartSettings>(DEFAULT_MART_SETTINGS);
   const [savingSettings, setSavingSettings] = useState(false);
 
-  // Customer CRM Detail Modal
-  const [selectedCustomerPhone, setSelectedCustomerPhone] = useState<string | null>(null);
+  // CRM Deep-Link Jump States
+  const [crmJumpClientKey, setCrmJumpClientKey] = useState<string | null>(null);
+  const [crmJumpSupplierId, setCrmJumpSupplierId] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -266,6 +319,13 @@ export function MartAdminClient() {
     setProdLabels([]);
     setProdPrice("");
     setProdComparePrice("");
+    setProdCostPrice("");
+    setProdFulfillmentType("own_stock");
+    setProdSupplierId("");
+    setProdSourceName("");
+    setProdCollectionMode("store_collects");
+    setProdSupplierAvailable(true);
+    setProdLowStockThreshold("5");
     setProdStock("20");
     setProdVariantsEn("");
     setProdVariantsBn("");
@@ -285,6 +345,15 @@ export function MartAdminClient() {
     setProdLabels(parseCsvSlugs(p.labels));
     setProdPrice(String(p.price));
     setProdComparePrice(p.comparePrice ? String(p.comparePrice) : "");
+    setProdCostPrice(p.costPrice ? String(p.costPrice) : "");
+    setProdFulfillmentType(p.fulfillmentType === "dropship" ? "dropship" : "own_stock");
+    setProdSupplierId(p.supplierId || "");
+    setProdSourceName(p.sourceName || "");
+    setProdCollectionMode(
+      p.collectionMode === "supplier_collects" ? "supplier_collects" : "store_collects"
+    );
+    setProdSupplierAvailable(p.supplierAvailable !== false);
+    setProdLowStockThreshold(String(p.lowStockThreshold ?? 5));
     setProdStock(String(p.stock));
     setProdVariantsEn(p.variantsEn || "");
     setProdVariantsBn(p.variantsBn || "");
@@ -359,7 +428,14 @@ export function MartAdminClient() {
       labels: prodLabels.join(","),
       price: Number(prodPrice) || 0,
       comparePrice: Number(prodComparePrice) || 0,
-      stock: Math.max(0, Number(prodStock) || 0),
+      costPrice: Math.max(0, Number(prodCostPrice) || 0),
+      fulfillmentType: prodFulfillmentType,
+      supplierId: prodSupplierId.trim(),
+      sourceName: prodSourceName.trim(),
+      collectionMode: prodCollectionMode,
+      supplierAvailable: prodFulfillmentType === "dropship" ? prodSupplierAvailable : true,
+      lowStockThreshold: Math.max(0, Number(prodLowStockThreshold) || 5),
+      stock: prodFulfillmentType === "dropship" ? 0 : Math.max(0, Number(prodStock) || 0),
       variantsEn: prodVariantsEn.trim(),
       variantsBn: prodVariantsBn.trim(),
       imageUrl: prodImageUrl.trim(),
@@ -410,10 +486,11 @@ export function MartAdminClient() {
 
   async function handleToggleProductField(
     p: MartProduct,
-    field: "active" | "featured"
+    field: "active" | "featured" | "supplierAvailable"
   ) {
     if (!data?.isLiveBackend) return;
-    const nextVal = !p[field];
+    const currentVal = field === "supplierAvailable" ? p.supplierAvailable !== false : Boolean(p[field]);
+    const nextVal = !currentVal;
     try {
       await updateMartRecord("Mart_Products", p.id, { [field]: nextVal });
       setData((prev) =>
@@ -492,6 +569,98 @@ export function MartAdminClient() {
         "error",
         translateMartError(apiErr?.message, lang, apiErr?.code) || t.admin.orders.errOrderUpdate
       );
+    }
+  }
+
+  async function handleOrderItemUpdate(
+    order: MartOrder,
+    itemIndex: number,
+    updates: { itemStatus?: MartItemStatus; supplierId?: string }
+  ) {
+    if (!data?.isLiveBackend) return;
+    const rawItems = parseOrderItems(order.itemsJson);
+    if (!rawItems[itemIndex]) return;
+
+    const updatedItems = rawItems.map((it, idx) => {
+      if (idx !== itemIndex) return it;
+      const next = { ...it };
+      if (updates.itemStatus) {
+        next.itemStatus = updates.itemStatus;
+      }
+      if (updates.supplierId !== undefined) {
+        next.supplierId = updates.supplierId;
+        const sup = suppliers.find((s) => s.id === updates.supplierId);
+        next.supplierName = sup ? sup.name : "";
+      }
+      return next;
+    });
+
+    const itemsJson = JSON.stringify(updatedItems);
+    try {
+      await updateMartRecord("Mart_Orders", order.id, { itemsJson });
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              orders: prev.orders.map((o) => (o.id === order.id ? { ...o, itemsJson } : o)),
+            }
+          : prev
+      );
+      showNotice("success", tord.statusUpdatedMsg);
+    } catch (err) {
+      const apiErr = err as MartApiError;
+      showNotice(
+        "error",
+        translateMartError(apiErr?.message, lang, apiErr?.code) || t.admin.orders.errOrderUpdate
+      );
+    }
+  }
+
+  async function handleClearFollowUp(item: DashboardFollowUpItem) {
+    if (!data?.isLiveBackend) return;
+    try {
+      if (item.entityType === "supplier") {
+        await updateMartRecord("Mart_Suppliers", item.entityKey, { nextFollowUpDate: "" });
+        setData((prev) =>
+          prev
+            ? {
+                ...prev,
+                suppliers: (prev.suppliers || []).map((s) =>
+                  s.id === item.entityKey ? { ...s, nextFollowUpDate: "" } : s
+                ),
+              }
+            : prev
+        );
+      } else {
+        const prof = crmProfiles.find(
+          (p) =>
+            p.entityType === "customer" &&
+            (normalizePhoneKey(p.entityKey || p.phone) === item.entityKey ||
+              p.entityKey === item.entityKey)
+        );
+        if (prof?.id) {
+          await updateMartRecord("Mart_CRM_Profiles", prof.id, {
+            nextFollowUpDate: "",
+            followUpTask: "",
+          });
+          setData((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  crmProfiles: (prev.crmProfiles || []).map((p) =>
+                    p.id === prof.id
+                      ? { ...p, nextFollowUpDate: "", followUpTask: "" }
+                      : p
+                  ),
+                }
+              : prev
+          );
+        }
+      }
+      showNotice("success", tcrm.msgFollowUpCleared);
+    } catch (err) {
+      const apiErr = err as MartApiError;
+      showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
     }
   }
 
@@ -728,6 +897,22 @@ export function MartAdminClient() {
   const categories = useMemo(() => data?.categories || [], [data]);
   const labels = useMemo(() => data?.labels || [], [data]);
   const orders = useMemo(() => data?.orders || [], [data]);
+  const suppliers = useMemo(() => data?.suppliers || [], [data]);
+  const transactions = useMemo(() => data?.transactions || [], [data]);
+  const crmProfiles = useMemo(() => data?.crmProfiles || [], [data]);
+  const crmLogs = useMemo(() => data?.crmLogs || [], [data]);
+
+  const prodMap = useMemo(() => {
+    const map = new Map<string, MartProduct>();
+    products.forEach((p) => map.set(p.id, p));
+    return map;
+  }, [products]);
+
+  const supMap = useMemo(() => {
+    const map = new Map<string, MartSupplier>();
+    suppliers.forEach((s) => map.set(s.id, s));
+    return map;
+  }, [suppliers]);
 
   const categoryMap = useMemo(() => {
     const map = new Map<string, MartCategory>();
@@ -745,6 +930,61 @@ export function MartAdminClient() {
     return map;
   }, [labels]);
 
+  const supplierSummaries = useMemo(
+    () =>
+      buildSupplierSummaries({
+        suppliers,
+        products,
+        orders,
+        transactions,
+        crmLogs,
+      }),
+    [suppliers, products, orders, transactions, crmLogs]
+  );
+
+  const customerSummaries = useMemo(
+    () =>
+      buildCustomerCrmSummaries({
+        orders,
+        crmProfiles,
+        crmLogs,
+        prodMap,
+        supMap,
+      }),
+    [orders, crmProfiles, crmLogs, prodMap, supMap]
+  );
+
+  const customerByKeyMap = useMemo(() => {
+    const map = new Map<string, (typeof customerSummaries)[number]>();
+    customerSummaries.forEach((c) => map.set(c.entityKey, c));
+    return map;
+  }, [customerSummaries]);
+
+  const followUpQueue = useMemo(
+    () => buildFollowUpQueue(customerSummaries, supplierSummaries),
+    [customerSummaries, supplierSummaries]
+  );
+
+  const accountingSummary = useMemo(
+    () =>
+      computeAccountingSummary({
+        products,
+        orders,
+        suppliers,
+        transactions,
+        supplierSummaries,
+      }),
+    [products, orders, suppliers, transactions, supplierSummaries]
+  );
+
+  const resolvedOrderMap = useMemo(() => {
+    const map = new Map<string, ResolvedOrderFinancials>();
+    orders.forEach((o) => {
+      map.set(o.id, resolveOrderFinancials(o, prodMap, supMap));
+    });
+    return map;
+  }, [orders, prodMap, supMap]);
+
   const analytics = useMemo(() => {
     const todayKey = new Date().toISOString().slice(0, 10);
     const activeOrders = orders.filter((o) => o.status !== "Cancelled");
@@ -754,7 +994,12 @@ export function MartAdminClient() {
       (o) => o.status === "Pending" || o.status === "Confirmed" || o.status === "Packaging"
     ).length;
     const deliveredOrders = orders.filter((o) => o.status === "Delivered").length;
-    const lowStockProducts = products.filter((p) => p.stock <= 5);
+    // Own-stock only low-stock check (never flag dropshipping products)
+    const lowStockProducts = products.filter(
+      (p) =>
+        p.fulfillmentType !== "dropship" &&
+        p.stock <= (Number(p.lowStockThreshold) || 5)
+    );
 
     const statusCounts: Record<MartOrderStatus, number> = {
       Pending: 0,
@@ -811,60 +1056,19 @@ export function MartAdminClient() {
           return l ? `${l.nameEn} ${l.nameBn} ${l.slug}` : s;
         })
         .join(" ");
-      return [p.nameEn, p.nameBn, p.sku, catNames, lblNames]
+      const supName = p.supplierId ? supMap.get(p.supplierId)?.name || "" : p.sourceName || "";
+      return [p.nameEn, p.nameBn, p.sku, catNames, lblNames, supName]
         .join(" ")
         .toLowerCase()
         .includes(q);
     });
-  }, [products, productSearch, categoryMap, labelMap]);
+  }, [products, productSearch, categoryMap, labelMap, supMap]);
 
-  const customers = useMemo(() => {
-    const map = new Map<
-      string,
-      {
-        name: string;
-        phone: string;
-        address: string;
-        orderCount: number;
-        totalSpend: number;
-        lastOrderDate: string;
-        orders: MartOrder[];
-      }
-    >();
-
-    orders.forEach((o) => {
-      const phoneKey = (o.phone || "").replace(/\s+/g, "").trim() || o.customerName;
-      const existing = map.get(phoneKey);
-      const validSpend = o.status !== "Cancelled" ? Number(o.totalAmount) || 0 : 0;
-      if (existing) {
-        existing.orderCount += 1;
-        existing.totalSpend += validSpend;
-        existing.orders.push(o);
-        if (o.createdAt > existing.lastOrderDate) {
-          existing.lastOrderDate = o.createdAt;
-          existing.address = o.address;
-          existing.name = o.customerName;
-        }
-      } else {
-        map.set(phoneKey, {
-          name: o.customerName,
-          phone: o.phone,
-          address: o.address,
-          orderCount: 1,
-          totalSpend: validSpend,
-          lastOrderDate: o.createdAt,
-          orders: [o],
-        });
-      }
-    });
-
-    return Array.from(map.values()).sort((a, b) => b.totalSpend - a.totalSpend);
-  }, [orders]);
-
-  const selectedCustomer = useMemo(
-    () => customers.find((c) => c.phone === selectedCustomerPhone) || null,
-    [customers, selectedCustomerPhone]
-  );
+  const prodUnitPriceNum = Number(prodPrice) || 0;
+  const prodCostPriceNum = Number(prodCostPrice) || 0;
+  const prodUnitProfit = prodUnitPriceNum - prodCostPriceNum;
+  const prodMarginPct =
+    prodUnitPriceNum > 0 ? Math.round((prodUnitProfit / prodUnitPriceNum) * 100) : 0;
 
   if (!authReady) {
     return (
@@ -960,8 +1164,10 @@ export function MartAdminClient() {
     { id: "orders", label: t.admin.nav.orders, icon: ShoppingCart },
     { id: "products", label: t.admin.nav.products, icon: Package },
     { id: "taxonomy", label: t.admin.nav.taxonomy, icon: Tags },
-    { id: "settings", label: t.admin.nav.settings, icon: SlidersHorizontal },
+    { id: "suppliers", label: t.admin.nav.suppliers, icon: Building2 },
+    { id: "accounts", label: t.admin.nav.accounts, icon: Calculator },
     { id: "customers", label: t.admin.nav.customers, icon: Users },
+    { id: "settings", label: t.admin.nav.settings, icon: SlidersHorizontal },
   ];
 
   return (
@@ -1123,9 +1329,10 @@ export function MartAdminClient() {
             </div>
           )}
 
-          {/* 1. DASHBOARD ANALYTICS & KPIs */}
+          {/* 1. DASHBOARD ANALYTICS, FINANCIAL P&L SUMMARY & CRM FOLLOW-UP QUEUE */}
           {activeSection === "analytics" && (
             <div className="space-y-6">
+              {/* Row 1: Core Operations KPIs */}
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                 <div className="rounded-2xl border border-slate-200 bg-white p-6">
                   <div className="text-xs font-medium text-slate-500">
@@ -1181,9 +1388,69 @@ export function MartAdminClient() {
                 </div>
               </div>
 
+              {/* Row 2: Live Profit, Payables & Dropship Receivables KPIs */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <button
+                  type="button"
+                  onClick={() => setActiveSection("accounts")}
+                  className="text-left rounded-2xl border border-slate-200 bg-white p-5 hover:border-[#0B5336] transition-colors"
+                >
+                  <div className="text-xs font-medium text-slate-500">{tcrm.netProfitKpi}</div>
+                  <div
+                    className={`mt-1.5 font-mono text-xl font-bold tabular-nums ${
+                      accountingSummary.netProfit >= 0 ? "text-[#0B5336]" : "text-red-600"
+                    }`}
+                  >
+                    {formatMartPrice(accountingSummary.netProfit, lang)}
+                  </div>
+                  <div className="mt-1 text-[11px] text-slate-500 tabular-nums">
+                    {ent.accounts.grossProfitCard}:{" "}
+                    {formatMartPrice(accountingSummary.grossProfit, lang)} (
+                    {toLocalizedDigits(accountingSummary.netMarginPct, lang)}%)
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveSection("suppliers")}
+                  className="text-left rounded-2xl border border-slate-200 bg-white p-5 hover:border-[#0B5336] transition-colors"
+                >
+                  <div className="text-xs font-medium text-slate-500">{tcrm.payableKpi}</div>
+                  <div
+                    className={`mt-1.5 font-mono text-xl font-bold tabular-nums ${
+                      accountingSummary.totalPayableDue > 0 ? "text-red-600" : "text-slate-900"
+                    }`}
+                  >
+                    {formatMartPrice(accountingSummary.totalPayableDue, lang)}
+                  </div>
+                  <div className="mt-1 text-[11px] text-slate-500 tabular-nums">
+                    {ent.suppliers.title.split("(")[0].trim()}
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveSection("suppliers")}
+                  className="text-left rounded-2xl border border-slate-200 bg-white p-5 hover:border-[#0B5336] transition-colors"
+                >
+                  <div className="text-xs font-medium text-slate-500">{tcrm.receivableKpi}</div>
+                  <div
+                    className={`mt-1.5 font-mono text-xl font-bold tabular-nums ${
+                      accountingSummary.totalReceivableDue > 0 ? "text-[#0B5336]" : "text-slate-900"
+                    }`}
+                  >
+                    {formatMartPrice(accountingSummary.totalReceivableDue, lang)}
+                  </div>
+                  <div className="mt-1 text-[11px] text-slate-500 tabular-nums">
+                    {ent.suppliers.payoutModes.supplier_pays_us}
+                  </div>
+                </button>
+              </div>
+
+              {/* Row 3: Order Pipeline, Own-Stock Alerts & CRM Follow-up Reminder Queue */}
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 {/* Order Pipeline Summary */}
-                <div className="lg:col-span-6 rounded-2xl border border-slate-200 bg-white p-6 space-y-4">
+                <div className="lg:col-span-4 rounded-2xl border border-slate-200 bg-white p-6 space-y-4">
                   <h2 className="font-display text-base font-bold text-slate-900">
                     {t.admin.analytics.fulfillmentOverview}
                   </h2>
@@ -1219,11 +1486,11 @@ export function MartAdminClient() {
                   </div>
                 </div>
 
-                {/* Low Stock Alerts */}
-                <div className="lg:col-span-6 rounded-2xl border border-slate-200 bg-white p-6 space-y-4">
-                  <div className="flex items-center justify-between">
+                {/* Own-Stock Low Stock Alerts */}
+                <div className="lg:col-span-4 rounded-2xl border border-slate-200 bg-white p-6 space-y-4">
+                  <div className="flex items-center justify-between gap-2">
                     <h2 className="font-display text-base font-bold text-slate-900 flex items-center gap-2">
-                      <AlertTriangle className="h-4 w-4 text-gold-600" />
+                      <AlertTriangle className="h-4 w-4 text-gold-600 shrink-0" />
                       <span>{t.admin.analytics.lowStockTitle}</span>
                     </h2>
                     <button
@@ -1277,11 +1544,90 @@ export function MartAdminClient() {
                     </div>
                   )}
                 </div>
+
+                {/* Today & Overdue CRM Follow-Up Queue */}
+                <div className="lg:col-span-4 rounded-2xl border border-slate-200 bg-white p-6 space-y-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <h2 className="font-display text-base font-bold text-slate-900 flex items-center gap-2">
+                        <BellRing className="h-4 w-4 text-[#0B5336] shrink-0" />
+                        <span>{tcrm.dashboardQueueTitle}</span>
+                      </h2>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        {tcrm.dashboardQueueSubtitle}
+                      </p>
+                    </div>
+                  </div>
+
+                  {followUpQueue.length === 0 ? (
+                    <p className="text-xs text-slate-500 py-6 text-center">
+                      {tcrm.dashboardQueueEmpty}
+                    </p>
+                  ) : (
+                    <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto pr-1">
+                      {followUpQueue.slice(0, 8).map((item) => (
+                        <div key={item.id} className="py-2.5 space-y-1.5 text-xs">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <span className="font-semibold text-slate-900 truncate block">
+                                {item.name}
+                              </span>
+                              <span className="font-mono text-[11px] text-slate-500">
+                                {item.entityType === "customer"
+                                  ? tcrm.entityCustomer
+                                  : tcrm.entitySupplier}{" "}
+                                · {item.phone}
+                              </span>
+                            </div>
+                            <span
+                              className={`text-[11px] font-mono font-semibold whitespace-nowrap shrink-0 ${
+                                item.isOverdue
+                                  ? "text-red-600"
+                                  : item.isDueToday
+                                  ? "text-gold-700"
+                                  : "text-slate-600"
+                              }`}
+                            >
+                              {item.nextFollowUpDate}
+                            </span>
+                          </div>
+                          {item.task && (
+                            <p className="text-[11px] text-slate-600 line-clamp-1">{item.task}</p>
+                          )}
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (item.entityType === "customer") {
+                                  setCrmJumpClientKey(item.entityKey);
+                                  setActiveSection("customers");
+                                } else {
+                                  setCrmJumpSupplierId(item.entityKey);
+                                  setActiveSection("suppliers");
+                                }
+                              }}
+                              className="text-[11px] font-semibold text-[#0B5336] hover:underline whitespace-nowrap"
+                            >
+                              {tcrm.openProfileBtn}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleClearFollowUp(item)}
+                              className="text-[11px] font-medium text-slate-500 hover:text-slate-900 whitespace-nowrap"
+                            >
+                              {tcrm.markDoneBtn}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
 
-          {/* 2. ORDER MANAGEMENT */}
+          {/* 2. ORDER MANAGEMENT WITH ITEM-LEVEL SOURCING, PROFIT & CRM RISK ALERTS */}
           {activeSection === "orders" && (
             <div className="space-y-6">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1346,95 +1692,317 @@ export function MartAdminClient() {
                       ) : (
                         filteredOrders.map((order) => {
                           const parsedItems = parseOrderItems(order.itemsJson);
+                          const fin = resolvedOrderMap.get(order.id);
+                          const expanded = Boolean(expandedOrderIds[order.id]);
+                          const clientKey =
+                            normalizePhoneKey(order.phone) ||
+                            order.phone.trim() ||
+                            order.customerName.trim();
+                          const crmSummary = customerByKeyMap.get(clientKey);
+                          const clientTier = crmSummary?.effectiveTier;
+
                           return (
-                            <tr key={order.id} className="hover:bg-slate-50 align-top">
-                              <td className="px-4 py-3">
-                                <div className="font-mono font-bold text-slate-900">{order.id}</div>
-                                <div className="text-[11px] text-slate-400 mt-0.5">
-                                  {formatMartDate(order.createdAt, lang)}
-                                </div>
-                              </td>
-                              <td className="px-4 py-3 max-w-xs">
-                                <div className="font-semibold text-slate-900">
-                                  {order.customerName}
-                                </div>
-                                <div className="font-mono text-[11px] text-slate-600">
-                                  {order.phone}
-                                </div>
-                                <div className="text-[11px] text-slate-500 mt-0.5">
-                                  {order.deliveryArea} · {order.address}
-                                </div>
-                                {order.notes && (
-                                  <div className="text-[11px] text-gold-700 mt-0.5">
-                                    {t.admin.orders.notePrefix}: {order.notes}
+                            <React.Fragment key={order.id}>
+                              <tr className="hover:bg-slate-50 align-top">
+                                <td className="px-4 py-3">
+                                  <div className="font-mono font-bold text-slate-900">
+                                    {order.id}
                                   </div>
-                                )}
-                              </td>
-                              <td className="px-4 py-3 max-w-xs">
-                                {parsedItems.length > 0 ? (
-                                  <ul className="space-y-0.5 text-slate-700">
-                                    {parsedItems.map((it, idx) => (
-                                      <li key={idx}>
-                                        {pickLocalized(it.nameEn || it.name, it.nameBn, lang)}
-                                        {it.variant ? ` (${it.variant})` : ""}{" "}
-                                        <span className="font-mono text-slate-500">
-                                          × {toLocalizedDigits(it.quantity, lang)}
-                                        </span>
-                                      </li>
+                                  <div className="text-[11px] text-slate-400 mt-0.5">
+                                    {formatMartDate(order.createdAt, lang)}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3 max-w-xs">
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <span className="font-semibold text-slate-900">
+                                      {order.customerName}
+                                    </span>
+                                    {clientTier && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setCrmJumpClientKey(clientKey);
+                                          setActiveSection("customers");
+                                        }}
+                                        className={`rounded px-1.5 py-0.5 text-[10px] font-semibold border whitespace-nowrap ${
+                                          clientTier === "high_risk" || clientTier === "blocked"
+                                            ? "border-red-200 bg-red-50 text-red-700"
+                                            : clientTier === "vip"
+                                            ? "border-brand-200 bg-brand-50 text-[#0B5336]"
+                                            : "border-slate-200 bg-slate-50 text-slate-600"
+                                        }`}
+                                      >
+                                        {clientTier === "high_risk"
+                                          ? tord.highRiskWarning
+                                          : clientTier === "blocked"
+                                          ? tord.blockedWarning
+                                          : clientTier === "vip"
+                                          ? tord.vipCustomerTag
+                                          : tcrm.tiers[clientTier]}
+                                      </button>
+                                    )}
+                                  </div>
+                                  <div className="font-mono text-[11px] text-slate-600">
+                                    {order.phone}
+                                  </div>
+                                  <div className="text-[11px] text-slate-500 mt-0.5">
+                                    {order.deliveryArea} · {order.address}
+                                  </div>
+                                  {order.notes && (
+                                    <div className="text-[11px] text-gold-700 mt-0.5">
+                                      {t.admin.orders.notePrefix}: {order.notes}
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="px-4 py-3 max-w-xs">
+                                  {parsedItems.length > 0 ? (
+                                    <ul className="space-y-0.5 text-slate-700">
+                                      {parsedItems.map((it, idx) => (
+                                        <li key={idx}>
+                                          {pickLocalized(it.nameEn || it.name, it.nameBn, lang)}
+                                          {it.variant ? ` (${it.variant})` : ""}{" "}
+                                          <span className="font-mono text-slate-500">
+                                            × {toLocalizedDigits(it.quantity, lang)}
+                                          </span>
+                                          {it.fulfillmentType === "dropship" && (
+                                            <span className="ml-1 text-[10px] font-semibold text-gold-700">
+                                              [{tsrc.dropshipMode.split(" ")[0]}]
+                                            </span>
+                                          )}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  ) : (
+                                    <span className="text-slate-700">{order.itemsSummary}</span>
+                                  )}
+                                  {fin && (
+                                    <div className="mt-1 font-mono text-[11px] text-[#0B5336] font-semibold tabular-nums">
+                                      {tord.orderProfitLabel}:{" "}
+                                      {formatMartPrice(fin.grossProfit, lang)}
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="px-4 py-3">
+                                  <div className="font-medium text-slate-800">
+                                    {order.paymentMethod}
+                                  </div>
+                                  {order.transactionId && (
+                                    <div className="font-mono text-[11px] text-slate-500">
+                                      {t.admin.orders.trxPrefix}: {order.transactionId}
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="px-4 py-3 text-right font-mono tabular-nums">
+                                  <div className="font-bold text-slate-900">
+                                    {formatMartPrice(order.totalAmount, lang)}
+                                  </div>
+                                  <div className="text-[11px] text-slate-400">
+                                    {t.admin.orders.deliveryPrefix}:{" "}
+                                    {formatMartPrice(order.deliveryCharge, lang)}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <select
+                                    value={order.status}
+                                    onChange={(e) =>
+                                      handleOrderStatusChange(
+                                        order.id,
+                                        e.target.value as MartOrderStatus
+                                      )
+                                    }
+                                    className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold"
+                                  >
+                                    {ORDER_STATUSES.map((st) => (
+                                      <option key={st} value={st}>
+                                        {t.orderStatuses[st]}
+                                      </option>
                                     ))}
-                                  </ul>
-                                ) : (
-                                  <span className="text-slate-700">{order.itemsSummary}</span>
-                                )}
-                              </td>
-                              <td className="px-4 py-3">
-                                <div className="font-medium text-slate-800">
-                                  {order.paymentMethod}
-                                </div>
-                                {order.transactionId && (
-                                  <div className="font-mono text-[11px] text-slate-500">
-                                    {t.admin.orders.trxPrefix}: {order.transactionId}
+                                  </select>
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  <div className="inline-flex items-center gap-1.5">
+                                    {parsedItems.length > 0 && (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setExpandedOrderIds((prev) => ({
+                                            ...prev,
+                                            [order.id]: !prev[order.id],
+                                          }))
+                                        }
+                                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] whitespace-nowrap"
+                                      >
+                                        {expanded ? (
+                                          <ChevronUp className="h-3.5 w-3.5" />
+                                        ) : (
+                                          <ChevronDown className="h-3.5 w-3.5" />
+                                        )}
+                                        <span>
+                                          {expanded ? tord.hidePanelBtn : tord.fulfillmentPanelBtn}
+                                        </span>
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => setInvoiceOrder(order)}
+                                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] whitespace-nowrap"
+                                    >
+                                      <Printer className="h-3.5 w-3.5" />
+                                      <span>{t.admin.orders.invoiceBtn}</span>
+                                    </button>
                                   </div>
-                                )}
-                              </td>
-                              <td className="px-4 py-3 text-right font-mono tabular-nums">
-                                <div className="font-bold text-slate-900">
-                                  {formatMartPrice(order.totalAmount, lang)}
-                                </div>
-                                <div className="text-[11px] text-slate-400">
-                                  {t.admin.orders.deliveryPrefix}:{" "}
-                                  {formatMartPrice(order.deliveryCharge, lang)}
-                                </div>
-                              </td>
-                              <td className="px-4 py-3">
-                                <select
-                                  value={order.status}
-                                  onChange={(e) =>
-                                    handleOrderStatusChange(
-                                      order.id,
-                                      e.target.value as MartOrderStatus
-                                    )
-                                  }
-                                  className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold"
-                                >
-                                  {ORDER_STATUSES.map((st) => (
-                                    <option key={st} value={st}>
-                                      {t.orderStatuses[st]}
-                                    </option>
-                                  ))}
-                                </select>
-                              </td>
-                              <td className="px-4 py-3 text-right">
-                                <button
-                                  type="button"
-                                  onClick={() => setInvoiceOrder(order)}
-                                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] whitespace-nowrap"
-                                >
-                                  <Printer className="h-3.5 w-3.5" />
-                                  <span>{t.admin.orders.invoiceBtn}</span>
-                                </button>
-                              </td>
-                            </tr>
+                                </td>
+                              </tr>
+
+                              {expanded && fin && fin.items.length > 0 && (
+                                <tr className="bg-slate-50/80">
+                                  <td colSpan={7} className="px-4 py-4">
+                                    <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+                                      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                                        <div className="text-xs font-bold text-slate-900">
+                                          {tord.itemSourceLabel}
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-4 text-xs font-mono tabular-nums">
+                                          <span>
+                                            {tord.orderSalesLabel}:{" "}
+                                            <strong>
+                                              {formatMartPrice(fin.validSales, lang)}
+                                            </strong>
+                                          </span>
+                                          <span>
+                                            {tord.orderCostLabel}:{" "}
+                                            <strong>
+                                              {formatMartPrice(fin.validCost, lang)}
+                                            </strong>
+                                          </span>
+                                          <span
+                                            className={
+                                              fin.grossProfit >= 0
+                                                ? "text-[#0B5336] font-bold"
+                                                : "text-red-600 font-bold"
+                                            }
+                                          >
+                                            {tord.orderProfitLabel}:{" "}
+                                            {formatMartPrice(fin.grossProfit, lang)}
+                                          </span>
+                                        </div>
+                                      </div>
+
+                                      <div className="overflow-x-auto">
+                                        <table className="w-full text-left text-xs">
+                                          <thead className="text-[11px] text-slate-500 border-b border-slate-100">
+                                            <tr>
+                                              <th className="py-2 pr-3 font-semibold">
+                                                {t.admin.invoice.itemCol}
+                                              </th>
+                                              <th className="py-2 pr-3 font-semibold">
+                                                {tord.supplierCol}
+                                              </th>
+                                              <th className="py-2 pr-3 font-semibold">
+                                                {tord.collectionCol}
+                                              </th>
+                                              <th className="py-2 pr-3 font-semibold text-right">
+                                                {tord.costProfitCol}
+                                              </th>
+                                              <th className="py-2 font-semibold text-right">
+                                                {tord.itemStatusCol}
+                                              </th>
+                                            </tr>
+                                          </thead>
+                                          <tbody className="divide-y divide-slate-100">
+                                            {fin.items.map((item, idx) => (
+                                              <tr key={idx}>
+                                                <td className="py-2 pr-3">
+                                                  <div className="font-semibold text-slate-900">
+                                                    {pickLocalized(
+                                                      item.nameEn || item.name,
+                                                      item.nameBn,
+                                                      lang
+                                                    )}{" "}
+                                                    <span className="font-mono text-slate-500">
+                                                      × {toLocalizedDigits(item.quantity, lang)}
+                                                    </span>
+                                                  </div>
+                                                  {item.variant && (
+                                                    <div className="text-[11px] text-slate-500">
+                                                      {item.variant}
+                                                    </div>
+                                                  )}
+                                                </td>
+                                                <td className="py-2 pr-3">
+                                                  <div className="text-[11px] font-semibold text-slate-700 mb-1">
+                                                    {item.resolvedFulfillmentType === "dropship"
+                                                      ? tsrc.dropshipMode
+                                                      : tsrc.ownStockMode}
+                                                  </div>
+                                                  <select
+                                                    value={item.resolvedSupplierId}
+                                                    onChange={(e) =>
+                                                      handleOrderItemUpdate(order, idx, {
+                                                        supplierId: e.target.value,
+                                                      })
+                                                    }
+                                                    className="rounded border border-slate-200 bg-white px-2 py-1 text-[11px]"
+                                                  >
+                                                    <option value="">
+                                                      {item.resolvedSupplierName ||
+                                                        tsrc.noSupplierOption}
+                                                    </option>
+                                                    {suppliers.map((sup) => (
+                                                      <option key={sup.id} value={sup.id}>
+                                                        {sup.name}
+                                                      </option>
+                                                    ))}
+                                                  </select>
+                                                </td>
+                                                <td className="py-2 pr-3 text-[11px] text-slate-600">
+                                                  {item.resolvedCollectionMode ===
+                                                  "supplier_collects"
+                                                    ? tsrc.supplierCollectsOption
+                                                    : tsrc.storeCollectsOption}
+                                                </td>
+                                                <td className="py-2 pr-3 text-right font-mono tabular-nums">
+                                                  <div className="text-slate-600">
+                                                    {formatMartPrice(item.resolvedLineCost, lang)}
+                                                  </div>
+                                                  <div
+                                                    className={
+                                                      item.resolvedLineProfit >= 0
+                                                        ? "text-[#0B5336] font-bold"
+                                                        : "text-red-600 font-bold"
+                                                    }
+                                                  >
+                                                    {formatMartPrice(item.resolvedLineProfit, lang)}
+                                                  </div>
+                                                </td>
+                                                <td className="py-2 text-right">
+                                                  <select
+                                                    value={item.resolvedStatus}
+                                                    onChange={(e) =>
+                                                      handleOrderItemUpdate(order, idx, {
+                                                        itemStatus: e.target
+                                                          .value as MartItemStatus,
+                                                      })
+                                                    }
+                                                    className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold"
+                                                  >
+                                                    {MART_ITEM_STATUSES.map((ist) => (
+                                                      <option key={ist} value={ist}>
+                                                        {tord.itemStatuses[ist]}
+                                                      </option>
+                                                    ))}
+                                                  </select>
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
                           );
                         })
                       )}
@@ -1470,7 +2038,7 @@ export function MartAdminClient() {
                 </div>
 
                 <form onSubmit={handleSaveProduct} className="space-y-5">
-                  {/* Dual EN + BN Names + SKU + Stock */}
+                  {/* Dual EN + BN Names + SKU + Stock / Sourcing */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 mb-1.5">
@@ -1515,14 +2083,20 @@ export function MartAdminClient() {
                       <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                         {t.admin.products.stockLabel}
                       </label>
-                      <input
-                        type="number"
-                        min={0}
-                        required
-                        value={prodStock}
-                        onChange={(e) => setProdStock(e.target.value)}
-                        className="input font-mono"
-                      />
+                      {prodFulfillmentType === "dropship" ? (
+                        <div className="input flex items-center text-xs font-semibold text-[#0B5336] bg-brand-50">
+                          {tsrc.unlimitedLabel}
+                        </div>
+                      ) : (
+                        <input
+                          type="number"
+                          min={0}
+                          required
+                          value={prodStock}
+                          onChange={(e) => setProdStock(e.target.value)}
+                          className="input font-mono"
+                        />
+                      )}
                     </div>
                   </div>
 
@@ -1581,6 +2155,147 @@ export function MartAdminClient() {
                         placeholder={t.admin.products.variantsBnPlaceholder}
                         className="input"
                       />
+                    </div>
+                  </div>
+
+                  {/* Sourcing Mode, Cost Price, Supplier & Billing Control */}
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-xs font-bold text-slate-900">
+                        {tsrc.sectionTitle}
+                      </span>
+                      {prodPrice && (
+                        <span
+                          className={`text-xs font-mono font-bold tabular-nums ${
+                            prodUnitProfit >= 0 ? "text-[#0B5336]" : "text-red-600"
+                          }`}
+                        >
+                          {tsrc.unitProfitLabel}: {formatMartPrice(prodUnitProfit, lang)} (
+                          {toLocalizedDigits(prodMarginPct, lang)}% · {tsrc.marginPreviewLabel})
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          {tsrc.fulfillmentModeLabel}
+                        </label>
+                        <select
+                          value={prodFulfillmentType}
+                          onChange={(e) =>
+                            setProdFulfillmentType(e.target.value as MartFulfillmentType)
+                          }
+                          className="input text-xs"
+                        >
+                          <option value="own_stock">{tsrc.ownStockMode}</option>
+                          <option value="dropship">{tsrc.dropshipMode}</option>
+                        </select>
+                        <p className="text-[11px] text-slate-500 mt-1">
+                          {prodFulfillmentType === "dropship"
+                            ? tsrc.dropshipHint
+                            : tsrc.ownStockHint}
+                        </p>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          {tsrc.costPriceLabel}
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={prodCostPrice}
+                          onChange={(e) => setProdCostPrice(e.target.value)}
+                          placeholder="850"
+                          className="input font-mono"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          {tsrc.supplierLabel}
+                        </label>
+                        <select
+                          value={prodSupplierId}
+                          onChange={(e) => {
+                            const id = e.target.value;
+                            setProdSupplierId(id);
+                            const sup = suppliers.find((s) => s.id === id);
+                            if (sup) {
+                              setProdCollectionMode(
+                                sup.payoutMode === "supplier_pays_us"
+                                  ? "supplier_collects"
+                                  : "store_collects"
+                              );
+                            }
+                          }}
+                          className="input text-xs"
+                        >
+                          <option value="">{tsrc.noSupplierOption}</option>
+                          {suppliers.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          {tsrc.sourceNameLabel}
+                        </label>
+                        <input
+                          type="text"
+                          value={prodSourceName}
+                          onChange={(e) => setProdSourceName(e.target.value)}
+                          placeholder={tsrc.sourceNamePlaceholder}
+                          className="input text-xs"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 items-end">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          {tsrc.collectionModeLabel}
+                        </label>
+                        <select
+                          value={prodCollectionMode}
+                          onChange={(e) =>
+                            setProdCollectionMode(e.target.value as MartCollectionMode)
+                          }
+                          className="input text-xs"
+                        >
+                          <option value="store_collects">{tsrc.storeCollectsOption}</option>
+                          <option value="supplier_collects">{tsrc.supplierCollectsOption}</option>
+                        </select>
+                      </div>
+
+                      {prodFulfillmentType === "own_stock" ? (
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">
+                            {tsrc.lowStockThresholdLabel}
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={prodLowStockThreshold}
+                            onChange={(e) => setProdLowStockThreshold(e.target.value)}
+                            className="input font-mono"
+                          />
+                        </div>
+                      ) : (
+                        <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-800 cursor-pointer pb-2">
+                          <input
+                            type="checkbox"
+                            checked={prodSupplierAvailable}
+                            onChange={(e) => setProdSupplierAvailable(e.target.checked)}
+                            className="h-4 w-4 rounded border-slate-300 text-[#0B5336]"
+                          />
+                          <span>{tsrc.supplierAvailableCheckbox}</span>
+                        </label>
+                      )}
                     </div>
                   </div>
 
@@ -1827,8 +2542,9 @@ export function MartAdminClient() {
                         <th className="px-4 py-3 font-semibold">
                           {t.admin.products.colTaxonomy}
                         </th>
+                        <th className="px-4 py-3 font-semibold">{tsrc.colSourcing}</th>
                         <th className="px-4 py-3 font-semibold text-right">
-                          {t.admin.products.colPrice}
+                          {t.admin.products.colPrice} / {tsrc.colCostMargin}
                         </th>
                         <th className="px-4 py-3 font-semibold text-center">
                           {t.admin.products.colStock}
@@ -1842,7 +2558,7 @@ export function MartAdminClient() {
                     <tbody className="divide-y divide-slate-100">
                       {filteredProducts.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="px-4 py-10 text-center text-slate-500">
+                          <td colSpan={7} className="px-4 py-10 text-center text-slate-500">
                             {t.admin.products.emptyProducts}
                           </td>
                         </tr>
@@ -1862,6 +2578,10 @@ export function MartAdminClient() {
                             lang,
                             p.sku
                           );
+                          const isDropship = p.fulfillmentType === "dropship";
+                          const supObj = p.supplierId ? supMap.get(p.supplierId) : undefined;
+                          const unitCost = Number(p.costPrice) || 0;
+                          const unitProfit = (Number(p.price) || 0) - unitCost;
 
                           return (
                             <tr key={p.id} className="hover:bg-slate-50">
@@ -1900,40 +2620,75 @@ export function MartAdminClient() {
                                   </div>
                                 )}
                               </td>
+                              <td className="px-4 py-3">
+                                <div className="font-semibold text-slate-800">
+                                  {isDropship ? tsrc.dropshipMode : tsrc.ownStockMode}
+                                </div>
+                                <div className="text-[11px] text-slate-500">
+                                  {supObj?.name || p.sourceName || tsrc.noSupplierOption}
+                                </div>
+                              </td>
                               <td className="px-4 py-3 text-right font-mono tabular-nums">
                                 <div className="font-bold text-slate-900">
                                   {formatMartPrice(p.price, lang)}
                                 </div>
-                                {p.comparePrice > p.price && (
-                                  <div className="text-[11px] text-slate-400 line-through">
-                                    {formatMartPrice(p.comparePrice, lang)}
-                                  </div>
-                                )}
+                                <div className="text-[11px] text-slate-500">
+                                  {formatMartPrice(unitCost, lang)} →{" "}
+                                  <span
+                                    className={
+                                      unitProfit >= 0
+                                        ? "text-[#0B5336] font-semibold"
+                                        : "text-red-600 font-semibold"
+                                    }
+                                  >
+                                    {formatMartPrice(unitProfit, lang)}
+                                  </span>
+                                </div>
                               </td>
                               <td className="px-4 py-3 text-center">
-                                <div className="inline-flex items-center gap-1.5">
+                                {isDropship ? (
                                   <button
                                     type="button"
-                                    onClick={() => handleQuickStockAdjust(p, -1)}
-                                    className="rounded border border-slate-200 px-1.5 py-0.5 font-mono hover:bg-slate-100"
-                                  >
-                                    -
-                                  </button>
-                                  <span
-                                    className={`font-mono font-bold tabular-nums w-8 text-center ${
-                                      p.stock <= 5 ? "text-red-600" : "text-slate-900"
+                                    onClick={() =>
+                                      handleToggleProductField(p, "supplierAvailable")
+                                    }
+                                    className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold whitespace-nowrap ${
+                                      p.supplierAvailable !== false
+                                        ? "border-brand-200 bg-brand-50 text-[#0B5336]"
+                                        : "border-red-200 bg-red-50 text-red-700"
                                     }`}
                                   >
-                                    {toLocalizedDigits(p.stock, lang)}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleQuickStockAdjust(p, 1)}
-                                    className="rounded border border-slate-200 px-1.5 py-0.5 font-mono hover:bg-slate-100"
-                                  >
-                                    +
+                                    {p.supplierAvailable !== false
+                                      ? tsrc.availableStatus
+                                      : tsrc.pausedStatus}
                                   </button>
-                                </div>
+                                ) : (
+                                  <div className="inline-flex items-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleQuickStockAdjust(p, -1)}
+                                      className="rounded border border-slate-200 px-1.5 py-0.5 font-mono hover:bg-slate-100"
+                                    >
+                                      -
+                                    </button>
+                                    <span
+                                      className={`font-mono font-bold tabular-nums w-8 text-center ${
+                                        p.stock <= (Number(p.lowStockThreshold) || 5)
+                                          ? "text-red-600"
+                                          : "text-slate-900"
+                                      }`}
+                                    >
+                                      {toLocalizedDigits(p.stock, lang)}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleQuickStockAdjust(p, 1)}
+                                      className="rounded border border-slate-200 px-1.5 py-0.5 font-mono hover:bg-slate-100"
+                                    >
+                                      +
+                                    </button>
+                                  </div>
+                                )}
                               </td>
                               <td className="px-4 py-3">
                                 <div className="flex items-center gap-1.5">
@@ -2562,84 +3317,113 @@ export function MartAdminClient() {
             </div>
           )}
 
-          {/* 6. CUSTOMER CRM & SALES REPORT */}
-          {activeSection === "customers" && (
-            <div className="space-y-6">
-              <div className="rounded-2xl border border-slate-200 bg-white p-6 flex flex-wrap items-center justify-between gap-4">
-                <div>
-                  <h2 className="font-display text-lg font-bold text-slate-900">
-                    {t.admin.customers.title}
-                  </h2>
-                  <p className="text-xs text-slate-500 mt-0.5">{t.admin.customers.subtitle}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => exportMartOrdersToCsv(orders, lang)}
-                  disabled={orders.length === 0}
-                  className="btn-primary px-5 py-2.5 text-xs gap-2 disabled:opacity-50"
-                >
-                  <Download className="h-4 w-4" />
-                  <span>{t.admin.customers.downloadCsvBtn}</span>
-                </button>
-              </div>
+          {/* 5. SUPPLIERS & DROPSHIPPING PARTNERS */}
+          {activeSection === "suppliers" && (
+            <MartSuppliersPanel
+              isLiveBackend={Boolean(data?.isLiveBackend)}
+              supplierSummaries={supplierSummaries}
+              initialCrmSupplierId={crmJumpSupplierId}
+              onClearInitialSupplier={() => setCrmJumpSupplierId(null)}
+              onSupplierCreated={(s) =>
+                setData((prev) =>
+                  prev ? { ...prev, suppliers: [s, ...(prev.suppliers || [])] } : prev
+                )
+              }
+              onSupplierUpdated={(id, updates) =>
+                setData((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        suppliers: (prev.suppliers || []).map((s) =>
+                          s.id === id ? { ...s, ...updates } : s
+                        ),
+                      }
+                    : prev
+                )
+              }
+              onSupplierDeleted={(id) =>
+                setData((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        suppliers: (prev.suppliers || []).filter((s) => s.id !== id),
+                      }
+                    : prev
+                )
+              }
+              onTransactionCreated={(txn) =>
+                setData((prev) =>
+                  prev
+                    ? { ...prev, transactions: [txn, ...(prev.transactions || [])] }
+                    : prev
+                )
+              }
+              onCrmLogCreated={(log) =>
+                setData((prev) =>
+                  prev ? { ...prev, crmLogs: [log, ...(prev.crmLogs || [])] } : prev
+                )
+              }
+              onNotify={showNotice}
+            />
+          )}
 
-              <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-500">
-                      <tr>
-                        <th className="px-4 py-3 font-semibold">{t.admin.customers.colCustomer}</th>
-                        <th className="px-4 py-3 font-semibold">{t.admin.customers.colPhone}</th>
-                        <th className="px-4 py-3 font-semibold">{t.admin.customers.colAddress}</th>
-                        <th className="px-4 py-3 font-semibold text-right">
-                          {t.admin.customers.colOrders}
-                        </th>
-                        <th className="px-4 py-3 font-semibold text-right">
-                          {t.admin.customers.colSpend}
-                        </th>
-                        <th className="px-4 py-3 font-semibold text-right">
-                          {t.admin.customers.colHistory}
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {customers.length === 0 ? (
-                        <tr>
-                          <td colSpan={6} className="px-4 py-10 text-center text-slate-500">
-                            {t.admin.customers.emptyCustomers}
-                          </td>
-                        </tr>
-                      ) : (
-                        customers.map((cust) => (
-                          <tr key={cust.phone} className="hover:bg-slate-50">
-                            <td className="px-4 py-3 font-semibold text-slate-900">{cust.name}</td>
-                            <td className="px-4 py-3 font-mono text-slate-700">{cust.phone}</td>
-                            <td className="px-4 py-3 text-slate-600 max-w-xs truncate">
-                              {cust.address}
-                            </td>
-                            <td className="px-4 py-3 text-right font-mono font-semibold tabular-nums">
-                              {toLocalizedDigits(cust.orderCount, lang)}
-                            </td>
-                            <td className="px-4 py-3 text-right font-mono font-bold text-[#0B5336] tabular-nums">
-                              {formatMartPrice(cust.totalSpend, lang)}
-                            </td>
-                            <td className="px-4 py-3 text-right">
-                              <button
-                                type="button"
-                                onClick={() => setSelectedCustomerPhone(cust.phone)}
-                                className="rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] whitespace-nowrap"
-                              >
-                                {t.admin.customers.viewOrdersBtn}
-                              </button>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
+          {/* 6. ACCOUNTING, P&L & CASHBOOK LEDGER */}
+          {activeSection === "accounts" && (
+            <MartAccountingPanel
+              isLiveBackend={Boolean(data?.isLiveBackend)}
+              products={products}
+              orders={orders}
+              suppliers={suppliers}
+              supplierSummaries={supplierSummaries}
+              transactions={transactions}
+              onTransactionCreated={(txn) =>
+                setData((prev) =>
+                  prev
+                    ? { ...prev, transactions: [txn, ...(prev.transactions || [])] }
+                    : prev
+                )
+              }
+              onTransactionDeleted={(id) =>
+                setData((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        transactions: (prev.transactions || []).filter((tx) => tx.id !== id),
+                      }
+                    : prev
+                )
+              }
+              onNotify={showNotice}
+            />
+          )}
+
+          {/* 7. CLIENT 360 CRM, RISK SCORING & FOLLOW-UP HUB */}
+          {activeSection === "customers" && (
+            <MartCrmPanel
+              isLiveBackend={Boolean(data?.isLiveBackend)}
+              customerSummaries={customerSummaries}
+              crmProfiles={crmProfiles}
+              initialClientKey={crmJumpClientKey}
+              onClearInitialClient={() => setCrmJumpClientKey(null)}
+              onProfileSaved={(profile, isNew) =>
+                setData((prev) => {
+                  if (!prev) return prev;
+                  const list = prev.crmProfiles || [];
+                  return {
+                    ...prev,
+                    crmProfiles: isNew
+                      ? [profile, ...list]
+                      : list.map((p) => (p.id === profile.id ? profile : p)),
+                  };
+                })
+              }
+              onLogCreated={(log) =>
+                setData((prev) =>
+                  prev ? { ...prev, crmLogs: [log, ...(prev.crmLogs || [])] } : prev
+                )
+              }
+              onNotify={showNotice}
+            />
           )}
         </main>
       </div>
@@ -2796,56 +3580,6 @@ export function MartAdminClient() {
         </div>
       )}
 
-      {/* CUSTOMER ORDER HISTORY MODAL */}
-      {selectedCustomer && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs"
-          role="dialog"
-          aria-modal="true"
-        >
-          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 bg-slate-50">
-              <div>
-                <h2 className="font-display text-base font-bold text-slate-900">
-                  {selectedCustomer.name}
-                </h2>
-                <p className="font-mono text-xs text-slate-500">{selectedCustomer.phone}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedCustomerPhone(null)}
-                aria-label={t.admin.customers.ordersModalCloseAria}
-                className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-200"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="p-6 overflow-y-auto space-y-3 text-xs">
-              {selectedCustomer.orders.map((ord) => (
-                <div
-                  key={ord.id}
-                  className="rounded-xl border border-slate-200 p-4 space-y-1.5 bg-slate-50"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono font-bold text-slate-900">{ord.id}</span>
-                    <StatusLabel
-                      status={ord.status}
-                      label={t.orderStatuses[ord.status] || ord.status}
-                    />
-                  </div>
-                  <div className="text-slate-600">{ord.itemsSummary}</div>
-                  <div className="flex justify-between font-mono text-slate-500 pt-1">
-                    <span>{formatMartDate(ord.createdAt, lang)}</span>
-                    <span className="font-bold text-slate-900 tabular-nums">
-                      {formatMartPrice(ord.totalAmount, lang)}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -87,6 +87,7 @@ export interface MartDictionary {
     productSingular: string;
     productPlural: string;
     inStockSuffix: string;
+    availableToOrder: string;
     outOfStock: string;
     soldOut: string;
     optionsPrefix: string;
@@ -107,6 +108,7 @@ export interface MartDictionary {
     closeAria: string;
     availabilityLabel: string;
     unitsInStockSuffix: string;
+    availableReady: string;
     outOfStock: string;
     defaultDesc: string;
     selectVariant: string;
@@ -225,8 +227,10 @@ export interface MartDictionary {
       orders: string;
       products: string;
       taxonomy: string;
-      settings: string;
+      suppliers: string;
+      accounts: string;
       customers: string;
+      settings: string;
     };
     analytics: {
       totalRevenue: string;
@@ -517,6 +521,7 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
       productSingular: "product",
       productPlural: "products",
       inStockSuffix: "in stock",
+      availableToOrder: "In Stock",
       outOfStock: "Out of stock",
       soldOut: "Sold Out",
       optionsPrefix: "Options",
@@ -539,6 +544,7 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
       closeAria: "Close product quick view",
       availabilityLabel: "Availability",
       unitsInStockSuffix: "units in stock",
+      availableReady: "In stock · Ready to ship",
       outOfStock: "Out of stock",
       defaultDesc: "Verified product from Xeetrix Mart.",
       selectVariant: "Select Variant / Size",
@@ -656,12 +662,14 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
       setupAlertBody:
         "Deploy backend/mart/Code.gs inside your Google Sheet (run setupMartBackend), then configure MART_SCRIPT_URL in Vercel Environment Variables so products, categories, labels, orders, and Google Drive images sync live.",
       nav: {
-        analytics: "Dashboard & KPIs",
-        orders: "Order Management",
-        products: "Products & Inventory",
+        analytics: "Dashboard & Follow-ups",
+        orders: "Orders & Fulfillment",
+        products: "Products & Sourcing",
         taxonomy: "Categories & Labels",
+        suppliers: "Suppliers & Dropship",
+        accounts: "Accounts & P&L",
+        customers: "Client CRM & Risk",
         settings: "Store Settings",
-        customers: "Customers & Reports",
       },
       analytics: {
         totalRevenue: "Total Revenue (Active)",
@@ -971,6 +979,7 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
       productSingular: "টি পণ্য",
       productPlural: "টি পণ্য",
       inStockSuffix: "টি স্টকে আছে",
+      availableToOrder: "স্টকে উপলব্ধ",
       outOfStock: "স্টক শেষ",
       soldOut: "স্টক আউট",
       optionsPrefix: "অপশন",
@@ -993,6 +1002,7 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
       closeAria: "প্রোডাক্ট প্রিভিউ বন্ধ করুন",
       availabilityLabel: "স্টকের অবস্থা",
       unitsInStockSuffix: "টি ইউনিট স্টকে রয়েছে",
+      availableReady: "স্টকে উপলব্ধ · অর্ডারের জন্য প্রস্তুত",
       outOfStock: "স্টক নেই",
       defaultDesc: "জিট্রিক্স মার্টের যাচাইকৃত পণ্য।",
       selectVariant: "ভ্যারিয়েন্ট / সাইজ নির্বাচন করুন",
@@ -1113,12 +1123,14 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
       setupAlertBody:
         "আপনার Google Sheet-এ backend/mart/Code.gs ডিপ্লয় করে setupMartBackend রান করুন এবং Vercel Environment Variables-এ MART_SCRIPT_URL যুক্ত করুন যাতে পণ্য, ক্যাটাগরি, লেবেল, অর্ডার ও Drive ছবি লাইভ সিঙ্ক হয়।",
       nav: {
-        analytics: "ড্যাশবোর্ড ও পরিসংখ্যান",
-        orders: "অর্ডার ব্যবস্থাপনা",
-        products: "পণ্য ও ইনভেন্টরি",
+        analytics: "ড্যাশবোর্ড ও ফলোআপ",
+        orders: "অর্ডার ও ফুলফিলমেন্ট",
+        products: "পণ্য ও সোর্সিং",
         taxonomy: "ক্যাটাগরি ও লেবেল",
+        suppliers: "সাপ্লাইয়ার ও ড্রপশিপ",
+        accounts: "হিসাব-নিকাশ ও P&L",
+        customers: "ক্লায়েন্ট CRM ও ঝুঁকি",
         settings: "স্টোর সেটিংস",
-        customers: "ক্রেতা ও সেলস রিপোর্ট",
       },
       analytics: {
         totalRevenue: "মোট বিক্রি (সক্রিয়)",

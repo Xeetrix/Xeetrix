@@ -59,6 +59,7 @@ import {
   toLocalizedDigits,
   translateMartError,
 } from "@/lib/martI18n";
+import { getProductOrderableMaxQty, isProductOrderable } from "@/lib/martOps";
 
 const CART_STORAGE_KEY = "xeetrix_mart_cart_v2";
 
@@ -71,6 +72,7 @@ interface CartItem {
   variant: string;
   unitPrice: number;
   maxStock: number;
+  fulfillmentType?: "own_stock" | "dropship";
   imageUrl: string;
   quantity: number;
 }
@@ -423,7 +425,8 @@ export function MartStorefront() {
   const activeHeroCta = pickLocalized(settings.heroCtaTextEn, settings.heroCtaTextBn, lang);
 
   function addToCart(product: MartProduct, variantChoice = "", qtyToAdd = 1, openDrawer = false) {
-    if (product.stock <= 0) return;
+    if (!isProductOrderable(product)) return;
+    const maxCap = Math.max(1, getProductOrderableMaxQty(product));
     const localizedVariants = parseProductVariants(
       pickLocalized(product.variantsEn, product.variantsBn, lang)
     );
@@ -437,7 +440,7 @@ export function MartStorefront() {
       if (existing) {
         return prev.map((i) =>
           i.key === itemKey
-            ? { ...i, quantity: Math.min(Math.max(1, product.stock), i.quantity + qtyToAdd) }
+            ? { ...i, maxStock: maxCap, quantity: Math.min(maxCap, i.quantity + qtyToAdd) }
             : i
         );
       }
@@ -451,9 +454,10 @@ export function MartStorefront() {
           nameBn: product.nameBn || product.nameEn,
           variant: chosenVariant,
           unitPrice: product.price,
-          maxStock: Math.max(1, product.stock),
+          maxStock: maxCap,
+          fulfillmentType: product.fulfillmentType === "dropship" ? "dropship" : "own_stock",
           imageUrl: product.imageUrl,
-          quantity: Math.min(Math.max(1, product.stock), qtyToAdd),
+          quantity: Math.min(maxCap, qtyToAdd),
         },
       ];
     });
@@ -519,6 +523,7 @@ export function MartStorefront() {
       unitPrice: item.unitPrice,
       quantity: item.quantity,
       lineTotal: item.unitPrice * item.quantity,
+      fulfillmentType: item.fulfillmentType || "own_stock",
       imageUrl: item.imageUrl,
     }));
 
@@ -991,7 +996,8 @@ export function MartStorefront() {
                 {filteredProducts.map((product) => {
                   const hasDiscount =
                     product.comparePrice > 0 && product.comparePrice > product.price;
-                  const outOfStock = product.stock <= 0;
+                  const isDropship = product.fulfillmentType === "dropship";
+                  const outOfStock = !isProductOrderable(product);
                   const prodName = pickLocalized(
                     product.nameEn,
                     product.nameBn,
@@ -1043,6 +1049,8 @@ export function MartStorefront() {
                             <span className="font-mono tabular-nums whitespace-nowrap shrink-0">
                               {outOfStock
                                 ? t.catalog.outOfStock
+                                : isDropship
+                                ? t.catalog.availableToOrder
                                 : `${toLocalizedDigits(product.stock, lang)} ${t.catalog.inStockSuffix}`}
                             </span>
                           </div>
@@ -1194,14 +1202,16 @@ export function MartStorefront() {
                     {t.quickView.availabilityLabel}:{" "}
                     <span
                       className={
-                        quickViewProduct.stock > 0
+                        isProductOrderable(quickViewProduct)
                           ? "font-semibold text-[#0B5336]"
                           : "font-semibold text-red-600"
                       }
                     >
-                      {quickViewProduct.stock > 0
-                        ? `${toLocalizedDigits(quickViewProduct.stock, lang)} ${t.quickView.unitsInStockSuffix}`
-                        : t.quickView.outOfStock}
+                      {!isProductOrderable(quickViewProduct)
+                        ? t.quickView.outOfStock
+                        : quickViewProduct.fulfillmentType === "dropship"
+                        ? t.quickView.availableReady
+                        : `${toLocalizedDigits(quickViewProduct.stock, lang)} ${t.quickView.unitsInStockSuffix}`}
                     </span>
                   </div>
 
@@ -1268,7 +1278,10 @@ export function MartStorefront() {
                         type="button"
                         onClick={() =>
                           setQuickViewQty((q) =>
-                            Math.min(Math.max(1, quickViewProduct.stock), q + 1)
+                            Math.min(
+                              Math.max(1, getProductOrderableMaxQty(quickViewProduct)),
+                              q + 1
+                            )
                           )
                         }
                         aria-label={t.quickView.increaseQtyAria}
@@ -1282,7 +1295,7 @@ export function MartStorefront() {
                   <div className="grid grid-cols-2 gap-3">
                     <button
                       type="button"
-                      disabled={quickViewProduct.stock <= 0}
+                      disabled={!isProductOrderable(quickViewProduct)}
                       onClick={() => {
                         addToCart(quickViewProduct, quickViewVariant, quickViewQty, false);
                         setQuickViewProduct(null);
@@ -1295,14 +1308,16 @@ export function MartStorefront() {
 
                     <button
                       type="button"
-                      disabled={quickViewProduct.stock <= 0}
+                      disabled={!isProductOrderable(quickViewProduct)}
                       onClick={() => {
                         addToCart(quickViewProduct, quickViewVariant, quickViewQty, true);
                         setQuickViewProduct(null);
                       }}
                       className="btn-primary py-3 text-xs disabled:opacity-50"
                     >
-                      {quickViewProduct.stock <= 0 ? t.quickView.soldOut : t.quickView.buyNow}
+                      {!isProductOrderable(quickViewProduct)
+                        ? t.quickView.soldOut
+                        : t.quickView.buyNow}
                     </button>
                   </div>
                 </div>

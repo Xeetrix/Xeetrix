@@ -13,18 +13,72 @@ export type MartSheetName =
   | "Mart_Products"
   | "Mart_Categories"
   | "Mart_Labels"
+  | "Mart_Suppliers"
   | "Mart_Orders"
+  | "Mart_Transactions"
+  | "Mart_CRM_Profiles"
+  | "Mart_CRM_Logs"
   | "Mart_Settings";
+
+export type MartFulfillmentType = "own_stock" | "dropship";
+export type MartCollectionMode = "store_collects" | "supplier_collects";
+export type MartSupplierType = "dropship" | "wholesale" | "manufacturer";
+export type MartSupplierPayoutMode = "we_pay_supplier" | "supplier_pays_us";
+
+export type MartItemStatus =
+  | "Pending"
+  | "Forwarded to Supplier"
+  | "Packaging"
+  | "Shipped"
+  | "Delivered"
+  | "Returned"
+  | "Cancelled";
+
+export type MartTransactionType =
+  | "marketing_expense"
+  | "operating_expense"
+  | "inventory_purchase"
+  | "return_shipping_loss"
+  | "supplier_payout"
+  | "dropship_receipt"
+  | "other_income"
+  | "other_expense";
+
+export type MartPaymentAccount = "Cash" | "bKash" | "Nagad" | "Bank";
+export type MartCrmEntityType = "customer" | "supplier";
+export type MartCrmTier = "auto" | "vip" | "regular" | "new" | "high_risk" | "blocked";
+export type MartCrmChannel =
+  | "call"
+  | "sms"
+  | "email"
+  | "meeting"
+  | "order_followup"
+  | "settlement_followup"
+  | "note";
+export type MartCrmOutcome =
+  | "connected"
+  | "no_answer"
+  | "promised_payment"
+  | "confirmed"
+  | "resolved"
+  | "escalated";
 
 export interface MartProduct {
   id: string;
   sku: string;
   nameEn: string;
   nameBn: string;
-  categories: string; // Comma-separated category slugs, e.g. "baby,clothing"
-  labels: string; // Comma-separated label slugs, e.g. "winter-collection,featured"
+  categories: string; // Comma-separated category slugs
+  labels: string; // Comma-separated label slugs
   price: number;
   comparePrice: number;
+  costPrice: number;
+  fulfillmentType: MartFulfillmentType;
+  supplierId: string;
+  sourceName: string;
+  collectionMode: MartCollectionMode;
+  supplierAvailable: boolean;
+  lowStockThreshold: number;
   stock: number;
   variantsEn: string;
   variantsBn: string;
@@ -73,6 +127,71 @@ export interface MartLabel {
   createdAt: string;
 }
 
+export interface MartSupplier {
+  id: string;
+  name: string;
+  companyType: MartSupplierType;
+  contactPerson: string;
+  phone: string;
+  altPhone: string;
+  email: string;
+  address: string;
+  payoutMode: MartSupplierPayoutMode;
+  leadTimeDays: number;
+  tags: string;
+  notes: string;
+  nextFollowUpDate: string;
+  lastContactedAt: string;
+  active: boolean;
+  createdAt: string;
+}
+
+export interface MartTransaction {
+  id: string;
+  date: string;
+  type: MartTransactionType;
+  category: string;
+  amount: number;
+  supplierId: string;
+  orderId: string;
+  paymentAccount: MartPaymentAccount | string;
+  referenceNo: string;
+  note: string;
+  createdAt: string;
+}
+
+export interface MartCrmProfile {
+  id: string;
+  entityType: MartCrmEntityType;
+  entityKey: string;
+  name: string;
+  phone: string;
+  altPhone: string;
+  email: string;
+  address: string;
+  tierOverride: MartCrmTier;
+  tags: string;
+  notes: string;
+  nextFollowUpDate: string;
+  followUpTask: string;
+  lastContactedAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MartCrmLog {
+  id: string;
+  entityType: MartCrmEntityType;
+  entityKey: string;
+  entityName: string;
+  channel: MartCrmChannel;
+  outcome: MartCrmOutcome;
+  summary: string;
+  nextFollowUpDate: string;
+  relatedOrderId: string;
+  createdAt: string;
+}
+
 export type MartOrderStatus =
   | "Pending"
   | "Confirmed"
@@ -95,6 +214,16 @@ export interface MartOrderItem {
   quantity: number;
   lineTotal: number;
   imageUrl?: string;
+  // Enterprise Sourcing & Item-level Fulfillment metadata
+  fulfillmentType?: MartFulfillmentType;
+  supplierId?: string;
+  supplierName?: string;
+  collectionMode?: MartCollectionMode;
+  unitCost?: number;
+  lineCost?: number;
+  lineProfit?: number;
+  itemStatus?: MartItemStatus;
+  itemNote?: string;
 }
 
 export interface MartOrder {
@@ -173,6 +302,10 @@ function normalizeProductRecord(raw: Partial<MartProduct>): MartProduct {
   const legacyCat = (raw.category || "").trim();
   const cats =
     (raw.categories || "").trim() || (legacyCat ? slugifyTaxonomy(legacyCat) : "");
+  const fulfillmentType: MartFulfillmentType =
+    raw.fulfillmentType === "dropship" ? "dropship" : "own_stock";
+  const collectionMode: MartCollectionMode =
+    raw.collectionMode === "supplier_collects" ? "supplier_collects" : "store_collects";
   return {
     id: String(raw.id || ""),
     sku: String(raw.sku || ""),
@@ -182,6 +315,13 @@ function normalizeProductRecord(raw: Partial<MartProduct>): MartProduct {
     labels: String(raw.labels || ""),
     price: Number(raw.price) || 0,
     comparePrice: Number(raw.comparePrice) || 0,
+    costPrice: Number(raw.costPrice) || 0,
+    fulfillmentType,
+    supplierId: String(raw.supplierId || ""),
+    sourceName: String(raw.sourceName || ""),
+    collectionMode,
+    supplierAvailable: raw.supplierAvailable !== false,
+    lowStockThreshold: Math.max(1, Number(raw.lowStockThreshold) || 5),
     stock: Number(raw.stock) || 0,
     variantsEn: String(raw.variantsEn || raw.variants || ""),
     variantsBn: String(raw.variantsBn || ""),
@@ -229,6 +369,85 @@ function normalizeLabelRecord(raw: Partial<MartLabel>): MartLabel {
   };
 }
 
+export function normalizeSupplierRecord(raw: Partial<MartSupplier>): MartSupplier {
+  const companyType: MartSupplierType =
+    raw.companyType === "wholesale" || raw.companyType === "manufacturer"
+      ? raw.companyType
+      : "dropship";
+  const payoutMode: MartSupplierPayoutMode =
+    raw.payoutMode === "supplier_pays_us" ? "supplier_pays_us" : "we_pay_supplier";
+  return {
+    id: String(raw.id || ""),
+    name: String(raw.name || ""),
+    companyType,
+    contactPerson: String(raw.contactPerson || ""),
+    phone: String(raw.phone || ""),
+    altPhone: String(raw.altPhone || ""),
+    email: String(raw.email || ""),
+    address: String(raw.address || ""),
+    payoutMode,
+    leadTimeDays: Math.max(0, Number(raw.leadTimeDays) || 0),
+    tags: String(raw.tags || ""),
+    notes: String(raw.notes || ""),
+    nextFollowUpDate: String(raw.nextFollowUpDate || ""),
+    lastContactedAt: String(raw.lastContactedAt || ""),
+    active: raw.active !== false,
+    createdAt: String(raw.createdAt || ""),
+  };
+}
+
+export function normalizeTransactionRecord(raw: Partial<MartTransaction>): MartTransaction {
+  return {
+    id: String(raw.id || ""),
+    date: String(raw.date || raw.createdAt || "").slice(0, 10),
+    type: (raw.type as MartTransactionType) || "operating_expense",
+    category: String(raw.category || ""),
+    amount: Math.max(0, Number(raw.amount) || 0),
+    supplierId: String(raw.supplierId || ""),
+    orderId: String(raw.orderId || ""),
+    paymentAccount: String(raw.paymentAccount || "Cash"),
+    referenceNo: String(raw.referenceNo || ""),
+    note: String(raw.note || ""),
+    createdAt: String(raw.createdAt || ""),
+  };
+}
+
+export function normalizeCrmProfileRecord(raw: Partial<MartCrmProfile>): MartCrmProfile {
+  return {
+    id: String(raw.id || ""),
+    entityType: raw.entityType === "supplier" ? "supplier" : "customer",
+    entityKey: String(raw.entityKey || ""),
+    name: String(raw.name || ""),
+    phone: String(raw.phone || ""),
+    altPhone: String(raw.altPhone || ""),
+    email: String(raw.email || ""),
+    address: String(raw.address || ""),
+    tierOverride: (raw.tierOverride as MartCrmTier) || "auto",
+    tags: String(raw.tags || ""),
+    notes: String(raw.notes || ""),
+    nextFollowUpDate: String(raw.nextFollowUpDate || ""),
+    followUpTask: String(raw.followUpTask || ""),
+    lastContactedAt: String(raw.lastContactedAt || ""),
+    createdAt: String(raw.createdAt || ""),
+    updatedAt: String(raw.updatedAt || ""),
+  };
+}
+
+export function normalizeCrmLogRecord(raw: Partial<MartCrmLog>): MartCrmLog {
+  return {
+    id: String(raw.id || ""),
+    entityType: raw.entityType === "supplier" ? "supplier" : "customer",
+    entityKey: String(raw.entityKey || ""),
+    entityName: String(raw.entityName || ""),
+    channel: (raw.channel as MartCrmChannel) || "call",
+    outcome: (raw.outcome as MartCrmOutcome) || "connected",
+    summary: String(raw.summary || ""),
+    nextFollowUpDate: String(raw.nextFollowUpDate || ""),
+    relatedOrderId: String(raw.relatedOrderId || ""),
+    createdAt: String(raw.createdAt || ""),
+  };
+}
+
 export interface MartPublicBundle {
   products: MartProduct[];
   categories: MartCategory[];
@@ -238,7 +457,11 @@ export interface MartPublicBundle {
 }
 
 export interface MartAdminBundle extends MartPublicBundle {
+  suppliers: MartSupplier[];
   orders: MartOrder[];
+  transactions: MartTransaction[];
+  crmProfiles: MartCrmProfile[];
+  crmLogs: MartCrmLog[];
 }
 
 export class MartApiError extends Error {
@@ -275,7 +498,7 @@ export function slugifyCategory(text: string): string {
   return slugifyTaxonomy(text);
 }
 
-const MART_PUBLIC_CACHE_KEY = "xeetrix_mart_public_snapshot_v2";
+const MART_PUBLIC_CACHE_KEY = "xeetrix_mart_public_snapshot_v3";
 const MART_ADMIN_PASS_KEY = "xeetrix_mart_admin_pass_v1";
 
 export function getCachedMartPublicSnapshot(): MartPublicBundle | null {
@@ -555,7 +778,11 @@ export async function fetchMartAdminData(): Promise<MartAdminBundle> {
       products?: Partial<MartProduct>[];
       categories?: Partial<MartCategory>[];
       labels?: Partial<MartLabel>[];
+      suppliers?: Partial<MartSupplier>[];
       orders?: MartOrder[];
+      transactions?: Partial<MartTransaction>[];
+      crmProfiles?: Partial<MartCrmProfile>[];
+      crmLogs?: Partial<MartCrmLog>[];
       settings?: Partial<MartSettings>;
     };
   };
@@ -581,7 +808,19 @@ export async function fetchMartAdminData(): Promise<MartAdminBundle> {
     labels: Array.isArray(json.data.labels)
       ? json.data.labels.map(normalizeLabelRecord)
       : [],
+    suppliers: Array.isArray(json.data.suppliers)
+      ? json.data.suppliers.map(normalizeSupplierRecord)
+      : [],
     orders: Array.isArray(json.data.orders) ? json.data.orders : [],
+    transactions: Array.isArray(json.data.transactions)
+      ? json.data.transactions.map(normalizeTransactionRecord)
+      : [],
+    crmProfiles: Array.isArray(json.data.crmProfiles)
+      ? json.data.crmProfiles.map(normalizeCrmProfileRecord)
+      : [],
+    crmLogs: Array.isArray(json.data.crmLogs)
+      ? json.data.crmLogs.map(normalizeCrmLogRecord)
+      : [],
     settings: mergeMartSettings(json.data.settings),
     isLiveBackend: Boolean(json.isLiveBackend),
   };

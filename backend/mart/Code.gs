@@ -30,6 +30,13 @@ var MART_SCHEMA = {
     "labels",
     "price",
     "comparePrice",
+    "costPrice",
+    "fulfillmentType",
+    "supplierId",
+    "sourceName",
+    "collectionMode",
+    "supplierAvailable",
+    "lowStockThreshold",
     "stock",
     "variantsEn",
     "variantsBn",
@@ -65,6 +72,24 @@ var MART_SCHEMA = {
     "active",
     "createdAt"
   ],
+  Mart_Suppliers: [
+    "id",
+    "name",
+    "companyType",
+    "contactPerson",
+    "phone",
+    "altPhone",
+    "email",
+    "address",
+    "payoutMode",
+    "leadTimeDays",
+    "tags",
+    "notes",
+    "nextFollowUpDate",
+    "lastContactedAt",
+    "active",
+    "createdAt"
+  ],
   Mart_Orders: [
     "id",
     "itemsJson",
@@ -81,6 +106,49 @@ var MART_SCHEMA = {
     "transactionId",
     "notes",
     "status",
+    "createdAt"
+  ],
+  Mart_Transactions: [
+    "id",
+    "date",
+    "type",
+    "category",
+    "amount",
+    "supplierId",
+    "orderId",
+    "paymentAccount",
+    "referenceNo",
+    "note",
+    "createdAt"
+  ],
+  Mart_CRM_Profiles: [
+    "id",
+    "entityType",
+    "entityKey",
+    "name",
+    "phone",
+    "altPhone",
+    "email",
+    "address",
+    "tierOverride",
+    "tags",
+    "notes",
+    "nextFollowUpDate",
+    "followUpTask",
+    "lastContactedAt",
+    "createdAt",
+    "updatedAt"
+  ],
+  Mart_CRM_Logs: [
+    "id",
+    "entityType",
+    "entityKey",
+    "entityName",
+    "channel",
+    "outcome",
+    "summary",
+    "nextFollowUpDate",
+    "relatedOrderId",
     "createdAt"
   ],
   Mart_Settings: ["key", "value", "updatedAt"]
@@ -110,7 +178,7 @@ var PROP_DRIVE_ROOT_ID = "MART_DRIVE_ROOT_ID";
 var PROP_DRIVE_PRODUCTS_ID = "MART_DRIVE_PRODUCTS_ID";
 var PROP_DRIVE_CATEGORIES_ID = "MART_DRIVE_CATEGORIES_ID";
 
-var CACHE_PUBLIC_KEY = "xeetrix_mart_public_v2";
+var CACHE_PUBLIC_KEY = "xeetrix_mart_public_v3";
 var CACHE_TTL_SECONDS = 600; // 10 minutes; automatically busted on every mutation
 
 function jsonOut(payload) {
@@ -285,8 +353,8 @@ function ensureMartSheet(ss, sheetName) {
 /**
  * ONE-CLICK INITIALIZER / UPGRADER:
  * Run inside your bound Google Sheet's Apps Script Editor.
- * Builds/upgrades all 5 Mart tabs, baseline bilingual Mart_Settings,
- * Drive folders (Products & Categories), and pre-warms CacheService (ZERO dummy items).
+ * Builds/upgrades all Mart tabs (Products, Categories, Labels, Suppliers, Orders,
+ * Transactions, CRM Profiles, CRM Logs, Settings), Drive folders, and CacheService.
  */
 function setupMartBackend() {
   var ss = getBoundSpreadsheet();
@@ -295,7 +363,7 @@ function setupMartBackend() {
     ensureMartSheet(ss, tabNames[i]);
   }
 
-  // Seed ONLY bilingual store configuration keys (no dummy products, categories, labels, or orders)
+  // Seed ONLY bilingual store configuration keys (no dummy items)
   var settingsSheet = ss.getSheetByName("Mart_Settings");
   var existingSettings = readSettingsMap(settingsSheet);
   var now = new Date().toISOString();
@@ -315,15 +383,12 @@ function setupMartBackend() {
   buildAndCachePublicBundle(ss);
 
   return (
-    "Xeetrix Mart bilingual multi-taxonomy backend ready! Sheet: " +
+    "Xeetrix Mart Enterprise Backend Ready! Sheet: " +
     ss.getName() +
+    " | Tabs: " +
+    tabNames.length +
     " | Drive Root: " +
-    folders.rootFolder.getName() +
-    " (Products ID: " +
-    folders.productsFolder.getId() +
-    ", Categories ID: " +
-    folders.categoriesFolder.getId() +
-    ")"
+    folders.rootFolder.getName()
   );
 }
 
@@ -331,6 +396,7 @@ function invalidateMartCache() {
   try {
     var cache = CacheService.getScriptCache();
     cache.remove(CACHE_PUBLIC_KEY);
+    cache.remove("xeetrix_mart_public_v2");
     cache.remove("xeetrix_mart_public_v1");
   } catch (err) {
     // Ignore cache eviction error
@@ -338,15 +404,20 @@ function invalidateMartCache() {
 }
 
 function normalizeMartCell(header, val) {
-  if (header === "active" || header === "featured") {
+  if (header === "active" || header === "featured" || header === "supplierAvailable") {
     if (typeof val === "boolean") return val;
     var s = String(val).toLowerCase().trim();
+    if (header === "supplierAvailable" && s === "") return true;
     return s === "true" || s === "1" || s === "yes";
   }
   if (
     header === "price" ||
     header === "comparePrice" ||
+    header === "costPrice" ||
+    header === "lowStockThreshold" ||
     header === "stock" ||
+    header === "leadTimeDays" ||
+    header === "amount" ||
     header === "totalItems" ||
     header === "subtotal" ||
     header === "deliveryCharge" ||
@@ -396,7 +467,7 @@ function readMartRows(sheet, sheetName) {
       obj[header] = normalizeMartCell(header, cellVal);
     }
 
-    // Legacy compatibility mapping if migrating from single-language schema
+    // Legacy compatibility & sensible defaults
     if (sheetName === "Mart_Products") {
       if (!obj.nameEn && colMap["name"] !== undefined) {
         obj.nameEn = String(row[colMap["name"]] || "");
@@ -412,6 +483,18 @@ function readMartRows(sheet, sheetName) {
       }
       if (!obj.descriptionEn && colMap["description"] !== undefined) {
         obj.descriptionEn = String(row[colMap["description"]] || "");
+      }
+      if (!obj.fulfillmentType) {
+        obj.fulfillmentType = "own_stock";
+      }
+      if (!obj.collectionMode) {
+        obj.collectionMode = "store_collects";
+      }
+      if (colMap["supplierAvailable"] === undefined || row[colMap["supplierAvailable"]] === "") {
+        obj.supplierAvailable = true;
+      }
+      if (!obj.lowStockThreshold || obj.lowStockThreshold <= 0) {
+        obj.lowStockThreshold = 5;
       }
     }
 
@@ -434,6 +517,17 @@ function readMartRows(sheet, sheetName) {
       if (!obj.slug) {
         obj.slug = slugifyText(obj.nameEn || obj.nameBn || obj.id);
       }
+    }
+
+    if (sheetName === "Mart_Suppliers") {
+      if (!obj.companyType) obj.companyType = "dropship";
+      if (!obj.payoutMode) obj.payoutMode = "we_pay_supplier";
+      if (colMap["active"] === undefined || row[colMap["active"]] === "") obj.active = true;
+    }
+
+    if (sheetName === "Mart_CRM_Profiles") {
+      if (!obj.tierOverride) obj.tierOverride = "auto";
+      if (!obj.entityType) obj.entityType = "customer";
     }
 
     rows.push(obj);
@@ -490,11 +584,53 @@ function buildAndCachePublicBundle(ss) {
   var prodSheet = ensureMartSheet(ss, "Mart_Products");
   var catSheet = ensureMartSheet(ss, "Mart_Categories");
   var labelSheet = ensureMartSheet(ss, "Mart_Labels");
+  var supSheet = ensureMartSheet(ss, "Mart_Suppliers");
   var setSheet = ensureMartSheet(ss, "Mart_Settings");
 
-  var activeProducts = readMartRows(prodSheet, "Mart_Products").filter(function (p) {
-    return p.active === true;
-  });
+  var suppliers = readMartRows(supSheet, "Mart_Suppliers");
+  var supplierActiveMap = {};
+  for (var s = 0; s < suppliers.length; s++) {
+    supplierActiveMap[suppliers[s].id] = suppliers[s].active === true;
+  }
+
+  // Strip internal costPrice / supplierId / sourceName from public storefront payload
+  var activeProducts = readMartRows(prodSheet, "Mart_Products")
+    .filter(function (p) {
+      return p.active === true;
+    })
+    .map(function (p) {
+      var isDropship = p.fulfillmentType === "dropship";
+      var supplierIsActive =
+        !p.supplierId || supplierActiveMap[p.supplierId] === undefined
+          ? true
+          : supplierActiveMap[p.supplierId];
+      var effectiveSupplierAvailable = isDropship
+        ? p.supplierAvailable !== false && supplierIsActive
+        : true;
+      return {
+        id: p.id,
+        sku: p.sku,
+        nameEn: p.nameEn,
+        nameBn: p.nameBn,
+        categories: p.categories,
+        labels: p.labels,
+        price: p.price,
+        comparePrice: p.comparePrice,
+        fulfillmentType: p.fulfillmentType || "own_stock",
+        supplierAvailable: effectiveSupplierAvailable,
+        lowStockThreshold: p.lowStockThreshold || 5,
+        stock: p.stock,
+        variantsEn: p.variantsEn,
+        variantsBn: p.variantsBn,
+        imageUrl: p.imageUrl,
+        descriptionEn: p.descriptionEn,
+        descriptionBn: p.descriptionBn,
+        featured: p.featured,
+        active: p.active,
+        createdAt: p.createdAt
+      };
+    });
+
   var activeCategories = sortTaxonomyByOrder(
     readMartRows(catSheet, "Mart_Categories").filter(function (c) {
       return c.active === true;
@@ -531,7 +667,11 @@ function generateMartId(sheetName) {
     Mart_Products: "PRD",
     Mart_Categories: "CAT",
     Mart_Labels: "LBL",
-    Mart_Orders: "XM"
+    Mart_Suppliers: "SUP",
+    Mart_Orders: "XM",
+    Mart_Transactions: "TXN",
+    Mart_CRM_Profiles: "CRM",
+    Mart_CRM_Logs: "LOG"
   };
   var prefix = prefixMap[sheetName] || "XM";
   var stamp = new Date().getTime().toString().slice(-6);
@@ -554,6 +694,59 @@ function phonesMatch(a, b) {
   return false;
 }
 
+function enrichOrderPayloadServerSide(ss, payload) {
+  if (!payload || !payload.itemsJson) return payload;
+  try {
+    var items = JSON.parse(String(payload.itemsJson));
+    if (!Array.isArray(items) || items.length === 0) return payload;
+
+    var prodSheet = ensureMartSheet(ss, "Mart_Products");
+    var supSheet = ensureMartSheet(ss, "Mart_Suppliers");
+    var allProducts = readMartRows(prodSheet, "Mart_Products");
+    var allSuppliers = readMartRows(supSheet, "Mart_Suppliers");
+
+    var prodMap = {};
+    for (var p = 0; p < allProducts.length; p++) {
+      prodMap[allProducts[p].id] = allProducts[p];
+    }
+    var supMap = {};
+    for (var s = 0; s < allSuppliers.length; s++) {
+      supMap[allSuppliers[s].id] = allSuppliers[s];
+    }
+
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      var catProd = prodMap[String(item.productId || "")];
+      var fulfillmentType = item.fulfillmentType || (catProd ? catProd.fulfillmentType : "own_stock") || "own_stock";
+      var supplierId = item.supplierId !== undefined && item.supplierId !== "" ? item.supplierId : (catProd ? catProd.supplierId : "");
+      var supObj = supplierId ? supMap[supplierId] : null;
+      var supplierName = item.supplierName || (supObj ? supObj.name : "") || (catProd ? catProd.sourceName : "") || "";
+      var collectionMode = item.collectionMode || (catProd ? catProd.collectionMode : "") || (supObj ? supObj.payoutMode === "supplier_pays_us" ? "supplier_collects" : "store_collects" : "store_collects");
+      var unitCost = item.unitCost !== undefined ? Number(item.unitCost) : (catProd ? Number(catProd.costPrice) || 0 : 0);
+      var qty = Math.max(1, Number(item.quantity) || 1);
+      var unitPrice = Number(item.unitPrice) || (catProd ? Number(catProd.price) || 0 : 0);
+      var lineTotal = Number(item.lineTotal) || unitPrice * qty;
+      var lineCost = unitCost * qty;
+
+      item.fulfillmentType = fulfillmentType;
+      item.supplierId = supplierId;
+      item.supplierName = supplierName;
+      item.collectionMode = collectionMode;
+      item.unitCost = unitCost;
+      item.lineCost = lineCost;
+      item.lineProfit = lineTotal - lineCost;
+      if (!item.itemStatus) {
+        item.itemStatus = "Pending";
+      }
+    }
+
+    payload.itemsJson = JSON.stringify(items);
+  } catch (err) {
+    // Keep original payload if enrichment fails
+  }
+  return payload;
+}
+
 function decrementStockForOrder(ss, itemsJsonStr) {
   try {
     var items = JSON.parse(itemsJsonStr || "[]");
@@ -566,10 +759,12 @@ function decrementStockForOrder(ss, itemsJsonStr) {
     var headers = prodSheet.getRange(1, 1, 1, prodSheet.getLastColumn()).getValues()[0];
     var idCol = headers.indexOf("id") + 1;
     var stockCol = headers.indexOf("stock") + 1;
+    var ftCol = headers.indexOf("fulfillmentType") + 1;
     if (idCol < 1 || stockCol < 1) return;
 
     var idVals = prodSheet.getRange(2, idCol, lastRow - 1, 1).getValues();
     var stockVals = prodSheet.getRange(2, stockCol, lastRow - 1, 1).getValues();
+    var ftVals = ftCol > 0 ? prodSheet.getRange(2, ftCol, lastRow - 1, 1).getValues() : null;
 
     for (var i = 0; i < items.length; i++) {
       var item = items[i];
@@ -579,6 +774,11 @@ function decrementStockForOrder(ss, itemsJsonStr) {
 
       for (var r = 0; r < idVals.length; r++) {
         if (String(idVals[r][0]) === pid) {
+          var rowFt = ftVals ? String(ftVals[r][0] || "own_stock").trim() : (item.fulfillmentType || "own_stock");
+          // Strictly skip physical stock decrement for dropshipped items
+          if (rowFt === "dropship" || item.fulfillmentType === "dropship") {
+            break;
+          }
           var nextStock = Math.max(0, (Number(stockVals[r][0]) || 0) - qty);
           prodSheet.getRange(r + 2, stockCol).setValue(nextStock);
           stockVals[r][0] = nextStock;
@@ -603,13 +803,13 @@ function doGet(e) {
       var folders = ensureDriveFoldersReady();
       return jsonOut({
         ok: true,
-        service: "Xeetrix Mart Bilingual Multi-Taxonomy Backend",
+        service: "Xeetrix Mart Enterprise Sourcing, Accounting & CRM Backend",
         spreadsheetName: ss.getName(),
         driveRootFolder: folders.rootFolder.getName()
       });
     }
 
-    // 1. Public Storefront Bundle (Hot CacheService path)
+    // 1. Public Storefront Bundle (Hot CacheService path — sanitized)
     if (action === "martPublic") {
       if (String(params.fresh || "") !== "1") {
         try {
@@ -666,7 +866,7 @@ function doGet(e) {
       });
     }
 
-    // 3. Dedicated Mart Admin Bundle
+    // 3. Dedicated Mart Enterprise Admin Bundle
     if (action === "martAdmin") {
       if (!isAuthorizedMartAdmin(token)) {
         return jsonOut({ ok: false, error: "Unauthorized Mart API token." });
@@ -674,7 +874,11 @@ function doGet(e) {
       var prodSheet = ensureMartSheet(ss, "Mart_Products");
       var catSheet = ensureMartSheet(ss, "Mart_Categories");
       var labelSheet = ensureMartSheet(ss, "Mart_Labels");
+      var supSheet = ensureMartSheet(ss, "Mart_Suppliers");
       var ordAdminSheet = ensureMartSheet(ss, "Mart_Orders");
+      var txnSheet = ensureMartSheet(ss, "Mart_Transactions");
+      var crmProfSheet = ensureMartSheet(ss, "Mart_CRM_Profiles");
+      var crmLogSheet = ensureMartSheet(ss, "Mart_CRM_Logs");
       var setSheet = ensureMartSheet(ss, "Mart_Settings");
 
       return jsonOut({
@@ -683,7 +887,11 @@ function doGet(e) {
           products: readMartRows(prodSheet, "Mart_Products"),
           categories: sortTaxonomyByOrder(readMartRows(catSheet, "Mart_Categories")),
           labels: sortTaxonomyByOrder(readMartRows(labelSheet, "Mart_Labels")),
+          suppliers: readMartRows(supSheet, "Mart_Suppliers"),
           orders: readMartRows(ordAdminSheet, "Mart_Orders"),
+          transactions: readMartRows(txnSheet, "Mart_Transactions"),
+          crmProfiles: readMartRows(crmProfSheet, "Mart_CRM_Profiles"),
+          crmLogs: readMartRows(crmLogSheet, "Mart_CRM_Logs"),
           settings: mergeSettings(readSettingsMap(setSheet))
         }
       });
@@ -766,6 +974,10 @@ function doPost(e) {
 
       var sheet = ensureMartSheet(ss, sheetName);
       var payload = body.data || {};
+      if (isPublicOrder) {
+        payload = enrichOrderPayloadServerSide(ss, payload);
+      }
+
       var now = new Date().toISOString();
       var recordId = payload.id ? String(payload.id) : generateMartId(sheetName);
 
@@ -775,16 +987,24 @@ function doPost(e) {
         var val;
         if (col === "id") {
           val = recordId;
-        } else if (col === "createdAt") {
-          val = payload.createdAt || now;
+        } else if (col === "createdAt" || col === "updatedAt") {
+          val = payload[col] || now;
         } else if (col === "status" && (payload.status === undefined || payload.status === "")) {
           val = "Pending";
-        } else if (col === "active" && payload.active === undefined) {
+        } else if ((col === "active" || col === "supplierAvailable") && payload[col] === undefined) {
           val = true;
         } else if (col === "featured" && payload.featured === undefined) {
           val = false;
         } else if (col === "tone" && (payload.tone === undefined || payload.tone === "")) {
           val = "emerald";
+        } else if (col === "fulfillmentType" && !payload.fulfillmentType) {
+          val = "own_stock";
+        } else if (col === "collectionMode" && !payload.collectionMode) {
+          val = "store_collects";
+        } else if (col === "tierOverride" && !payload.tierOverride) {
+          val = "auto";
+        } else if (col === "lowStockThreshold" && (payload.lowStockThreshold === undefined || payload.lowStockThreshold === "")) {
+          val = 5;
         } else if (col === "sortOrder" && payload.sortOrder === undefined) {
           val = 0;
         } else {

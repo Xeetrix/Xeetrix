@@ -22,7 +22,11 @@ const ALLOWED_MUTATION_SHEETS = new Set([
   "Mart_Products",
   "Mart_Categories",
   "Mart_Labels",
+  "Mart_Suppliers",
   "Mart_Orders",
+  "Mart_Transactions",
+  "Mart_CRM_Profiles",
+  "Mart_CRM_Logs",
 ]);
 
 function isAdminHeaderAuthorized(req: NextRequest): boolean {
@@ -49,7 +53,11 @@ export async function GET(req: NextRequest) {
           products: [],
           categories: [],
           labels: [],
+          suppliers: [],
           orders: [],
+          transactions: [],
+          crmProfiles: [],
+          crmLogs: [],
           settings: DEFAULT_MART_SETTINGS,
         },
       },
@@ -81,7 +89,11 @@ export async function GET(req: NextRequest) {
         products?: unknown[];
         categories?: unknown[];
         labels?: unknown[];
+        suppliers?: unknown[];
         orders?: unknown[];
+        transactions?: unknown[];
+        crmProfiles?: unknown[];
+        crmLogs?: unknown[];
         settings?: Record<string, string>;
       };
     };
@@ -98,7 +110,11 @@ export async function GET(req: NextRequest) {
           products: Array.isArray(json.data.products) ? json.data.products : [],
           categories: Array.isArray(json.data.categories) ? json.data.categories : [],
           labels: Array.isArray(json.data.labels) ? json.data.labels : [],
+          suppliers: Array.isArray(json.data.suppliers) ? json.data.suppliers : [],
           orders: Array.isArray(json.data.orders) ? json.data.orders : [],
+          transactions: Array.isArray(json.data.transactions) ? json.data.transactions : [],
+          crmProfiles: Array.isArray(json.data.crmProfiles) ? json.data.crmProfiles : [],
+          crmLogs: Array.isArray(json.data.crmLogs) ? json.data.crmLogs : [],
           settings: {
             ...DEFAULT_MART_SETTINGS,
             ...(json.data.settings || {}),

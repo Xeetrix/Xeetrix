@@ -30,12 +30,24 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  const sanitizedProducts = Array.isArray(result.data.products)
+    ? result.data.products.map((raw) => {
+        if (!raw || typeof raw !== "object") return raw;
+        const p = { ...(raw as Record<string, unknown>) };
+        delete p.costPrice;
+        delete p.supplierId;
+        delete p.sourceName;
+        delete p.collectionMode;
+        return p;
+      })
+    : [];
+
   return NextResponse.json(
     {
       ok: true,
       isLiveBackend: true,
       data: {
-        products: Array.isArray(result.data.products) ? result.data.products : [],
+        products: sanitizedProducts,
         categories: Array.isArray(result.data.categories) ? result.data.categories : [],
         labels: Array.isArray(result.data.labels) ? result.data.labels : [],
         settings: {

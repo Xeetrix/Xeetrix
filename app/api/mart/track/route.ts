@@ -65,10 +65,36 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    const safeOrder = { ...json.order };
+    if (typeof safeOrder.itemsJson === "string") {
+      try {
+        const parsed = JSON.parse(safeOrder.itemsJson);
+        if (Array.isArray(parsed)) {
+          safeOrder.itemsJson = JSON.stringify(
+            parsed.map((item: Record<string, unknown>) => ({
+              productId: item.productId,
+              sku: item.sku,
+              name: item.name,
+              nameEn: item.nameEn,
+              nameBn: item.nameBn,
+              variant: item.variant,
+              unitPrice: item.unitPrice,
+              quantity: item.quantity,
+              lineTotal: item.lineTotal,
+              imageUrl: item.imageUrl,
+              itemStatus: item.itemStatus,
+            }))
+          );
+        }
+      } catch {
+        // Keep string intact if unparseable
+      }
+    }
+
     return NextResponse.json(
       {
         ok: true,
-        order: json.order,
+        order: safeOrder,
       },
       {
         status: 200,
