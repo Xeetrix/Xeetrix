@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { Download, Plus, Trash2 } from "lucide-react";
+import { Download, Pencil, Plus, Trash2, X } from "lucide-react";
 import { useMartI18n } from "../MartI18nProvider";
 import { MART_ENTERPRISE_DICTIONARY } from "@/lib/martEnterpriseI18n";
 import {
@@ -14,6 +14,7 @@ import {
   MartSupplier,
   MartTransaction,
   MartTransactionType,
+  updateMartRecord,
 } from "@/lib/martApi";
 import {
   computeAccountingSummary,
@@ -30,6 +31,7 @@ interface MartAccountingPanelProps {
   supplierSummaries: SupplierSummary[];
   transactions: MartTransaction[];
   onTransactionCreated: (txn: MartTransaction) => void;
+  onTransactionUpdated: (id: string, updates: Partial<MartTransaction>) => void;
   onTransactionDeleted: (id: string) => void;
   onNotify: (type: "success" | "error", text: string) => void;
 }
@@ -44,6 +46,7 @@ export function MartAccountingPanel({
   supplierSummaries,
   transactions,
   onTransactionCreated,
+  onTransactionUpdated,
   onTransactionDeleted,
   onNotify,
 }: MartAccountingPanelProps) {
@@ -59,7 +62,8 @@ export function MartAccountingPanel({
 
   const [typeFilter, setTypeFilter] = useState<"all" | MartTransactionType>("all");
 
-  // New Entry Form
+  // New / Edit Entry Form
+  const [editingTxnId, setEditingTxnId] = useState<string | null>(null);
   const [date, setDate] = useState(todayIso);
   const [type, setType] = useState<MartTransactionType>("marketing_expense");
   const [category, setCategory] = useState("");
@@ -70,6 +74,35 @@ export function MartAccountingPanel({
   const [referenceNo, setReferenceNo] = useState("");
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
+
+  function resetTxnForm() {
+    setEditingTxnId(null);
+    setDate(todayIso);
+    setType("marketing_expense");
+    setCategory("");
+    setAmount("");
+    setSupplierId("");
+    setOrderId("");
+    setPaymentAccount("Cash");
+    setReferenceNo("");
+    setNote("");
+  }
+
+  function startEditTxn(txn: MartTransaction) {
+    setEditingTxnId(txn.id);
+    setDate((txn.date || txn.createdAt || todayIso).slice(0, 10));
+    setType(txn.type || "operating_expense");
+    setCategory(txn.category || "");
+    setAmount(txn.amount ? String(txn.amount) : "");
+    setSupplierId(txn.supplierId || "");
+    setOrderId(txn.orderId || "");
+    setPaymentAccount((txn.paymentAccount as MartPaymentAccount) || "Cash");
+    setReferenceNo(txn.referenceNo || "");
+    setNote(txn.note || "");
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }
 
   const { startDate, endDate } = useMemo(() => {
     const now = new Date();
@@ -117,7 +150,7 @@ export function MartAccountingPanel({
     });
   }, [transactions, startDate, endDate, typeFilter]);
 
-  async function handleAddTxn(e: React.FormEvent) {
+  async function handleSaveTxn(e: React.FormEvent) {
     e.preventDefault();
     if (!isLiveBackend) {
       onNotify("error", t.admin.products.errConnectBackend);
@@ -143,19 +176,21 @@ export function MartAccountingPanel({
 
     setSaving(true);
     try {
-      const res = await createMartRecord("Mart_Transactions", payload);
-      onTransactionCreated({
-        id: res.id,
-        ...payload,
-        createdAt: new Date().toISOString(),
-      });
-      setCategory("");
-      setAmount("");
-      setSupplierId("");
-      setOrderId("");
-      setReferenceNo("");
-      setNote("");
-      onNotify("success", `${tacc.msgTxnCreated} (${res.id})`);
+      if (editingTxnId) {
+        await updateMartRecord("Mart_Transactions", editingTxnId, payload);
+        onTransactionUpdated(editingTxnId, payload);
+        onNotify("success", `${tacc.msgTxnUpdated} (${editingTxnId})`);
+        resetTxnForm();
+      } else {
+        const res = await createMartRecord("Mart_Transactions", payload);
+        onTransactionCreated({
+          id: res.id,
+          ...payload,
+          createdAt: new Date().toISOString(),
+        });
+        resetTxnForm();
+        onNotify("success", `${tacc.msgTxnCreated} (${res.id})`);
+      }
     } catch (err) {
       const apiErr = err as MartApiError;
       onNotify("error", translateMartError(apiErr?.message, lang, apiErr?.code));
@@ -426,12 +461,28 @@ export function MartAccountingPanel({
           </div>
         </div>
 
-        {/* Add Transaction / Expense Form */}
-        <div className="lg:col-span-7 rounded-2xl border border-slate-200 bg-white p-6 space-y-4">
-          <h3 className="font-display text-base font-bold text-slate-900 border-b border-slate-100 pb-3">
-            {tacc.addTxnTitle}
-          </h3>
-          <form onSubmit={handleAddTxn} className="space-y-4">
+        {/* Add / Edit Transaction / Expense Form */}
+        <div
+          className={`lg:col-span-7 rounded-2xl border bg-white p-6 space-y-4 ${
+            editingTxnId ? "border-[#0B5336] ring-1 ring-[#0B5336]/20" : "border-slate-200"
+          }`}
+        >
+          <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-3">
+            <h3 className="font-display text-base font-bold text-slate-900">
+              {editingTxnId ? `${tacc.editTxnTitle} (${editingTxnId})` : tacc.addTxnTitle}
+            </h3>
+            {editingTxnId && (
+              <button
+                type="button"
+                onClick={resetTxnForm}
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 whitespace-nowrap"
+              >
+                <X className="h-3.5 w-3.5" />
+                <span>{tacc.cancelEdit}</span>
+              </button>
+            )}
+          </div>
+          <form onSubmit={handleSaveTxn} className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -567,7 +618,13 @@ export function MartAccountingPanel({
               className="btn-primary px-6 py-2.5 text-xs gap-1.5 disabled:opacity-60"
             >
               <Plus className="h-4 w-4" />
-              <span>{saving ? tacc.recordingTxnBtn : tacc.recordTxnBtn}</span>
+              <span>
+                {saving
+                  ? tacc.recordingTxnBtn
+                  : editingTxnId
+                  ? tacc.saveTxnBtn
+                  : tacc.recordTxnBtn}
+              </span>
             </button>
           </form>
         </div>
@@ -648,14 +705,24 @@ export function MartAccountingPanel({
                         {isInflow ? "+" : "−"} {formatMartPrice(txn.amount, lang)}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteTxn(txn.id)}
-                          className="rounded-lg border border-slate-200 p-1.5 text-red-500 hover:bg-red-50"
-                          aria-label={t.common.delete}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        <div className="inline-flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => startEditTxn(txn)}
+                            className="rounded-lg border border-slate-200 p-1.5 text-slate-600 hover:border-[#0B5336] hover:text-[#0B5336]"
+                            aria-label={t.common.edit}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteTxn(txn.id)}
+                            className="rounded-lg border border-slate-200 p-1.5 text-red-500 hover:bg-red-50"
+                            aria-label={t.common.delete}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

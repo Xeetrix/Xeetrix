@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Plus, Ticket, Trash2 } from "lucide-react";
+import { Pencil, Plus, Ticket, Trash2, X } from "lucide-react";
 import { useMartI18n } from "../MartI18nProvider";
 import { MART_ENTERPRISE_DICTIONARY } from "@/lib/martEnterpriseI18n";
 import {
@@ -39,6 +39,7 @@ export function MartCouponsPanel({
   const { lang, t } = useMartI18n();
   const tc = MART_ENTERPRISE_DICTIONARY[lang].coupons;
 
+  const [editingCouponId, setEditingCouponId] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const [discountType, setDiscountType] = useState<MartCouponDiscountType>("percent");
   const [discountValue, setDiscountValue] = useState("");
@@ -46,10 +47,40 @@ export function MartCouponsPanel({
   const [minOrderAmount, setMinOrderAmount] = useState("");
   const [expiryDate, setExpiryDate] = useState("");
   const [usageLimit, setUsageLimit] = useState("");
+  const [couponActive, setCouponActive] = useState(true);
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
 
-  async function handleCreateCoupon(e: React.FormEvent) {
+  function resetForm() {
+    setEditingCouponId(null);
+    setCode("");
+    setDiscountType("percent");
+    setDiscountValue("");
+    setMaxDiscount("");
+    setMinOrderAmount("");
+    setExpiryDate("");
+    setUsageLimit("");
+    setCouponActive(true);
+    setNotes("");
+  }
+
+  function startEditCoupon(cpn: MartCoupon) {
+    setEditingCouponId(cpn.id);
+    setCode(cpn.code || "");
+    setDiscountType(cpn.discountType === "fixed" ? "fixed" : "percent");
+    setDiscountValue(cpn.discountValue ? String(cpn.discountValue) : "");
+    setMaxDiscount(cpn.maxDiscount ? String(cpn.maxDiscount) : "");
+    setMinOrderAmount(cpn.minOrderAmount ? String(cpn.minOrderAmount) : "");
+    setExpiryDate(cpn.expiryDate ? cpn.expiryDate.slice(0, 10) : "");
+    setUsageLimit(cpn.usageLimit > 0 ? String(cpn.usageLimit) : "");
+    setCouponActive(cpn.active !== false);
+    setNotes(cpn.notes || "");
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }
+
+  async function handleSaveCoupon(e: React.FormEvent) {
     e.preventDefault();
     if (!isLiveBackend) {
       onNotify("error", t.admin.products.errConnectBackend);
@@ -63,7 +94,7 @@ export function MartCouponsPanel({
       return;
     }
 
-    const payload = {
+    const sharedFields = {
       code: cleanCode,
       discountType,
       discountValue: val,
@@ -71,28 +102,31 @@ export function MartCouponsPanel({
       minOrderAmount: Math.max(0, Number(minOrderAmount) || 0),
       expiryDate: expiryDate.trim(),
       usageLimit: Math.max(0, Number(usageLimit) || 0),
-      usageCount: 0,
-      active: true,
+      active: couponActive,
       notes: notes.trim(),
     };
 
     setSaving(true);
     try {
-      const res = await createMartRecord("Mart_Coupons", payload);
-      onCouponCreated({
-        id: res.id,
-        ...payload,
-        createdAt: new Date().toISOString(),
-      });
-      setCode("");
-      setDiscountType("percent");
-      setDiscountValue("");
-      setMaxDiscount("");
-      setMinOrderAmount("");
-      setExpiryDate("");
-      setUsageLimit("");
-      setNotes("");
-      onNotify("success", `${tc.msgCreated} (${cleanCode})`);
+      if (editingCouponId) {
+        await updateMartRecord("Mart_Coupons", editingCouponId, sharedFields);
+        onCouponUpdated(editingCouponId, sharedFields);
+        resetForm();
+        onNotify("success", `${tc.msgEdited} (${cleanCode})`);
+      } else {
+        const createPayload = {
+          ...sharedFields,
+          usageCount: 0,
+        };
+        const res = await createMartRecord("Mart_Coupons", createPayload);
+        onCouponCreated({
+          id: res.id,
+          ...createPayload,
+          createdAt: new Date().toISOString(),
+        });
+        resetForm();
+        onNotify("success", `${tc.msgCreated} (${cleanCode})`);
+      }
     } catch (err) {
       const apiErr = err as MartApiError;
       onNotify("error", translateMartError(apiErr?.message, lang, apiErr?.code));
@@ -128,19 +162,35 @@ export function MartCouponsPanel({
 
   return (
     <div className="space-y-6">
-      {/* Create Coupon Form */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 space-y-4">
+      {/* Create / Edit Coupon Form */}
+      <div
+        className={`rounded-2xl border bg-white p-6 space-y-4 ${
+          editingCouponId
+            ? "border-[#0B5336] ring-1 ring-[#0B5336]/20"
+            : "border-slate-200"
+        }`}
+      >
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="font-display text-lg font-bold text-slate-900 flex items-center gap-2">
               <Ticket className="h-4 w-4 text-[#0B5336]" />
-              <span>{tc.addTitle}</span>
+              <span>{editingCouponId ? `${tc.editTitle} (${editingCouponId})` : tc.addTitle}</span>
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">{tc.subtitle}</p>
           </div>
+          {editingCouponId && (
+            <button
+              type="button"
+              onClick={resetForm}
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 whitespace-nowrap"
+            >
+              <X className="h-3.5 w-3.5" />
+              <span>{tc.cancelEdit}</span>
+            </button>
+          )}
         </div>
 
-        <form onSubmit={handleCreateCoupon} className="space-y-4">
+        <form onSubmit={handleSaveCoupon} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -256,14 +306,31 @@ export function MartCouponsPanel({
             </div>
           </div>
 
-          <div className="flex justify-end">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={couponActive}
+                onChange={(e) => setCouponActive(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-[#0B5336]"
+              />
+              <span>{tc.activeCheckbox}</span>
+            </label>
             <button
               type="submit"
               disabled={saving}
               className="btn-primary px-6 py-2.5 text-xs gap-1.5 whitespace-nowrap"
             >
               <Plus className="h-3.5 w-3.5" />
-              <span>{saving ? tc.creatingBtn : tc.createBtn}</span>
+              <span>
+                {saving
+                  ? editingCouponId
+                    ? tc.savingBtn
+                    : tc.creatingBtn
+                  : editingCouponId
+                  ? tc.saveBtn
+                  : tc.createBtn}
+              </span>
             </button>
           </div>
         </form>
@@ -353,15 +420,26 @@ export function MartCouponsPanel({
                         </button>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(cpn.id)}
-                          aria-label={cpn.code}
-                          className="inline-flex items-center gap-1 text-red-600 hover:text-red-800 font-medium whitespace-nowrap"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                          <span>{t.common.delete}</span>
-                        </button>
+                        <div className="inline-flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => startEditCoupon(cpn)}
+                            aria-label={`${t.common.edit} ${cpn.code}`}
+                            className="inline-flex items-center gap-1 text-slate-700 hover:text-[#0B5336] font-medium whitespace-nowrap"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                            <span>{t.common.edit}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(cpn.id)}
+                            aria-label={cpn.code}
+                            className="inline-flex items-center gap-1 text-red-600 hover:text-red-800 font-medium whitespace-nowrap"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            <span>{t.common.delete}</span>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

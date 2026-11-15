@@ -457,6 +457,48 @@ export function MartStorefront() {
     return map;
   }, [products]);
 
+  function resolveCartLiveState(item: CartItem) {
+    const liveProd = productMap.get(item.productId);
+    const liveNameEn = liveProd ? liveProd.nameEn || liveProd.nameBn : item.nameEn;
+    const liveNameBn = liveProd ? liveProd.nameBn || liveProd.nameEn : item.nameBn;
+    const liveTitle = pickLocalized(liveNameEn, liveNameBn, lang);
+
+    if (!liveProd) {
+      return {
+        liveProd: undefined,
+        matchedCell: undefined,
+        liveNameEn,
+        liveNameBn,
+        liveTitle,
+        isLiveAvailable: loading && products.length === 0,
+        liveMaxStock: item.maxStock,
+      };
+    }
+
+    const matrix = parseVariationMatrix(liveProd.variationMatrixJson);
+    const matchedCell = findMatchingVariant(matrix, item.colorName, item.sizeName);
+    const variantMissing =
+      matrix.length > 0 && (Boolean(item.colorName) || Boolean(item.sizeName)) && !matchedCell;
+
+    const variantOrderable = matchedCell
+      ? matchedCell.active && (liveProd.fulfillmentType === "dropship" || matchedCell.stock > 0)
+      : !variantMissing;
+
+    const isLiveAvailable = isProductOrderable(liveProd) && variantOrderable;
+    const rawCap = getProductOrderableMaxQty(liveProd, matchedCell);
+    const liveMaxStock = isLiveAvailable ? Math.max(1, rawCap) : item.maxStock;
+
+    return {
+      liveProd,
+      matchedCell,
+      liveNameEn,
+      liveNameBn,
+      liveTitle,
+      isLiveAvailable,
+      liveMaxStock,
+    };
+  }
+
   function resolveCartItemUnit(item: CartItem): {
     effectiveUnitPrice: number;
     isWholesaleApplied: boolean;
@@ -641,7 +683,13 @@ export function MartStorefront() {
           if (item.key !== key) return item;
           const next = item.quantity + delta;
           if (next <= 0) return null;
-          return { ...item, quantity: Math.min(item.maxStock, next) };
+          const { liveMaxStock, isLiveAvailable } = resolveCartLiveState(item);
+          const cap = isLiveAvailable ? liveMaxStock : item.quantity;
+          return {
+            ...item,
+            maxStock: liveMaxStock,
+            quantity: Math.min(Math.max(1, cap), next),
+          };
         })
         .filter((x): x is CartItem => x !== null)
     );
@@ -732,15 +780,26 @@ export function MartStorefront() {
       return;
     }
 
+    const hasUnavailableCartItem = cart.some((item) => {
+      const liveState = resolveCartLiveState(item);
+      if (!liveState.isLiveAvailable) return true;
+      return liveState.liveProd?.fulfillmentType !== "dropship" && item.quantity > liveState.liveMaxStock;
+    });
+    if (hasUnavailableCartItem) {
+      setCheckoutError(t.cart.cartUnavailableCheckoutErr);
+      return;
+    }
+
     const orderItems: MartOrderItem[] = cart.map((item) => {
       const { effectiveUnitPrice, isWholesaleApplied } = resolveCartItemUnit(item);
+      const { liveProd, matchedCell, liveNameEn, liveNameBn, liveTitle } = resolveCartLiveState(item);
       return {
         productId: item.productId,
-        sku: item.sku,
-        variantSku: item.variantSku || "",
-        name: pickLocalized(item.nameEn, item.nameBn, lang),
-        nameEn: item.nameEn,
-        nameBn: item.nameBn,
+        sku: matchedCell?.sku || liveProd?.sku || item.sku,
+        variantSku: matchedCell?.sku || item.variantSku || "",
+        name: liveTitle,
+        nameEn: liveNameEn,
+        nameBn: liveNameBn,
         variant: item.variant,
         colorName: item.colorName || "",
         sizeName: item.sizeName || "",
@@ -748,7 +807,7 @@ export function MartStorefront() {
         unitPrice: effectiveUnitPrice,
         quantity: item.quantity,
         lineTotal: effectiveUnitPrice * item.quantity,
-        fulfillmentType: item.fulfillmentType || "own_stock",
+        fulfillmentType: liveProd?.fulfillmentType || item.fulfillmentType || "own_stock",
         imageUrl: item.imageUrl,
       };
     });
@@ -1997,10 +2056,15 @@ export function MartStorefront() {
                 </div>
               ) : (
                 <>
-                  {/* Cart Items List with Automatic Wholesale Rate */}
+                  {/* Cart Items List with Automatic Wholesale Rate & Live Stock Sync */}
                   <div className="space-y-3">
                     {cart.map((item) => {
-                      const itemTitle = pickLocalized(item.nameEn, item.nameBn, lang);
+                      const { liveTitle, isLiveAvailable, liveMaxStock, liveProd } =
+                        resolveCartLiveState(item);
+                      const overStock =
+                        isLiveAvailable &&
+                        liveProd?.fulfillmentType !== "dropship" &&
+                        item.quantity > liveMaxStock;
                       const {
                         effectiveUnitPrice,
                         isWholesaleApplied,
@@ -2011,14 +2075,18 @@ export function MartStorefront() {
                       return (
                         <div
                           key={item.key}
-                          className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3"
+                          className={`flex items-center gap-3 rounded-xl border p-3 ${
+                            !isLiveAvailable || overStock
+                              ? "border-red-200 bg-red-50/40"
+                              : "border-slate-200 bg-slate-50"
+                          }`}
                         >
                           <div className="h-16 w-16 rounded-lg bg-white border border-slate-200 overflow-hidden shrink-0">
-                            <ProductMedia src={item.imageUrl} alt={itemTitle} />
+                            <ProductMedia src={item.imageUrl} alt={liveTitle} />
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="text-sm font-semibold text-slate-900 truncate">
-                              {itemTitle}
+                              {liveTitle}
                             </div>
                             <div className="text-xs text-slate-500 flex flex-wrap items-center gap-1.5">
                               {item.variant && <span>{item.variant} ·</span>}
@@ -2039,6 +2107,11 @@ export function MartStorefront() {
                                 {formatMartPrice(wholesaleRate, lang)}
                               </div>
                             )}
+                            {(!isLiveAvailable || overStock) && (
+                              <div className="mt-1 text-[11px] font-medium text-red-600">
+                                {t.cart.cartItemUnavailable}
+                              </div>
+                            )}
 
                             <div className="flex items-center justify-between mt-2">
                               <div className="inline-flex items-center rounded-lg border border-slate-200 bg-white">
@@ -2054,8 +2127,9 @@ export function MartStorefront() {
                                 </span>
                                 <button
                                   type="button"
+                                  disabled={!isLiveAvailable || item.quantity >= liveMaxStock}
                                   onClick={() => updateCartQuantity(item.key, 1)}
-                                  className="px-2 py-1 text-slate-600 hover:text-slate-900"
+                                  className="px-2 py-1 text-slate-600 hover:text-slate-900 disabled:opacity-40"
                                 >
                                   <Plus className="h-3 w-3" />
                                 </button>
@@ -2068,7 +2142,7 @@ export function MartStorefront() {
                                 <button
                                   type="button"
                                   onClick={() => removeCartItem(item.key)}
-                                  aria-label={`${t.cart.removeItemAria} ${itemTitle}`}
+                                  aria-label={`${t.cart.removeItemAria} ${liveTitle}`}
                                   className="text-slate-400 hover:text-red-600"
                                 >
                                   <Trash2 className="h-4 w-4" />

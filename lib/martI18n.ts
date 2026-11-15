@@ -169,6 +169,8 @@ export interface MartDictionary {
     errEmptyCart: string;
     errMissingDetails: string;
     errOrderFailed: string;
+    cartItemUnavailable: string;
+    cartUnavailableCheckoutErr: string;
   };
   track: {
     modalTitle: string;
@@ -268,13 +270,37 @@ export interface MartDictionary {
       notePrefix: string;
       trxPrefix: string;
       invoiceBtn: string;
+      editOrderBtn: string;
+      deleteOrderBtn: string;
+      deleteOrderConfirm: string;
+      editOrderTitle: string;
+      orderCustomerNameLabel: string;
+      orderPhoneLabel: string;
+      orderAreaLabel: string;
+      orderDeliveryChargeLabel: string;
+      orderDiscountCodeLabel: string;
+      orderDiscountAmountLabel: string;
+      orderAddressLabel: string;
+      orderPaymentMethodLabel: string;
+      orderPaymentProviderLabel: string;
+      orderTrxIdLabel: string;
+      orderNotesLabel: string;
+      recalculatedTotalLabel: string;
+      saveOrderBtn: string;
+      savingOrderBtn: string;
       orderUpdatedMsg: string;
+      msgOrderDetailsUpdated: string;
+      msgOrderDeleted: string;
       errOrderUpdate: string;
+      errOrderCustomerReq: string;
     };
     products: {
       addTitle: string;
       editTitle: string;
       cancelEdit: string;
+      editingBannerHint: string;
+      variantStockLockedNote: string;
+      duplicateBtn: string;
       nameEnLabel: string;
       nameEnPlaceholder: string;
       nameBnLabel: string;
@@ -331,6 +357,10 @@ export interface MartDictionary {
     };
     taxonomy: {
       catAddTitle: string;
+      catEditTitle: string;
+      catSlugLabel: string;
+      catSlugPlaceholder: string;
+      slugCascadeNote: string;
       catNameEnLabel: string;
       catNameEnPlaceholder: string;
       catNameBnLabel: string;
@@ -347,12 +377,17 @@ export interface MartDictionary {
       uploadingBtn: string;
       catCreateBtn: string;
       catCreatingBtn: string;
+      catSaveBtn: string;
+      catSavingBtn: string;
       catListTitle: string;
       catEmpty: string;
       catParentPrefix: string;
       catVisible: string;
       catHidden: string;
       lblAddTitle: string;
+      lblEditTitle: string;
+      lblSlugLabel: string;
+      lblSlugPlaceholder: string;
       lblNameEnLabel: string;
       lblNameEnPlaceholder: string;
       lblNameBnLabel: string;
@@ -368,14 +403,19 @@ export interface MartDictionary {
       lblDescBnPlaceholder: string;
       lblCreateBtn: string;
       lblCreatingBtn: string;
+      lblSaveBtn: string;
+      lblSavingBtn: string;
       lblListTitle: string;
       lblEmpty: string;
       errCatNameReq: string;
       errLblNameReq: string;
+      errDuplicateSlug: string;
       msgCatCreated: string;
+      msgCatUpdated: string;
       msgCatDeleted: string;
       msgCatImageUploaded: string;
       msgLblCreated: string;
+      msgLblUpdated: string;
       msgLblDeleted: string;
     };
     settings: {
@@ -607,6 +647,9 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
       errMissingDetails: "Please enter your full name, phone number, and delivery address.",
       errOrderFailed:
         "Order could not be placed. Please try again or call +880 965 803 6631.",
+      cartItemUnavailable: "Unavailable or out of stock — please remove or adjust qty.",
+      cartUnavailableCheckoutErr:
+        "One or more items in your cart are no longer available. Please remove them to continue.",
     },
     track: {
       modalTitle: "Track Your Order",
@@ -709,13 +752,37 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
         notePrefix: "Note",
         trxPrefix: "TrxID",
         invoiceBtn: "Invoice",
+        editOrderBtn: "Edit Order",
+        deleteOrderBtn: "Delete",
+        deleteOrderConfirm: "Confirm Delete?",
+        editOrderTitle: "Edit Order Details",
+        orderCustomerNameLabel: "Customer Name *",
+        orderPhoneLabel: "Phone Number *",
+        orderAreaLabel: "Delivery Area",
+        orderDeliveryChargeLabel: "Delivery Charge (৳)",
+        orderDiscountCodeLabel: "Coupon / Promo Code",
+        orderDiscountAmountLabel: "Discount Amount (৳)",
+        orderAddressLabel: "Delivery Address *",
+        orderPaymentMethodLabel: "Payment Method",
+        orderPaymentProviderLabel: "Payment Provider",
+        orderTrxIdLabel: "Transaction ID (TrxID)",
+        orderNotesLabel: "Order Notes",
+        recalculatedTotalLabel: "Recalculated Grand Total",
+        saveOrderBtn: "Save Order Changes",
+        savingOrderBtn: "Saving Order...",
         orderUpdatedMsg: "Order status updated successfully.",
+        msgOrderDetailsUpdated: "Order details updated in Mart_Orders.",
+        msgOrderDeleted: "Order deleted and active own-stock restored.",
         errOrderUpdate: "Failed to update order status.",
+        errOrderCustomerReq: "Customer name, phone number, and address are required.",
       },
       products: {
         addTitle: "Add New Product to Mart_Products",
         editTitle: "Edit Product",
         cancelEdit: "Cancel Edit",
+        editingBannerHint: "Editing existing catalog product — changes update live storefront data.",
+        variantStockLockedNote: "Auto-summed from active Color × Size matrix cells",
+        duplicateBtn: "Clone",
         nameEnLabel: "Product Name (English) *",
         nameEnPlaceholder: "e.g. Kids Fleece Hoodie",
         nameBnLabel: "Product Name (Bengali)",
@@ -773,6 +840,10 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
       },
       taxonomy: {
         catAddTitle: "Add Category (Mart_Categories)",
+        catEditTitle: "Edit Category",
+        catSlugLabel: "URL Slug (Auto-syncs linked products)",
+        catSlugPlaceholder: "e.g. baby-clothing",
+        slugCascadeNote: "Changing the slug automatically updates all linked products.",
         catNameEnLabel: "Category Name (English) *",
         catNameEnPlaceholder: "e.g. Baby, Clothing, Electronics",
         catNameBnLabel: "Category Name (Bengali)",
@@ -789,12 +860,17 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
         uploadingBtn: "Uploading...",
         catCreateBtn: "Create Category",
         catCreatingBtn: "Creating Category...",
+        catSaveBtn: "Save Category Changes",
+        catSavingBtn: "Saving Category...",
         catListTitle: "Categories",
         catEmpty: "No categories created yet.",
         catParentPrefix: "Under",
         catVisible: "Active",
         catHidden: "Hidden",
         lblAddTitle: "Add Label / Collection (Mart_Labels)",
+        lblEditTitle: "Edit Label / Collection",
+        lblSlugLabel: "URL Slug (Auto-syncs linked products)",
+        lblSlugPlaceholder: "e.g. winter-collection",
         lblNameEnLabel: "Label / Collection Name (English) *",
         lblNameEnPlaceholder: "e.g. Winter Collection, New Arrival, Hot Deal",
         lblNameBnLabel: "Label / Collection Name (Bengali)",
@@ -810,14 +886,19 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
         lblDescBnPlaceholder: "ঐচ্ছিক কালেকশন বিবরণ",
         lblCreateBtn: "Create Label",
         lblCreatingBtn: "Creating Label...",
+        lblSaveBtn: "Save Label Changes",
+        lblSavingBtn: "Saving Label...",
         lblListTitle: "Labels & Collections",
         lblEmpty: "No labels or collections created yet.",
         errCatNameReq: "Category name (English or Bengali) is required.",
         errLblNameReq: "Label name (English or Bengali) is required.",
+        errDuplicateSlug: "That slug is already in use by another item.",
         msgCatCreated: "Category saved to Mart_Categories.",
+        msgCatUpdated: "Category updated and linked products synced.",
         msgCatDeleted: "Category deleted from Mart_Categories.",
         msgCatImageUploaded: "Category image saved to Google Drive.",
         msgLblCreated: "Label saved to Mart_Labels.",
+        msgLblUpdated: "Label updated and linked products synced.",
         msgLblDeleted: "Label deleted from Mart_Labels.",
       },
       settings: {
@@ -1067,6 +1148,9 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
       errMissingDetails: "অনুগ্রহ করে আপনার নাম, মোবাইল নম্বর এবং ডেলিভারি ঠিকানা লিখুন।",
       errOrderFailed:
         "অর্ডার সম্পন্ন করা যায়নি। অনুগ্রহ করে আবার চেষ্টা করুন অথবা +880 965 803 6631 নম্বরে কল করুন।",
+      cartItemUnavailable: "বর্তমানে স্টক নেই বা সাময়িকভাবে বন্ধ — অনুগ্রহ করে বাদ দিন বা পরিমাণ কমান।",
+      cartUnavailableCheckoutErr:
+        "আপনার কার্টের এক বা একাধিক পণ্য বর্তমানে উপলব্ধ নয়। অর্ডার করতে অনুগ্রহ করে সেগুলো বাদ দিন।",
     },
     track: {
       modalTitle: "অর্ডার ট্র্যাক করুন",
@@ -1171,13 +1255,37 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
         notePrefix: "নোট",
         trxPrefix: "TrxID",
         invoiceBtn: "ইনভয়েস",
+        editOrderBtn: "এডিট",
+        deleteOrderBtn: "মুছুন",
+        deleteOrderConfirm: "নিশ্চিত মুছবেন?",
+        editOrderTitle: "অর্ডারের তথ্য এডিট করুন",
+        orderCustomerNameLabel: "ক্রেতার নাম *",
+        orderPhoneLabel: "মোবাইল নম্বর *",
+        orderAreaLabel: "ডেলিভারি এলাকা",
+        orderDeliveryChargeLabel: "ডেলিভারি চার্জ (৳)",
+        orderDiscountCodeLabel: "কুপন / প্রমো কোড",
+        orderDiscountAmountLabel: "ডিসকাউন্ট পরিমাণ (৳)",
+        orderAddressLabel: "ডেলিভারি ঠিকানা *",
+        orderPaymentMethodLabel: "পেমেন্ট মাধ্যম",
+        orderPaymentProviderLabel: "পেমেন্ট প্রোভাইডার",
+        orderTrxIdLabel: "ট্রানজেকশন আইডি (TrxID)",
+        orderNotesLabel: "অর্ডার নোট",
+        recalculatedTotalLabel: "সমন্বিত সর্বমোট",
+        saveOrderBtn: "অর্ডার আপডেট করুন",
+        savingOrderBtn: "সেভ হচ্ছে...",
         orderUpdatedMsg: "অর্ডার স্ট্যাটাস আপডেট করা হয়েছে।",
+        msgOrderDetailsUpdated: "অর্ডারের তথ্য Mart_Orders-এ আপডেট হয়েছে।",
+        msgOrderDeleted: "অর্ডার মুছে ফেলা হয়েছে এবং সক্রিয় নিজস্ব স্টক ফেরত যুক্ত হয়েছে।",
         errOrderUpdate: "অর্ডার স্ট্যাটাস আপডেট ব্যর্থ হয়েছে।",
+        errOrderCustomerReq: "ক্রেতার নাম, মোবাইল নম্বর এবং ঠিকানা আবশ্যক।",
       },
       products: {
         addTitle: "নতুন পণ্য যোগ করুন (Mart_Products)",
         editTitle: "পণ্য এডিট করুন",
         cancelEdit: "এডিট বাতিল",
+        editingBannerHint: "ক্যাটালগের একটি বিদ্যমান পণ্য এডিট করা হচ্ছে — সেভ করলে স্টোরফ্রন্টে আপডেট হবে।",
+        variantStockLockedNote: "কালার × সাইজ ম্যাট্রিক্সের সক্রিয় ঘর থেকে স্বয়ংক্রিয় যোগফল",
+        duplicateBtn: "ডুপ্লিকেট",
         nameEnLabel: "পণ্যের নাম (ইংরেজি) *",
         nameEnPlaceholder: "যেমন: Kids Fleece Hoodie",
         nameBnLabel: "পণ্যের নাম (বাংলা)",
@@ -1234,6 +1342,10 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
       },
       taxonomy: {
         catAddTitle: "নতুন ক্যাটাগরি তৈরি (Mart_Categories)",
+        catEditTitle: "ক্যাটাগরি এডিট করুন",
+        catSlugLabel: "URL স্লাগ (যুক্ত পণ্যে অটো সিঙ্ক হয়)",
+        catSlugPlaceholder: "যেমন: baby-clothing",
+        slugCascadeNote: "স্লাগ পরিবর্তন করলে সব যুক্ত পণ্যের ক্যাটাগরি ও লেবেল স্বয়ংক্রিয়ভাবে আপডেট হবে।",
         catNameEnLabel: "ক্যাটাগরির নাম (ইংরেজি) *",
         catNameEnPlaceholder: "যেমন: Baby, Clothing, Electronics",
         catNameBnLabel: "ক্যাটাগরির নাম (বাংলা)",
@@ -1250,12 +1362,17 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
         uploadingBtn: "আপলোড হচ্ছে...",
         catCreateBtn: "ক্যাটাগরি তৈরি করুন",
         catCreatingBtn: "তৈরি হচ্ছে...",
+        catSaveBtn: "ক্যাটাগরি আপডেট করুন",
+        catSavingBtn: "আপডেট হচ্ছে...",
         catListTitle: "ক্যাটাগরি তালিকা",
         catEmpty: "এখনো কোনো ক্যাটাগরি তৈরি করা হয়নি।",
         catParentPrefix: "মূল:",
         catVisible: "সক্রিয়",
         catHidden: "লুকানো",
         lblAddTitle: "নতুন লেবেল / কালেকশন তৈরি (Mart_Labels)",
+        lblEditTitle: "লেবেল / কালেকশন এডিট করুন",
+        lblSlugLabel: "URL স্লাগ (যুক্ত পণ্যে অটো সিঙ্ক হয়)",
+        lblSlugPlaceholder: "যেমন: winter-collection",
         lblNameEnLabel: "লেবেল / কালেকশনের নাম (ইংরেজি) *",
         lblNameEnPlaceholder: "যেমন: Winter Collection, New Arrival, Hot Deal",
         lblNameBnLabel: "লেবেল / কালেকশনের নাম (বাংলা)",
@@ -1271,14 +1388,19 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
         lblDescBnPlaceholder: "ঐচ্ছিক কালেকশন বিবরণ",
         lblCreateBtn: "লেবেল তৈরি করুন",
         lblCreatingBtn: "তৈরি হচ্ছে...",
+        lblSaveBtn: "লেবেল আপডেট করুন",
+        lblSavingBtn: "আপডেট হচ্ছে...",
         lblListTitle: "লেবেল ও কালেকশন তালিকা",
         lblEmpty: "এখনো কোনো লেবেল বা কালেকশন তৈরি করা হয়নি।",
         errCatNameReq: "ক্যাটাগরির ইংরেজি বা বাংলা নাম দেওয়া আবশ্যক।",
         errLblNameReq: "লেবেলের ইংরেজি বা বাংলা নাম দেওয়া আবশ্যক।",
+        errDuplicateSlug: "এই স্লাগটি ইতিমধ্যেই অন্য একটি আইটেমে ব্যবহৃত হচ্ছে।",
         msgCatCreated: "ক্যাটাগরি Mart_Categories-এ সেভ হয়েছে।",
+        msgCatUpdated: "ক্যাটাগরি আপডেট হয়েছে এবং যুক্ত পণ্য সিঙ্ক হয়েছে।",
         msgCatDeleted: "ক্যাটাগরি মুছে ফেলা হয়েছে।",
         msgCatImageUploaded: "ক্যাটাগরি ছবি Google Drive-এ সেভ হয়েছে।",
         msgLblCreated: "লেবেল Mart_Labels-এ সেভ হয়েছে।",
+        msgLblUpdated: "লেবেল আপডেট হয়েছে এবং যুক্ত পণ্য সিঙ্ক হয়েছে।",
         msgLblDeleted: "লেবেল মুছে ফেলা হয়েছে।",
       },
       settings: {

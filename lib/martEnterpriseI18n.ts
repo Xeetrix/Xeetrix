@@ -200,8 +200,12 @@ export interface MartEnterpriseDictionary {
       Bank: string;
     };
     msgTxnCreated: string;
+    msgTxnUpdated: string;
     msgTxnDeleted: string;
     errInvalidTxn: string;
+    editTxnTitle: string;
+    saveTxnBtn: string;
+    cancelEdit: string;
     csvHeaders: string[];
   };
   crm: {
@@ -295,10 +299,18 @@ export interface MartEnterpriseDictionary {
     payableKpi: string;
     receivableKpi: string;
     msgProfileSaved: string;
+    msgProfileDeleted: string;
     msgLogAdded: string;
+    msgLogUpdated: string;
+    msgLogDeleted: string;
     msgFollowUpCleared: string;
     errProfileFields: string;
     errLogSummary: string;
+    editLogBtn: string;
+    saveLogBtn: string;
+    cancelEditLogBtn: string;
+    deleteProfileBtn: string;
+    confirmDeleteProfile: string;
     csvHeaders: string[];
   };
   variations: {
@@ -364,6 +376,11 @@ export interface MartEnterpriseDictionary {
     notesPlaceholder: string;
     createBtn: string;
     creatingBtn: string;
+    editTitle: string;
+    saveBtn: string;
+    savingBtn: string;
+    cancelEdit: string;
+    activeCheckbox: string;
     emptyTitle: string;
     colCode: string;
     colOffer: string;
@@ -385,6 +402,7 @@ export interface MartEnterpriseDictionary {
     discountRowLabel: string;
     msgCreated: string;
     msgUpdated: string;
+    msgEdited: string;
     msgDeleted: string;
     errMissingCode: string;
     errReasons: {
@@ -625,8 +643,12 @@ export const MART_ENTERPRISE_DICTIONARY: Record<MartLang, MartEnterpriseDictiona
         Bank: "Bank Transfer",
       },
       msgTxnCreated: "Transaction recorded in Mart_Transactions.",
+      msgTxnUpdated: "Transaction entry updated in Mart_Transactions.",
       msgTxnDeleted: "Transaction deleted from ledger.",
       errInvalidTxn: "Please provide a valid date and positive amount.",
+      editTxnTitle: "Edit Cashbook / Expense Entry",
+      saveTxnBtn: "Save Entry Changes",
+      cancelEdit: "Cancel Edit",
       csvHeaders: [
         "ID",
         "Date",
@@ -732,10 +754,18 @@ export const MART_ENTERPRISE_DICTIONARY: Record<MartLang, MartEnterpriseDictiona
       payableKpi: "Supplier Payable Due",
       receivableKpi: "Dropship Receivable",
       msgProfileSaved: "CRM profile saved.",
+      msgProfileDeleted: "CRM profile deleted.",
       msgLogAdded: "Interaction log saved to CRM timeline.",
+      msgLogUpdated: "Interaction log updated.",
+      msgLogDeleted: "Interaction log deleted.",
       msgFollowUpCleared: "Follow-up marked as completed.",
       errProfileFields: "Client name and phone number are required.",
       errLogSummary: "Please enter a brief interaction summary.",
+      editLogBtn: "Edit",
+      saveLogBtn: "Save Log",
+      cancelEditLogBtn: "Cancel",
+      deleteProfileBtn: "Delete Profile",
+      confirmDeleteProfile: "Confirm Delete Profile?",
       csvHeaders: [
         "Name",
         "Phone",
@@ -816,6 +846,11 @@ export const MART_ENTERPRISE_DICTIONARY: Record<MartLang, MartEnterpriseDictiona
       notesPlaceholder: "e.g. Winter jacket launch offer",
       createBtn: "Publish Coupon",
       creatingBtn: "Publishing...",
+      editTitle: "Edit Discount Coupon",
+      saveBtn: "Save Coupon Changes",
+      savingBtn: "Saving...",
+      cancelEdit: "Cancel Edit",
+      activeCheckbox: "Coupon Active (Redeemable at checkout)",
       emptyTitle: "No promo coupons created yet. Add your first discount code above.",
       colCode: "Promo Code",
       colOffer: "Discount Offer",
@@ -837,6 +872,7 @@ export const MART_ENTERPRISE_DICTIONARY: Record<MartLang, MartEnterpriseDictiona
       discountRowLabel: "Coupon Discount",
       msgCreated: "Coupon created in Mart_Coupons.",
       msgUpdated: "Coupon status updated.",
+      msgEdited: "Coupon updated in Mart_Coupons.",
       msgDeleted: "Coupon deleted.",
       errMissingCode: "Coupon code and positive discount value are required.",
       errReasons: {
@@ -1075,8 +1111,12 @@ export const MART_ENTERPRISE_DICTIONARY: Record<MartLang, MartEnterpriseDictiona
         Bank: "ব্যাংক ট্রান্সফার",
       },
       msgTxnCreated: "আর্থিক এন্ট্রি Mart_Transactions-এ যুক্ত হয়েছে।",
+      msgTxnUpdated: "আর্থিক লেনদেনটি Mart_Transactions-এ আপডেট হয়েছে।",
       msgTxnDeleted: "লেনদেনটি লেজার থেকে মুছে ফেলা হয়েছে।",
       errInvalidTxn: "অনুগ্রহ করে সঠিক তারিখ ও টাকার পরিমাণ লিখুন।",
+      editTxnTitle: "ক্যাশবুক / খরচের এন্ট্রি এডিট করুন",
+      saveTxnBtn: "পরিবর্তন সেভ করুন",
+      cancelEdit: "এডিট বাতিল",
       csvHeaders: [
         "আইডি",
         "তারিখ",
@@ -1182,10 +1222,18 @@ export const MART_ENTERPRISE_DICTIONARY: Record<MartLang, MartEnterpriseDictiona
       payableKpi: "সাপ্লাইয়ার বকেয়া",
       receivableKpi: "ড্রপশিপার পাওনা",
       msgProfileSaved: "CRM প্রোফাইল সফলভাবে সংরক্ষিত হয়েছে।",
+      msgProfileDeleted: "CRM প্রোফাইল মুছে ফেলা হয়েছে।",
       msgLogAdded: "যোগাযোগ লগ CRM টাইমলাইনে যুক্ত হয়েছে।",
+      msgLogUpdated: "যোগাযোগ লগ আপডেট করা হয়েছে।",
+      msgLogDeleted: "যোগাযোগ লগ মুছে ফেলা হয়েছে।",
       msgFollowUpCleared: "ফলোআপ টাস্ক সম্পন্ন হিসেবে চিহ্নিত হয়েছে।",
       errProfileFields: "ক্লায়েন্টের নাম এবং মোবাইল নম্বর দেওয়া আবশ্যক।",
       errLogSummary: "অনুগ্রহ করে আলোচনার একটি সংক্ষিপ্ত সারসংক্ষেপ লিখুন।",
+      editLogBtn: "এডিট",
+      saveLogBtn: "লগ সেভ করুন",
+      cancelEditLogBtn: "বাতিল",
+      deleteProfileBtn: "প্রোফাইল মুছুন",
+      confirmDeleteProfile: "নিশ্চিত প্রোফাইল মুছবেন?",
       csvHeaders: [
         "নাম",
         "মোবাইল",
@@ -1266,6 +1314,11 @@ export const MART_ENTERPRISE_DICTIONARY: Record<MartLang, MartEnterpriseDictiona
       notesPlaceholder: "যেমন: শীতকালীন কালেকশন বিশেষ ছাড়",
       createBtn: "কুপন প্রকাশ করুন",
       creatingBtn: "প্রকাশ হচ্ছে...",
+      editTitle: "ডিসকাউন্ট কুপন এডিট করুন",
+      saveBtn: "কুপন আপডেট করুন",
+      savingBtn: "আপডেট হচ্ছে...",
+      cancelEdit: "এডিট বাতিল",
+      activeCheckbox: "কুপন সক্রিয় (চেকআউটে ব্যবহারযোগ্য)",
       emptyTitle: "এখনো কোনো কুপন কোড তৈরি করা হয়নি। উপর থেকে প্রথম ডিসকাউন্ট কুপন তৈরি করুন।",
       colCode: "কুপন কোড",
       colOffer: "ডিসকাউন্ট অফার",
@@ -1287,6 +1340,7 @@ export const MART_ENTERPRISE_DICTIONARY: Record<MartLang, MartEnterpriseDictiona
       discountRowLabel: "কুপন ছাড়",
       msgCreated: "কুপন কোড Mart_Coupons-এ তৈরি হয়েছে।",
       msgUpdated: "কুপনের স্ট্যাটাস আপডেট হয়েছে।",
+      msgEdited: "কুপন কোড Mart_Coupons-এ আপডেট হয়েছে।",
       msgDeleted: "কুপন মুছে ফেলা হয়েছে।",
       errMissingCode: "সঠিক কুপন কোড এবং ধনাত্মক ডিসকাউন্ট মান লিখুন।",
       errReasons: {

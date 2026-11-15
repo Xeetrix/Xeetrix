@@ -16,6 +16,7 @@ import {
   Trash2,
   Plus,
   Pencil,
+  Copy,
   Printer,
   Download,
   Search,
@@ -180,11 +181,27 @@ export function MartAdminClient() {
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
-  // Order Filters, Expandable Item Fulfillment Panel & Printable Invoice Modal
+  // Order Filters, Expandable Item Fulfillment Panel, Edit/Delete & Printable Invoice Modal
   const [orderSearch, setOrderSearch] = useState("");
   const [orderStatusFilter, setOrderStatusFilter] = useState<"All" | MartOrderStatus>("All");
   const [expandedOrderIds, setExpandedOrderIds] = useState<Record<string, boolean>>({});
   const [invoiceOrder, setInvoiceOrder] = useState<MartOrder | null>(null);
+  const [editingOrder, setEditingOrder] = useState<MartOrder | null>(null);
+  const [orderDraft, setOrderDraft] = useState({
+    customerName: "",
+    phone: "",
+    deliveryArea: "Inside Dhaka",
+    deliveryCharge: "0",
+    discountCode: "",
+    discountAmount: "0",
+    address: "",
+    paymentMethod: "Cash on Delivery",
+    paymentProvider: "",
+    transactionId: "",
+    notes: "",
+  });
+  const [savingOrderDetails, setSavingOrderDetails] = useState(false);
+  const [confirmDeleteOrderId, setConfirmDeleteOrderId] = useState<string | null>(null);
 
   // Product Form (Add or Edit — Bilingual + Multi-Category + Labels + Variations + Gallery + Wholesale + Hybrid Sourcing)
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
@@ -226,8 +243,10 @@ export function MartAdminClient() {
   const [productSearch, setProductSearch] = useState("");
 
   // Category Form (Mart_Categories)
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [catNameEn, setCatNameEn] = useState("");
   const [catNameBn, setCatNameBn] = useState("");
+  const [catSlug, setCatSlug] = useState("");
   const [catParentSlug, setCatParentSlug] = useState("");
   const [catSortOrder, setCatSortOrder] = useState("0");
   const [catDescEn, setCatDescEn] = useState("");
@@ -237,8 +256,10 @@ export function MartAdminClient() {
   const [savingCategory, setSavingCategory] = useState(false);
 
   // Label Form (Mart_Labels)
+  const [editingLabelId, setEditingLabelId] = useState<string | null>(null);
   const [lblNameEn, setLblNameEn] = useState("");
   const [lblNameBn, setLblNameBn] = useState("");
+  const [lblSlug, setLblSlug] = useState("");
   const [lblTone, setLblTone] = useState<MartLabelTone>("emerald");
   const [lblSortOrder, setLblSortOrder] = useState("0");
   const [lblDescEn, setLblDescEn] = useState("");
@@ -421,6 +442,12 @@ export function MartAdminClient() {
     if (typeof window !== "undefined") {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
+  }
+
+  function startDuplicateProduct(p: MartProduct) {
+    startEditProduct(p);
+    setEditingProductId(null);
+    setProdSku(p.sku ? `${p.sku}-COPY` : "");
   }
 
   function toggleProdCategorySlug(slug: string) {
@@ -803,14 +830,102 @@ export function MartAdminClient() {
     }
   }
 
+  function isOrderItemStockDeducted(orderStatus: string, itemStatus?: string): boolean {
+    return orderStatus !== "Cancelled" && itemStatus !== "Cancelled" && itemStatus !== "Returned";
+  }
+
+  function applyOptimisticStockDelta(
+    prevProducts: MartProduct[],
+    itemDeltas: Array<{
+      productId: string;
+      variantSku?: string;
+      colorName?: string;
+      sizeName?: string;
+      fulfillmentType?: string;
+      delta: number;
+    }>
+  ): MartProduct[] {
+    const activeDeltas = itemDeltas.filter(
+      (d) => d.productId && d.delta !== 0 && d.fulfillmentType !== "dropship"
+    );
+    if (activeDeltas.length === 0) return prevProducts;
+
+    return prevProducts.map((prod) => {
+      if (prod.fulfillmentType === "dropship") return prod;
+      const hits = activeDeltas.filter((d) => d.productId === prod.id);
+      if (hits.length === 0) return prod;
+
+      const matrix = parseVariationMatrix(prod.variationMatrixJson);
+      if (matrix.length > 0) {
+        const nextMatrix = matrix.map((cell) => ({ ...cell }));
+        let anyCellHit = false;
+        let fallbackScalarDelta = 0;
+
+        hits.forEach((h) => {
+          const skuNorm = String(h.variantSku || "").trim().toLowerCase();
+          const cNorm = String(h.colorName || "").trim().toLowerCase();
+          const sNorm = String(h.sizeName || "").trim().toLowerCase();
+          const matched = nextMatrix.find(
+            (cell) =>
+              (skuNorm && cell.sku && cell.sku.trim().toLowerCase() === skuNorm) ||
+              (cell.colorNameEn.trim().toLowerCase() === cNorm &&
+                cell.size.trim().toLowerCase() === sNorm)
+          );
+          if (matched) {
+            matched.stock = Math.max(0, matched.stock + h.delta);
+            anyCellHit = true;
+          } else {
+            fallbackScalarDelta += h.delta;
+          }
+        });
+
+        const totalMatrixStock = nextMatrix
+          .filter((cell) => cell.active)
+          .reduce((sum, cell) => sum + Math.max(0, Number(cell.stock) || 0), 0);
+
+        return {
+          ...prod,
+          variationMatrixJson: anyCellHit ? JSON.stringify(nextMatrix) : prod.variationMatrixJson,
+          stock: anyCellHit
+            ? totalMatrixStock
+            : Math.max(0, (Number(prod.stock) || 0) + fallbackScalarDelta),
+        };
+      }
+
+      const scalarDelta = hits.reduce((s, h) => s + h.delta, 0);
+      return {
+        ...prod,
+        stock: Math.max(0, (Number(prod.stock) || 0) + scalarDelta),
+      };
+    });
+  }
+
   async function handleOrderStatusChange(orderId: string, status: MartOrderStatus) {
     if (!data?.isLiveBackend) return;
+    const prevOrder = orders.find((o) => o.id === orderId);
     try {
       await updateMartRecord("Mart_Orders", orderId, { status });
+      const deltas = prevOrder
+        ? parseOrderItems(prevOrder.itemsJson).map((it) => {
+            const wasDeducted = isOrderItemStockDeducted(prevOrder.status, it.itemStatus);
+            const nextDeducted = isOrderItemStockDeducted(status, it.itemStatus);
+            const qty = Math.max(1, Number(it.quantity) || 1);
+            return {
+              productId: it.productId,
+              variantSku: it.variantSku,
+              colorName: it.colorName,
+              sizeName: it.sizeName,
+              fulfillmentType: it.fulfillmentType,
+              delta: (wasDeducted ? 1 : 0) * qty - (nextDeducted ? 1 : 0) * qty,
+            };
+          })
+        : [];
+
       setData((prev) =>
         prev
           ? {
               ...prev,
+              products: applyOptimisticStockDelta(prev.products, deltas),
               orders: prev.orders.map((o) => (o.id === orderId ? { ...o, status } : o)),
             }
           : prev
@@ -832,7 +947,8 @@ export function MartAdminClient() {
   ) {
     if (!data?.isLiveBackend) return;
     const rawItems = parseOrderItems(order.itemsJson);
-    if (!rawItems[itemIndex]) return;
+    const prevItem = rawItems[itemIndex];
+    if (!prevItem) return;
 
     const updatedItems = rawItems.map((it, idx) => {
       if (idx !== itemIndex) return it;
@@ -848,13 +964,32 @@ export function MartAdminClient() {
       return next;
     });
 
+    const nextItem = updatedItems[itemIndex];
     const itemsJson = JSON.stringify(updatedItems);
     try {
       await updateMartRecord("Mart_Orders", order.id, { itemsJson });
+      const wasDeducted = isOrderItemStockDeducted(order.status, prevItem.itemStatus);
+      const nextDeducted = isOrderItemStockDeducted(order.status, nextItem.itemStatus);
+      const qty = Math.max(1, Number(prevItem.quantity) || 1);
+      const stockDelta = (wasDeducted ? 1 : 0) * qty - (nextDeducted ? 1 : 0) * qty;
+
       setData((prev) =>
         prev
           ? {
               ...prev,
+              products:
+                stockDelta !== 0
+                  ? applyOptimisticStockDelta(prev.products, [
+                      {
+                        productId: prevItem.productId,
+                        variantSku: prevItem.variantSku,
+                        colorName: prevItem.colorName,
+                        sizeName: prevItem.sizeName,
+                        fulfillmentType: prevItem.fulfillmentType,
+                        delta: stockDelta,
+                      },
+                    ])
+                  : prev.products,
               orders: prev.orders.map((o) => (o.id === order.id ? { ...o, itemsJson } : o)),
             }
           : prev
@@ -866,6 +1001,117 @@ export function MartAdminClient() {
         "error",
         translateMartError(apiErr?.message, lang, apiErr?.code) || t.admin.orders.errOrderUpdate
       );
+    }
+  }
+
+  function startEditOrder(order: MartOrder) {
+    setEditingOrder(order);
+    setOrderDraft({
+      customerName: order.customerName || "",
+      phone: order.phone || "",
+      deliveryArea: order.deliveryArea || "Inside Dhaka",
+      deliveryCharge: String(Number(order.deliveryCharge) || 0),
+      discountCode: order.discountCode || "",
+      discountAmount: String(Number(order.discountAmount) || 0),
+      address: order.address || "",
+      paymentMethod: order.paymentMethod || "Cash on Delivery",
+      paymentProvider: order.paymentProvider || "",
+      transactionId: order.transactionId || "",
+      notes: order.notes || "",
+    });
+  }
+
+  async function handleSaveOrderDetails(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingOrder || !data?.isLiveBackend) return;
+    if (!orderDraft.customerName.trim() || !orderDraft.phone.trim() || !orderDraft.address.trim()) {
+      showNotice("error", t.admin.orders.errOrderCustomerReq);
+      return;
+    }
+
+    const deliveryCharge = Math.max(0, Number(orderDraft.deliveryCharge) || 0);
+    const discountAmount = Math.max(0, Number(orderDraft.discountAmount) || 0);
+    const totalAmount =
+      Math.max(0, (Number(editingOrder.subtotal) || 0) - discountAmount) + deliveryCharge;
+
+    const updates = {
+      customerName: orderDraft.customerName.trim(),
+      phone: orderDraft.phone.trim(),
+      deliveryArea: orderDraft.deliveryArea.trim() || "Inside Dhaka",
+      deliveryCharge,
+      discountCode: orderDraft.discountCode.trim().toUpperCase(),
+      discountAmount,
+      totalAmount,
+      address: orderDraft.address.trim(),
+      paymentMethod: orderDraft.paymentMethod.trim() || "Cash on Delivery",
+      paymentProvider: orderDraft.paymentProvider.trim(),
+      transactionId: orderDraft.transactionId.trim(),
+      notes: orderDraft.notes.trim(),
+    };
+
+    setSavingOrderDetails(true);
+    try {
+      await updateMartRecord("Mart_Orders", editingOrder.id, updates);
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              orders: prev.orders.map((o) =>
+                o.id === editingOrder.id ? { ...o, ...updates } : o
+              ),
+            }
+          : prev
+      );
+      if (invoiceOrder?.id === editingOrder.id) {
+        setInvoiceOrder({ ...invoiceOrder, ...updates });
+      }
+      const savedId = editingOrder.id;
+      setEditingOrder(null);
+      showNotice("success", `${t.admin.orders.msgOrderDetailsUpdated} (${savedId})`);
+    } catch (err) {
+      const apiErr = err as MartApiError;
+      showNotice(
+        "error",
+        translateMartError(apiErr?.message, lang, apiErr?.code) || t.admin.orders.errOrderUpdate
+      );
+    } finally {
+      setSavingOrderDetails(false);
+    }
+  }
+
+  async function handleDeleteOrder(order: MartOrder) {
+    if (!data?.isLiveBackend) return;
+    try {
+      await deleteMartRecord("Mart_Orders", order.id);
+      const deltas = parseOrderItems(order.itemsJson).map((it) => {
+        const wasDeducted = isOrderItemStockDeducted(order.status, it.itemStatus);
+        const qty = Math.max(1, Number(it.quantity) || 1);
+        return {
+          productId: it.productId,
+          variantSku: it.variantSku,
+          colorName: it.colorName,
+          sizeName: it.sizeName,
+          fulfillmentType: it.fulfillmentType,
+          delta: wasDeducted ? qty : 0,
+        };
+      });
+
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              products: applyOptimisticStockDelta(prev.products, deltas),
+              orders: prev.orders.filter((o) => o.id !== order.id),
+            }
+          : prev
+      );
+      setConfirmDeleteOrderId(null);
+      if (invoiceOrder?.id === order.id) setInvoiceOrder(null);
+      if (editingOrder?.id === order.id) setEditingOrder(null);
+      showNotice("success", `${t.admin.orders.msgOrderDeleted} (${order.id})`);
+    } catch (err) {
+      const apiErr = err as MartApiError;
+      showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
     }
   }
 
@@ -946,7 +1192,46 @@ export function MartAdminClient() {
     }
   }
 
-  async function handleCreateCategory(e: React.FormEvent) {
+  function replaceCsvSlugToken(csvVal: string, oldSlug: string, newSlug: string): string {
+    const parts = parseCsvSlugs(csvVal);
+    if (!oldSlug || !newSlug || oldSlug === newSlug) return csvVal;
+    const next: string[] = [];
+    parts.forEach((p) => {
+      const mapped = p === oldSlug ? newSlug : p;
+      if (mapped && !next.includes(mapped)) next.push(mapped);
+    });
+    return next.join(",");
+  }
+
+  function resetCategoryForm() {
+    setEditingCategoryId(null);
+    setCatNameEn("");
+    setCatNameBn("");
+    setCatSlug("");
+    setCatParentSlug("");
+    setCatSortOrder("0");
+    setCatDescEn("");
+    setCatDescBn("");
+    setCatImageUrl("");
+  }
+
+  function startEditCategory(cat: MartCategory) {
+    setEditingCategoryId(cat.id);
+    setCatNameEn(cat.nameEn || "");
+    setCatNameBn(cat.nameBn || "");
+    setCatSlug(cat.slug || "");
+    setCatParentSlug(cat.parentSlug || "");
+    setCatSortOrder(String(cat.sortOrder ?? 0));
+    setCatDescEn(cat.descriptionEn || "");
+    setCatDescBn(cat.descriptionBn || "");
+    setCatImageUrl(cat.imageUrl || "");
+    setActiveSection("taxonomy");
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }
+
+  async function handleSaveCategory(e: React.FormEvent) {
     e.preventDefault();
     if (!data?.isLiveBackend) {
       showNotice("error", t.admin.products.errConnectBackend);
@@ -958,40 +1243,77 @@ export function MartAdminClient() {
     }
 
     const baseEn = catNameEn.trim() || catNameBn.trim();
+    const editingTarget = editingCategoryId
+      ? categories.find((c) => c.id === editingCategoryId)
+      : undefined;
+    const targetSlug =
+      slugifyCategory(catSlug.trim() || baseEn) || editingTarget?.slug || slugifyCategory(baseEn);
+
+    if (categories.some((c) => c.id !== editingCategoryId && c.slug === targetSlug)) {
+      showNotice("error", t.admin.taxonomy.errDuplicateSlug);
+      return;
+    }
+
     const payload = {
       nameEn: baseEn,
       nameBn: catNameBn.trim(),
-      slug: slugifyCategory(baseEn),
-      parentSlug: catParentSlug.trim(),
+      slug: targetSlug,
+      parentSlug: catParentSlug === targetSlug ? "" : catParentSlug.trim(),
       descriptionEn: catDescEn.trim(),
       descriptionBn: catDescBn.trim(),
       imageUrl: catImageUrl.trim(),
       sortOrder: Number(catSortOrder) || 0,
-      active: true,
+      active: editingTarget ? editingTarget.active : true,
     };
 
     setSavingCategory(true);
     try {
-      const res = await createMartRecord("Mart_Categories", payload);
-      setData((prev) =>
-        prev
-          ? {
-              ...prev,
-              categories: [
-                { id: res.id, ...payload, createdAt: new Date().toISOString() },
-                ...prev.categories,
-              ].sort((a, b) => a.sortOrder - b.sortOrder),
-            }
-          : prev
-      );
-      setCatNameEn("");
-      setCatNameBn("");
-      setCatParentSlug("");
-      setCatSortOrder("0");
-      setCatDescEn("");
-      setCatDescBn("");
-      setCatImageUrl("");
-      showNotice("success", t.admin.taxonomy.msgCatCreated);
+      if (editingCategoryId && editingTarget) {
+        const oldSlug = editingTarget.slug;
+        await updateMartRecord("Mart_Categories", editingCategoryId, payload);
+        setData((prev) =>
+          prev
+            ? {
+                ...prev,
+                categories: prev.categories
+                  .map((c) => {
+                    if (c.id === editingCategoryId) {
+                      return { ...c, ...payload };
+                    }
+                    if (oldSlug && oldSlug !== targetSlug && c.parentSlug === oldSlug) {
+                      return { ...c, parentSlug: targetSlug };
+                    }
+                    return c;
+                  })
+                  .sort((a, b) => a.sortOrder - b.sortOrder),
+                products:
+                  oldSlug && oldSlug !== targetSlug
+                    ? prev.products.map((p) => ({
+                        ...p,
+                        categories: replaceCsvSlugToken(p.categories, oldSlug, targetSlug),
+                      }))
+                    : prev.products,
+              }
+            : prev
+        );
+        resetCategoryForm();
+        showNotice("success", t.admin.taxonomy.msgCatUpdated);
+      } else {
+        const res = await createMartRecord("Mart_Categories", payload);
+        setData((prev) =>
+          prev
+            ? {
+                ...prev,
+                categories: [
+                  { id: res.id, ...payload, createdAt: new Date().toISOString() },
+                  ...prev.categories,
+                ].sort((a, b) => a.sortOrder - b.sortOrder),
+              }
+            : prev
+        );
+        resetCategoryForm();
+        showNotice("success", t.admin.taxonomy.msgCatCreated);
+      }
     } catch (err) {
       const apiErr = err as MartApiError;
       showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
@@ -1030,6 +1352,9 @@ export function MartAdminClient() {
           ? { ...prev, categories: prev.categories.filter((c) => c.id !== id) }
           : prev
       );
+      if (editingCategoryId === id) {
+        resetCategoryForm();
+      }
       showNotice("success", t.admin.taxonomy.msgCatDeleted);
     } catch (err) {
       const apiErr = err as MartApiError;
@@ -1037,7 +1362,33 @@ export function MartAdminClient() {
     }
   }
 
-  async function handleCreateLabel(e: React.FormEvent) {
+  function resetLabelForm() {
+    setEditingLabelId(null);
+    setLblNameEn("");
+    setLblNameBn("");
+    setLblSlug("");
+    setLblTone("emerald");
+    setLblSortOrder("0");
+    setLblDescEn("");
+    setLblDescBn("");
+  }
+
+  function startEditLabel(lbl: MartLabel) {
+    setEditingLabelId(lbl.id);
+    setLblNameEn(lbl.nameEn || "");
+    setLblNameBn(lbl.nameBn || "");
+    setLblSlug(lbl.slug || "");
+    setLblTone((lbl.tone as MartLabelTone) || "emerald");
+    setLblSortOrder(String(lbl.sortOrder ?? 0));
+    setLblDescEn(lbl.descriptionEn || "");
+    setLblDescBn(lbl.descriptionBn || "");
+    setActiveSection("taxonomy");
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }
+
+  async function handleSaveLabel(e: React.FormEvent) {
     e.preventDefault();
     if (!data?.isLiveBackend) {
       showNotice("error", t.admin.products.errConnectBackend);
@@ -1049,38 +1400,68 @@ export function MartAdminClient() {
     }
 
     const baseEn = lblNameEn.trim() || lblNameBn.trim();
+    const editingTarget = editingLabelId
+      ? labels.find((l) => l.id === editingLabelId)
+      : undefined;
+    const targetSlug =
+      slugifyCategory(lblSlug.trim() || baseEn) || editingTarget?.slug || slugifyCategory(baseEn);
+
+    if (labels.some((l) => l.id !== editingLabelId && l.slug === targetSlug)) {
+      showNotice("error", t.admin.taxonomy.errDuplicateSlug);
+      return;
+    }
+
     const payload = {
       nameEn: baseEn,
       nameBn: lblNameBn.trim(),
-      slug: slugifyCategory(baseEn),
+      slug: targetSlug,
       descriptionEn: lblDescEn.trim(),
       descriptionBn: lblDescBn.trim(),
       tone: lblTone,
       sortOrder: Number(lblSortOrder) || 0,
-      active: true,
+      active: editingTarget ? editingTarget.active : true,
     };
 
     setSavingLabel(true);
     try {
-      const res = await createMartRecord("Mart_Labels", payload);
-      setData((prev) =>
-        prev
-          ? {
-              ...prev,
-              labels: [
-                { id: res.id, ...payload, createdAt: new Date().toISOString() },
-                ...(prev.labels || []),
-              ].sort((a, b) => a.sortOrder - b.sortOrder),
-            }
-          : prev
-      );
-      setLblNameEn("");
-      setLblNameBn("");
-      setLblTone("emerald");
-      setLblSortOrder("0");
-      setLblDescEn("");
-      setLblDescBn("");
-      showNotice("success", t.admin.taxonomy.msgLblCreated);
+      if (editingLabelId && editingTarget) {
+        const oldSlug = editingTarget.slug;
+        await updateMartRecord("Mart_Labels", editingLabelId, payload);
+        setData((prev) =>
+          prev
+            ? {
+                ...prev,
+                labels: (prev.labels || [])
+                  .map((l) => (l.id === editingLabelId ? { ...l, ...payload } : l))
+                  .sort((a, b) => a.sortOrder - b.sortOrder),
+                products:
+                  oldSlug && oldSlug !== targetSlug
+                    ? prev.products.map((p) => ({
+                        ...p,
+                        labels: replaceCsvSlugToken(p.labels, oldSlug, targetSlug),
+                      }))
+                    : prev.products,
+              }
+            : prev
+        );
+        resetLabelForm();
+        showNotice("success", t.admin.taxonomy.msgLblUpdated);
+      } else {
+        const res = await createMartRecord("Mart_Labels", payload);
+        setData((prev) =>
+          prev
+            ? {
+                ...prev,
+                labels: [
+                  { id: res.id, ...payload, createdAt: new Date().toISOString() },
+                  ...(prev.labels || []),
+                ].sort((a, b) => a.sortOrder - b.sortOrder),
+              }
+            : prev
+        );
+        resetLabelForm();
+        showNotice("success", t.admin.taxonomy.msgLblCreated);
+      }
     } catch (err) {
       const apiErr = err as MartApiError;
       showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
@@ -1119,6 +1500,9 @@ export function MartAdminClient() {
           ? { ...prev, labels: (prev.labels || []).filter((l) => l.id !== id) }
           : prev
       );
+      if (editingLabelId === id) {
+        resetLabelForm();
+      }
       showNotice("success", t.admin.taxonomy.msgLblDeleted);
     } catch (err) {
       const apiErr = err as MartApiError;
@@ -2091,7 +2475,7 @@ export function MartAdminClient() {
                                   </select>
                                 </td>
                                 <td className="px-4 py-3 text-right">
-                                  <div className="inline-flex items-center gap-1.5">
+                                  <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
                                     {parsedItems.length > 0 && (
                                       <button
                                         type="button"
@@ -2115,12 +2499,49 @@ export function MartAdminClient() {
                                     )}
                                     <button
                                       type="button"
+                                      onClick={() => startEditOrder(order)}
+                                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] whitespace-nowrap"
+                                    >
+                                      <Pencil className="h-3.5 w-3.5" />
+                                      <span>{t.admin.orders.editOrderBtn}</span>
+                                    </button>
+                                    <button
+                                      type="button"
                                       onClick={() => setInvoiceOrder(order)}
                                       className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] whitespace-nowrap"
                                     >
                                       <Printer className="h-3.5 w-3.5" />
                                       <span>{t.admin.orders.invoiceBtn}</span>
                                     </button>
+                                    {confirmDeleteOrderId === order.id ? (
+                                      <div className="inline-flex items-center gap-1">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteOrder(order)}
+                                          className="inline-flex items-center gap-1 rounded-lg border border-red-300 bg-red-600 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-red-700 whitespace-nowrap"
+                                        >
+                                          <Trash2 className="h-3 w-3" />
+                                          <span>{t.admin.orders.deleteOrderConfirm}</span>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setConfirmDeleteOrderId(null)}
+                                          aria-label={t.common.cancel}
+                                          className="rounded-lg border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-100"
+                                        >
+                                          <X className="h-3.5 w-3.5" />
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => setConfirmDeleteOrderId(order.id)}
+                                        aria-label={t.admin.orders.deleteOrderBtn}
+                                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1.5 text-[11px] font-semibold text-red-600 hover:bg-red-50 hover:border-red-200 whitespace-nowrap"
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </button>
+                                    )}
                                   </div>
                                 </td>
                               </tr>
@@ -2287,10 +2708,20 @@ export function MartAdminClient() {
           {/* 3. PRODUCTS & INVENTORY MANAGEMENT (BILINGUAL + MULTI-CATEGORY + LABELS) */}
           {activeSection === "products" && (
             <div className="space-y-8">
-              <div className="rounded-2xl border border-slate-200 bg-white p-6 space-y-5">
-                <div className="flex items-center justify-between gap-4">
+              <div
+                className={`rounded-2xl border p-6 space-y-5 transition-colors ${
+                  editingProductId
+                    ? "border-[#0B5336] ring-2 ring-[#0B5336]/15 bg-brand-50/20"
+                    : "border-slate-200 bg-white"
+                }`}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-4">
                   <h2 className="font-display text-lg font-bold text-slate-900 flex items-center gap-2">
-                    <Plus className="h-4 w-4 text-[#0B5336]" />
+                    {editingProductId ? (
+                      <Pencil className="h-4 w-4 text-[#0B5336]" />
+                    ) : (
+                      <Plus className="h-4 w-4 text-[#0B5336]" />
+                    )}
                     <span>
                       {editingProductId
                         ? `${t.admin.products.editTitle} (${editingProductId})`
@@ -2301,12 +2732,18 @@ export function MartAdminClient() {
                     <button
                       type="button"
                       onClick={resetProductForm}
-                      className="text-xs font-semibold text-slate-500 hover:text-slate-900 underline"
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 whitespace-nowrap"
                     >
                       {t.admin.products.cancelEdit}
                     </button>
                   )}
                 </div>
+
+                {editingProductId && (
+                  <div className="rounded-xl border border-brand-200 bg-brand-50 px-4 py-2.5 text-xs font-medium text-[#0B5336]">
+                    {t.admin.products.editingBannerHint}
+                  </div>
+                )}
 
                 <form onSubmit={handleSaveProduct} className="space-y-5">
                   {/* Dual EN + BN Names + SKU + Stock / Sourcing */}
@@ -2357,6 +2794,25 @@ export function MartAdminClient() {
                       {prodFulfillmentType === "dropship" ? (
                         <div className="input flex items-center text-xs font-semibold text-[#0B5336] bg-brand-50">
                           {tsrc.unlimitedLabel}
+                        </div>
+                      ) : prodMatrix.length > 0 ? (
+                        <div>
+                          <div className="input flex items-center justify-between text-xs font-mono font-bold text-[#0B5336] bg-brand-50/70 tabular-nums">
+                            <span>
+                              {toLocalizedDigits(
+                                prodMatrix
+                                  .filter((v) => v.active)
+                                  .reduce((s, v) => s + Math.max(0, Number(v.stock) || 0), 0),
+                                lang
+                              )}
+                            </span>
+                            <span className="font-sans font-medium text-[11px] text-slate-600">
+                              Matrix
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 mt-1">
+                            {t.admin.products.variantStockLockedNote}
+                          </p>
                         </div>
                       ) : (
                         <input
@@ -3341,6 +3797,24 @@ export function MartAdminClient() {
                                       ? tsrc.availableStatus
                                       : tsrc.pausedStatus}
                                   </button>
+                                ) : parseVariationMatrix(p.variationMatrixJson).length > 0 ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => startEditProduct(p)}
+                                    title={t.admin.products.variantStockLockedNote}
+                                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-mono font-bold tabular-nums hover:border-[#0B5336]"
+                                  >
+                                    <span
+                                      className={
+                                        effectiveStock <= (Number(p.lowStockThreshold) || 5)
+                                          ? "text-red-600"
+                                          : "text-slate-900"
+                                      }
+                                    >
+                                      {toLocalizedDigits(effectiveStock, lang)}
+                                    </span>
+                                    <Pencil className="h-3 w-3 text-slate-400" />
+                                  </button>
                                 ) : (
                                   <div className="inline-flex items-center gap-1.5">
                                     <button
@@ -3410,6 +3884,14 @@ export function MartAdminClient() {
                                   </button>
                                   <button
                                     type="button"
+                                    onClick={() => startDuplicateProduct(p)}
+                                    className="inline-flex items-center gap-1 text-slate-600 hover:text-[#0B5336] font-medium whitespace-nowrap"
+                                  >
+                                    <Copy className="h-3.5 w-3.5" />
+                                    <span>{t.admin.products.duplicateBtn}</span>
+                                  </button>
+                                  <button
+                                    type="button"
                                     onClick={() => handleDeleteProduct(p.id)}
                                     className="inline-flex items-center gap-1 text-red-600 hover:text-red-800 font-medium whitespace-nowrap"
                                   >
@@ -3434,11 +3916,30 @@ export function MartAdminClient() {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               {/* Categories Panel */}
               <div className="lg:col-span-6 space-y-6">
-                <div className="rounded-2xl border border-slate-200 bg-white p-6 space-y-4">
-                  <h2 className="font-display text-lg font-bold text-slate-900">
-                    {t.admin.taxonomy.catAddTitle}
-                  </h2>
-                  <form onSubmit={handleCreateCategory} className="space-y-3">
+                <div
+                  className={`rounded-2xl border p-6 space-y-4 transition-colors ${
+                    editingCategoryId
+                      ? "border-[#0B5336] ring-2 ring-[#0B5336]/15 bg-brand-50/20"
+                      : "border-slate-200 bg-white"
+                  }`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h2 className="font-display text-lg font-bold text-slate-900">
+                      {editingCategoryId
+                        ? `${t.admin.taxonomy.catEditTitle} (${editingCategoryId})`
+                        : t.admin.taxonomy.catAddTitle}
+                    </h2>
+                    {editingCategoryId && (
+                      <button
+                        type="button"
+                        onClick={resetCategoryForm}
+                        className="text-xs font-semibold text-slate-600 hover:text-slate-900 underline"
+                      >
+                        {t.admin.products.cancelEdit}
+                      </button>
+                    )}
+                  </div>
+                  <form onSubmit={handleSaveCategory} className="space-y-3">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -3447,7 +3948,13 @@ export function MartAdminClient() {
                         <input
                           type="text"
                           value={catNameEn}
-                          onChange={(e) => setCatNameEn(e.target.value)}
+                          onChange={(e) => {
+                            const nextVal = e.target.value;
+                            setCatNameEn(nextVal);
+                            if (!editingCategoryId && !catSlug.trim()) {
+                              // Keep auto preview cleanly blank until edited
+                            }
+                          }}
                           placeholder={t.admin.taxonomy.catNameEnPlaceholder}
                           className="input"
                         />
@@ -3466,6 +3973,25 @@ export function MartAdminClient() {
                       </div>
                     </div>
 
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        {t.admin.taxonomy.catSlugLabel}
+                      </label>
+                      <input
+                        type="text"
+                        value={catSlug}
+                        onChange={(e) => setCatSlug(e.target.value)}
+                        placeholder={
+                          slugifyCategory(catNameEn || catNameBn) ||
+                          t.admin.taxonomy.catSlugPlaceholder
+                        }
+                        className="input font-mono text-xs"
+                      />
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        {t.admin.taxonomy.slugCascadeNote}
+                      </p>
+                    </div>
+
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -3477,11 +4003,13 @@ export function MartAdminClient() {
                           className="input text-xs"
                         >
                           <option value="">{t.admin.taxonomy.catParentNone}</option>
-                          {categories.map((cat) => (
-                            <option key={cat.slug} value={cat.slug}>
-                              {pickLocalized(cat.nameEn, cat.nameBn, lang, cat.slug)}
-                            </option>
-                          ))}
+                          {categories
+                            .filter((cat) => cat.id !== editingCategoryId)
+                            .map((cat) => (
+                              <option key={cat.slug} value={cat.slug}>
+                                {pickLocalized(cat.nameEn, cat.nameBn, lang, cat.slug)}
+                              </option>
+                            ))}
                         </select>
                       </div>
                       <div>
@@ -3560,7 +4088,11 @@ export function MartAdminClient() {
                       className="btn-primary w-full py-2.5 text-xs"
                     >
                       {savingCategory
-                        ? t.admin.taxonomy.catCreatingBtn
+                        ? editingCategoryId
+                          ? t.admin.taxonomy.catSavingBtn
+                          : t.admin.taxonomy.catCreatingBtn
+                        : editingCategoryId
+                        ? t.admin.taxonomy.catSaveBtn
                         : t.admin.taxonomy.catCreateBtn}
                     </button>
                   </form>
@@ -3632,6 +4164,14 @@ export function MartAdminClient() {
                               </button>
                               <button
                                 type="button"
+                                onClick={() => startEditCategory(cat)}
+                                aria-label={`${t.common.edit} ${cat.slug}`}
+                                className="rounded-lg border border-slate-200 p-1 text-slate-600 hover:border-[#0B5336] hover:text-[#0B5336]"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
                                 onClick={() => handleDeleteCategory(cat.id)}
                                 aria-label={cat.slug}
                                 className="text-red-600 hover:text-red-800 p-1"
@@ -3649,11 +4189,30 @@ export function MartAdminClient() {
 
               {/* Labels / Collections Panel */}
               <div className="lg:col-span-6 space-y-6">
-                <div className="rounded-2xl border border-slate-200 bg-white p-6 space-y-4">
-                  <h2 className="font-display text-lg font-bold text-slate-900">
-                    {t.admin.taxonomy.lblAddTitle}
-                  </h2>
-                  <form onSubmit={handleCreateLabel} className="space-y-3">
+                <div
+                  className={`rounded-2xl border p-6 space-y-4 transition-colors ${
+                    editingLabelId
+                      ? "border-[#0B5336] ring-2 ring-[#0B5336]/15 bg-brand-50/20"
+                      : "border-slate-200 bg-white"
+                  }`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h2 className="font-display text-lg font-bold text-slate-900">
+                      {editingLabelId
+                        ? `${t.admin.taxonomy.lblEditTitle} (${editingLabelId})`
+                        : t.admin.taxonomy.lblAddTitle}
+                    </h2>
+                    {editingLabelId && (
+                      <button
+                        type="button"
+                        onClick={resetLabelForm}
+                        className="text-xs font-semibold text-slate-600 hover:text-slate-900 underline"
+                      >
+                        {t.admin.products.cancelEdit}
+                      </button>
+                    )}
+                  </div>
+                  <form onSubmit={handleSaveLabel} className="space-y-3">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -3679,6 +4238,25 @@ export function MartAdminClient() {
                           className="input"
                         />
                       </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        {t.admin.taxonomy.lblSlugLabel}
+                      </label>
+                      <input
+                        type="text"
+                        value={lblSlug}
+                        onChange={(e) => setLblSlug(e.target.value)}
+                        placeholder={
+                          slugifyCategory(lblNameEn || lblNameBn) ||
+                          t.admin.taxonomy.lblSlugPlaceholder
+                        }
+                        className="input font-mono text-xs"
+                      />
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        {t.admin.taxonomy.slugCascadeNote}
+                      </p>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -3742,7 +4320,11 @@ export function MartAdminClient() {
                       className="btn-primary w-full py-2.5 text-xs"
                     >
                       {savingLabel
-                        ? t.admin.taxonomy.lblCreatingBtn
+                        ? editingLabelId
+                          ? t.admin.taxonomy.lblSavingBtn
+                          : t.admin.taxonomy.lblCreatingBtn
+                        : editingLabelId
+                        ? t.admin.taxonomy.lblSaveBtn
                         : t.admin.taxonomy.lblCreateBtn}
                     </button>
                   </form>
@@ -3787,6 +4369,14 @@ export function MartAdminClient() {
                               {lbl.active
                                 ? t.admin.taxonomy.catVisible
                                 : t.admin.taxonomy.catHidden}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => startEditLabel(lbl)}
+                              aria-label={`${t.common.edit} ${lbl.slug}`}
+                              className="rounded-lg border border-slate-200 p-1 text-slate-600 hover:border-[#0B5336] hover:text-[#0B5336]"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
                             </button>
                             <button
                               type="button"
@@ -4223,6 +4813,28 @@ export function MartAdminClient() {
                   prev ? { ...prev, crmLogs: [log, ...(prev.crmLogs || [])] } : prev
                 )
               }
+              onCrmLogUpdated={(id, updates) =>
+                setData((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        crmLogs: (prev.crmLogs || []).map((l) =>
+                          l.id === id ? { ...l, ...updates } : l
+                        ),
+                      }
+                    : prev
+                )
+              }
+              onCrmLogDeleted={(id) =>
+                setData((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        crmLogs: (prev.crmLogs || []).filter((l) => l.id !== id),
+                      }
+                    : prev
+                )
+              }
               onNotify={showNotice}
             />
           )}
@@ -4240,6 +4852,18 @@ export function MartAdminClient() {
                 setData((prev) =>
                   prev
                     ? { ...prev, transactions: [txn, ...(prev.transactions || [])] }
+                    : prev
+                )
+              }
+              onTransactionUpdated={(id, updates) =>
+                setData((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        transactions: (prev.transactions || []).map((tx) =>
+                          tx.id === id ? { ...tx, ...updates } : tx
+                        ),
+                      }
                     : prev
                 )
               }
@@ -4277,9 +4901,41 @@ export function MartAdminClient() {
                   };
                 })
               }
+              onProfileDeleted={(id) =>
+                setData((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        crmProfiles: (prev.crmProfiles || []).filter((p) => p.id !== id),
+                      }
+                    : prev
+                )
+              }
               onLogCreated={(log) =>
                 setData((prev) =>
                   prev ? { ...prev, crmLogs: [log, ...(prev.crmLogs || [])] } : prev
+                )
+              }
+              onLogUpdated={(id, updates) =>
+                setData((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        crmLogs: (prev.crmLogs || []).map((l) =>
+                          l.id === id ? { ...l, ...updates } : l
+                        ),
+                      }
+                    : prev
+                )
+              }
+              onLogDeleted={(id) =>
+                setData((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        crmLogs: (prev.crmLogs || []).filter((l) => l.id !== id),
+                      }
+                    : prev
                 )
               }
               onNotify={showNotice}
@@ -4457,6 +5113,239 @@ export function MartAdminClient() {
         </div>
       )}
 
+      {/* EDIT ORDER DETAILS MODAL */}
+      {editingOrder && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 bg-slate-50">
+              <h2 className="font-display text-base font-bold text-slate-900">
+                {t.admin.orders.editOrderTitle} · {editingOrder.id}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setEditingOrder(null)}
+                aria-label={t.common.close}
+                className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-200"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveOrderDetails} className="p-6 overflow-y-auto space-y-4 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    {t.admin.orders.orderCustomerNameLabel}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={orderDraft.customerName}
+                    onChange={(e) =>
+                      setOrderDraft({ ...orderDraft, customerName: e.target.value })
+                    }
+                    className="input"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    {t.admin.orders.orderPhoneLabel}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={orderDraft.phone}
+                    onChange={(e) => setOrderDraft({ ...orderDraft, phone: e.target.value })}
+                    className="input font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    {t.admin.orders.orderAreaLabel}
+                  </label>
+                  <select
+                    value={orderDraft.deliveryArea}
+                    onChange={(e) => {
+                      const area = e.target.value;
+                      const defaultFee =
+                        area === "Inside Dhaka"
+                          ? String(Number(settingsForm.insideDhakaCharge) || 70)
+                          : String(Number(settingsForm.outsideDhakaCharge) || 130);
+                      setOrderDraft({
+                        ...orderDraft,
+                        deliveryArea: area,
+                        deliveryCharge: defaultFee,
+                      });
+                    }}
+                    className="input text-xs"
+                  >
+                    <option value="Inside Dhaka">{t.cart.insideDhaka}</option>
+                    <option value="Outside Dhaka">{t.cart.outsideDhaka}</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    {t.admin.orders.orderDeliveryChargeLabel}
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={orderDraft.deliveryCharge}
+                    onChange={(e) =>
+                      setOrderDraft({ ...orderDraft, deliveryCharge: e.target.value })
+                    }
+                    className="input font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    {t.admin.orders.orderDiscountCodeLabel}
+                  </label>
+                  <input
+                    type="text"
+                    value={orderDraft.discountCode}
+                    onChange={(e) =>
+                      setOrderDraft({
+                        ...orderDraft,
+                        discountCode: e.target.value.toUpperCase(),
+                      })
+                    }
+                    className="input font-mono uppercase"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    {t.admin.orders.orderDiscountAmountLabel}
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={orderDraft.discountAmount}
+                    onChange={(e) =>
+                      setOrderDraft({ ...orderDraft, discountAmount: e.target.value })
+                    }
+                    className="input font-mono"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  {t.admin.orders.orderAddressLabel}
+                </label>
+                <textarea
+                  rows={2}
+                  required
+                  value={orderDraft.address}
+                  onChange={(e) => setOrderDraft({ ...orderDraft, address: e.target.value })}
+                  className="input min-h-[70px] py-2"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    {t.admin.orders.orderPaymentMethodLabel}
+                  </label>
+                  <select
+                    value={orderDraft.paymentMethod}
+                    onChange={(e) =>
+                      setOrderDraft({ ...orderDraft, paymentMethod: e.target.value })
+                    }
+                    className="input text-xs"
+                  >
+                    <option value="Cash on Delivery">{t.cart.codOption}</option>
+                    <option value="Mobile Banking">{tqr.checkoutOnlineOption}</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    {t.admin.orders.orderPaymentProviderLabel}
+                  </label>
+                  <input
+                    type="text"
+                    value={orderDraft.paymentProvider}
+                    onChange={(e) =>
+                      setOrderDraft({ ...orderDraft, paymentProvider: e.target.value })
+                    }
+                    className="input text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    {t.admin.orders.orderTrxIdLabel}
+                  </label>
+                  <input
+                    type="text"
+                    value={orderDraft.transactionId}
+                    onChange={(e) =>
+                      setOrderDraft({ ...orderDraft, transactionId: e.target.value })
+                    }
+                    className="input font-mono text-xs"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  {t.admin.orders.orderNotesLabel}
+                </label>
+                <input
+                  type="text"
+                  value={orderDraft.notes}
+                  onChange={(e) => setOrderDraft({ ...orderDraft, notes: e.target.value })}
+                  className="input"
+                />
+              </div>
+
+              <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <span className="font-semibold text-slate-700">
+                  {t.admin.orders.recalculatedTotalLabel}
+                </span>
+                <span className="font-mono text-base font-bold text-[#0B5336] tabular-nums">
+                  {formatMartPrice(
+                    Math.max(
+                      0,
+                      (Number(editingOrder.subtotal) || 0) -
+                        (Math.max(0, Number(orderDraft.discountAmount) || 0))
+                    ) + Math.max(0, Number(orderDraft.deliveryCharge) || 0),
+                    lang
+                  )}
+                </span>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingOrder(null)}
+                  className="btn-outline px-4 py-2 text-xs"
+                >
+                  {t.common.cancel}
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingOrderDetails}
+                  className="btn-primary px-5 py-2 text-xs disabled:opacity-60"
+                >
+                  {savingOrderDetails
+                    ? t.admin.orders.savingOrderBtn
+                    : t.admin.orders.saveOrderBtn}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

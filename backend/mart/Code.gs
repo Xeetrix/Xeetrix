@@ -1018,44 +1018,133 @@ function enrichOrderPayloadServerSide(ss, payload) {
   return payload;
 }
 
-function decrementStockForOrder(ss, itemsJsonStr) {
+function readSingleRowObject(sheet, rawHeaders, rowIndex) {
+  var rowVals = sheet.getRange(rowIndex, 1, 1, rawHeaders.length).getValues()[0];
+  var obj = {};
+  for (var i = 0; i < rawHeaders.length; i++) {
+    var h = String(rawHeaders[i] || "").trim();
+    if (h) obj[h] = rowVals[i];
+  }
+  return obj;
+}
+
+function replaceSlugTokenInCsv(csvVal, oldSlug, newSlug) {
+  var parts = String(csvVal || "")
+    .split(",")
+    .map(function (s) { return s.trim(); })
+    .filter(function (s) { return Boolean(s); });
+  var changed = false;
+  var dedup = {};
+  var nextParts = [];
+  for (var i = 0; i < parts.length; i++) {
+    var token = parts[i];
+    if (token === oldSlug) {
+      token = newSlug;
+      changed = true;
+    }
+    if (token && !dedup[token]) {
+      dedup[token] = true;
+      nextParts.push(token);
+    }
+  }
+  return { changed: changed, value: nextParts.join(",") };
+}
+
+function cascadeTaxonomySlugChange(ss, sheetName, oldSlug, newSlug) {
+  var prevSlug = String(oldSlug || "").trim();
+  var nextSlug = String(newSlug || "").trim();
+  if (!prevSlug || !nextSlug || prevSlug === nextSlug) return;
+
   try {
-    var items = JSON.parse(itemsJsonStr || "[]");
-    if (!Array.isArray(items) || items.length === 0) return;
+    if (sheetName === "Mart_Categories") {
+      // 1. Update parentSlug references inside Mart_Categories
+      var catSheet = ensureMartSheet(ss, "Mart_Categories");
+      var catLast = catSheet.getLastRow();
+      if (catLast > 1) {
+        var catHeaders = catSheet.getRange(1, 1, 1, catSheet.getLastColumn()).getValues()[0];
+        var parentCol = catHeaders.indexOf("parentSlug") + 1;
+        if (parentCol > 0) {
+          var parentVals = catSheet.getRange(2, parentCol, catLast - 1, 1).getValues();
+          for (var c = 0; c < parentVals.length; c++) {
+            if (String(parentVals[c][0] || "").trim() === prevSlug) {
+              catSheet.getRange(c + 2, parentCol).setValue(nextSlug);
+            }
+          }
+        }
+      }
+    }
+
+    // 2. Update categories or labels CSV column in Mart_Products
+    var targetProdCol = sheetName === "Mart_Categories" ? "categories" : sheetName === "Mart_Labels" ? "labels" : "";
+    if (!targetProdCol) return;
+
+    var prodSheet = ensureMartSheet(ss, "Mart_Products");
+    var prodLast = prodSheet.getLastRow();
+    if (prodLast <= 1) return;
+
+    var prodHeaders = prodSheet.getRange(1, 1, 1, prodSheet.getLastColumn()).getValues()[0];
+    var colIdx = prodHeaders.indexOf(targetProdCol) + 1;
+    if (colIdx < 1) return;
+
+    var prodVals = prodSheet.getRange(2, colIdx, prodLast - 1, 1).getValues();
+    for (var r = 0; r < prodVals.length; r++) {
+      var res = replaceSlugTokenInCsv(prodVals[r][0], prevSlug, nextSlug);
+      if (res.changed) {
+        prodSheet.getRange(r + 2, colIdx).setValue(res.value);
+      }
+    }
+  } catch (err) {
+    // Non-fatal cascade guard
+  }
+}
+
+function isOrderItemStockDeducted(orderStatus, itemStatus) {
+  var os = String(orderStatus || "").trim();
+  var ist = String(itemStatus || "").trim();
+  return os !== "Cancelled" && ist !== "Cancelled" && ist !== "Returned";
+}
+
+function adjustStockForItems(ss, items, defaultMultiplier) {
+  try {
+    if (!Array.isArray(items) || items.length === 0) return false;
 
     var prodSheet = ensureMartSheet(ss, "Mart_Products");
     var lastRow = prodSheet.getLastRow();
-    if (lastRow <= 1) return;
+    if (lastRow <= 1) return false;
 
     var headers = prodSheet.getRange(1, 1, 1, prodSheet.getLastColumn()).getValues()[0];
     var idCol = headers.indexOf("id") + 1;
     var stockCol = headers.indexOf("stock") + 1;
     var ftCol = headers.indexOf("fulfillmentType") + 1;
     var matrixCol = headers.indexOf("variationMatrixJson") + 1;
-    if (idCol < 1 || stockCol < 1) return;
+    if (idCol < 1 || stockCol < 1) return false;
 
     var idVals = prodSheet.getRange(2, idCol, lastRow - 1, 1).getValues();
     var stockVals = prodSheet.getRange(2, stockCol, lastRow - 1, 1).getValues();
     var ftVals = ftCol > 0 ? prodSheet.getRange(2, ftCol, lastRow - 1, 1).getValues() : null;
     var matrixVals = matrixCol > 0 ? prodSheet.getRange(2, matrixCol, lastRow - 1, 1).getValues() : null;
+    var anyAdjusted = false;
 
     for (var i = 0; i < items.length; i++) {
       var item = items[i];
+      if (!item) continue;
       var pid = String(item.productId || "");
-      var qty = Math.max(0, Number(item.quantity) || 0);
-      if (!pid || qty <= 0) continue;
+      var rawDelta =
+        item.stockDelta !== undefined
+          ? Number(item.stockDelta) || 0
+          : (Math.max(0, Number(item.quantity) || 0)) * (Number(defaultMultiplier) || -1);
+      if (!pid || rawDelta === 0) continue;
 
       for (var r = 0; r < idVals.length; r++) {
         if (String(idVals[r][0]) === pid) {
           var rowFt = ftVals
             ? String(ftVals[r][0] || "own_stock").trim()
             : item.fulfillmentType || "own_stock";
-          // Strictly skip physical stock decrement for dropshipped items
+          // Strictly skip physical stock mutation for dropshipped items
           if (rowFt === "dropship" || item.fulfillmentType === "dropship") {
             break;
           }
 
-          // Decrement variation matrix cell stock if present
           var matrixUpdated = false;
           if (matrixCol > 0 && matrixVals && matrixVals[r][0]) {
             try {
@@ -1075,7 +1164,7 @@ function decrementStockForOrder(ss, itemsJsonStr) {
                     (String(cell.colorNameEn || "").trim().toLowerCase() === cNorm &&
                       String(cell.size || "").trim().toLowerCase() === sNorm);
                   if (!cellMatched && isHit) {
-                    cell.stock = Math.max(0, (Number(cell.stock) || 0) - qty);
+                    cell.stock = Math.max(0, (Number(cell.stock) || 0) + rawDelta);
                     cellMatched = true;
                   }
                   if (cell.active !== false) {
@@ -1090,6 +1179,7 @@ function decrementStockForOrder(ss, itemsJsonStr) {
                   prodSheet.getRange(r + 2, stockCol).setValue(totalMatrixStock);
                   stockVals[r][0] = totalMatrixStock;
                   matrixUpdated = true;
+                  anyAdjusted = true;
                 }
               }
             } catch (e) {
@@ -1098,16 +1188,86 @@ function decrementStockForOrder(ss, itemsJsonStr) {
           }
 
           if (!matrixUpdated) {
-            var nextStock = Math.max(0, (Number(stockVals[r][0]) || 0) - qty);
+            var nextStock = Math.max(0, (Number(stockVals[r][0]) || 0) + rawDelta);
             prodSheet.getRange(r + 2, stockCol).setValue(nextStock);
             stockVals[r][0] = nextStock;
+            anyAdjusted = true;
           }
           break;
         }
       }
     }
+    return anyAdjusted;
+  } catch (err) {
+    return false;
+  }
+}
+
+function decrementStockForOrder(ss, itemsJsonStr) {
+  try {
+    var items = JSON.parse(itemsJsonStr || "[]");
+    adjustStockForItems(ss, items, -1);
   } catch (err) {
     // Non-fatal stock sync guard
+  }
+}
+
+function syncOrderStockOnUpdate(ss, prevOrder, nextStatus, nextItemsJson) {
+  try {
+    var prevItems = JSON.parse(String(prevOrder.itemsJson || "[]"));
+    var nextItems = JSON.parse(String(nextItemsJson || prevOrder.itemsJson || "[]"));
+    if (!Array.isArray(prevItems)) prevItems = [];
+    if (!Array.isArray(nextItems)) nextItems = [];
+
+    var bucketMap = {};
+    var addBucket = function (item, signedQty) {
+      if (!item || !item.productId || !signedQty) return;
+      var k = [
+        String(item.productId || ""),
+        String(item.variantSku || ""),
+        String(item.colorName || ""),
+        String(item.sizeName || "")
+      ].join("::");
+      if (!bucketMap[k]) {
+        bucketMap[k] = {
+          productId: item.productId,
+          variantSku: item.variantSku || "",
+          colorName: item.colorName || "",
+          sizeName: item.sizeName || "",
+          fulfillmentType: item.fulfillmentType || "own_stock",
+          stockDelta: 0
+        };
+      }
+      bucketMap[k].stockDelta += signedQty;
+    };
+
+    var prevOrderStatus = String(prevOrder.status || "Pending");
+    for (var i = 0; i < prevItems.length; i++) {
+      var pi = prevItems[i];
+      if (isOrderItemStockDeducted(prevOrderStatus, pi.itemStatus)) {
+        addBucket(pi, Math.max(0, Number(pi.quantity) || 0));
+      }
+    }
+
+    var effectiveNextStatus = String(nextStatus || prevOrderStatus || "Pending");
+    for (var j = 0; j < nextItems.length; j++) {
+      var ni = nextItems[j];
+      if (isOrderItemStockDeducted(effectiveNextStatus, ni.itemStatus)) {
+        addBucket(ni, -Math.max(0, Number(ni.quantity) || 0));
+      }
+    }
+
+    var deltas = [];
+    var keys = Object.keys(bucketMap);
+    for (var k = 0; k < keys.length; k++) {
+      if (bucketMap[keys[k]].stockDelta !== 0) {
+        deltas.push(bucketMap[keys[k]]);
+      }
+    }
+    if (deltas.length === 0) return false;
+    return adjustStockForItems(ss, deltas, 1);
+  } catch (err) {
+    return false;
   }
 }
 
@@ -1414,6 +1574,8 @@ function doPost(e) {
         return jsonOut({ ok: false, error: "Record id not found: " + targetId });
       }
 
+      var prevRowObj = readSingleRowObject(updSheet, rawHeaders, foundRowIndex);
+
       var updates = body.updates || {};
       if (body.status !== undefined) updates.status = body.status;
       if (body.active !== undefined) updates.active = body.active;
@@ -1432,8 +1594,29 @@ function doPost(e) {
         }
       }
 
+      if (
+        (updSheetName === "Mart_Categories" || updSheetName === "Mart_Labels") &&
+        updates.slug !== undefined &&
+        String(prevRowObj.slug || "").trim() !== String(updates.slug || "").trim()
+      ) {
+        cascadeTaxonomySlugChange(ss, updSheetName, prevRowObj.slug, updates.slug);
+      }
+
+      var stockAdjusted = false;
+      if (
+        updSheetName === "Mart_Orders" &&
+        (updates.status !== undefined || updates.itemsJson !== undefined)
+      ) {
+        stockAdjusted = syncOrderStockOnUpdate(
+          ss,
+          prevRowObj,
+          updates.status !== undefined ? updates.status : prevRowObj.status,
+          updates.itemsJson !== undefined ? updates.itemsJson : prevRowObj.itemsJson
+        );
+      }
+
       invalidateMartCache();
-      return jsonOut({ ok: true, id: targetId, updated: true });
+      return jsonOut({ ok: true, id: targetId, updated: true, stockAdjusted: stockAdjusted });
     }
 
     if (action === "deleteRecord") {
@@ -1461,9 +1644,15 @@ function doPost(e) {
       var delIds = delSheet.getRange(2, delIdCol + 1, delLastRow - 1, 1).getValues();
       for (var d = 0; d < delIds.length; d++) {
         if (String(delIds[d][0]) === delId) {
-          delSheet.deleteRow(d + 2);
+          var rowToDelete = d + 2;
+          var delStockRestored = false;
+          if (delSheetName === "Mart_Orders") {
+            var prevOrderObj = readSingleRowObject(delSheet, delHeaders, rowToDelete);
+            delStockRestored = syncOrderStockOnUpdate(ss, prevOrderObj, "Cancelled", prevOrderObj.itemsJson);
+          }
+          delSheet.deleteRow(rowToDelete);
           invalidateMartCache();
-          return jsonOut({ ok: true, id: delId, deleted: true });
+          return jsonOut({ ok: true, id: delId, deleted: true, stockRestored: delStockRestored });
         }
       }
       return jsonOut({ ok: false, error: "Record id not found: " + delId });

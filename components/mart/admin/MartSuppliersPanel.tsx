@@ -47,6 +47,8 @@ interface MartSuppliersPanelProps {
   onSupplierDeleted: (id: string) => void;
   onTransactionCreated: (txn: MartTransaction) => void;
   onCrmLogCreated: (log: MartCrmLog) => void;
+  onCrmLogUpdated?: (id: string, updates: Partial<MartCrmLog>) => void;
+  onCrmLogDeleted?: (id: string) => void;
   onNotify: (type: "success" | "error", text: string) => void;
 }
 
@@ -60,6 +62,8 @@ export function MartSuppliersPanel({
   onSupplierDeleted,
   onTransactionCreated,
   onCrmLogCreated,
+  onCrmLogUpdated,
+  onCrmLogDeleted,
   onNotify,
 }: MartSuppliersPanelProps) {
   const { lang, t } = useMartI18n();
@@ -98,11 +102,28 @@ export function MartSuppliersPanel({
 
   // Supplier CRM Log Modal State
   const [crmSupplierId, setCrmSupplierId] = useState<string | null>(null);
+  const [editingLogId, setEditingLogId] = useState<string | null>(null);
   const [logChannel, setLogChannel] = useState<MartCrmChannel>("settlement_followup");
   const [logOutcome, setLogOutcome] = useState<MartCrmOutcome>("connected");
   const [logSummary, setLogSummary] = useState("");
   const [logNextFollowUp, setLogNextFollowUp] = useState("");
   const [savingLog, setSavingLog] = useState(false);
+
+  function resetSupplierLogDraft() {
+    setEditingLogId(null);
+    setLogChannel("settlement_followup");
+    setLogOutcome("connected");
+    setLogSummary("");
+    setLogNextFollowUp("");
+  }
+
+  function startEditSupplierLog(log: MartCrmLog) {
+    setEditingLogId(log.id);
+    setLogChannel(log.channel);
+    setLogOutcome(log.outcome);
+    setLogSummary(log.summary);
+    setLogNextFollowUp(log.nextFollowUpDate || "");
+  }
 
   useEffect(() => {
     if (initialCrmSupplierId) {
@@ -295,23 +316,35 @@ export function MartSuppliersPanel({
 
     setSavingLog(true);
     try {
-      const res = await createMartRecord("Mart_CRM_Logs", logPayload);
-      const supUpdates: Partial<MartSupplier> = {
-        lastContactedAt: nowIso,
-      };
-      if (logNextFollowUp.trim()) {
-        supUpdates.nextFollowUpDate = logNextFollowUp.trim();
+      if (editingLogId) {
+        await updateMartRecord("Mart_CRM_Logs", editingLogId, logPayload);
+        if (logNextFollowUp.trim()) {
+          await updateMartRecord("Mart_Suppliers", sup.id, {
+            nextFollowUpDate: logNextFollowUp.trim(),
+          });
+          onSupplierUpdated(sup.id, { nextFollowUpDate: logNextFollowUp.trim() });
+        }
+        onCrmLogUpdated?.(editingLogId, logPayload);
+        resetSupplierLogDraft();
+        onNotify("success", tcrm.msgLogUpdated);
+      } else {
+        const res = await createMartRecord("Mart_CRM_Logs", logPayload);
+        const supUpdates: Partial<MartSupplier> = {
+          lastContactedAt: nowIso,
+        };
+        if (logNextFollowUp.trim()) {
+          supUpdates.nextFollowUpDate = logNextFollowUp.trim();
+        }
+        await updateMartRecord("Mart_Suppliers", sup.id, supUpdates);
+        onSupplierUpdated(sup.id, supUpdates);
+        onCrmLogCreated({
+          id: res.id,
+          ...logPayload,
+          createdAt: nowIso,
+        });
+        resetSupplierLogDraft();
+        onNotify("success", tcrm.msgLogAdded);
       }
-      await updateMartRecord("Mart_Suppliers", sup.id, supUpdates);
-      onSupplierUpdated(sup.id, supUpdates);
-      onCrmLogCreated({
-        id: res.id,
-        ...logPayload,
-        createdAt: nowIso,
-      });
-      setLogSummary("");
-      setLogNextFollowUp("");
-      onNotify("success", tcrm.msgLogAdded);
     } catch (err) {
       const apiErr = err as MartApiError;
       onNotify("error", translateMartError(apiErr?.message, lang, apiErr?.code));
@@ -866,7 +899,20 @@ export function MartSuppliersPanel({
                 onSubmit={handleAddSupplierLog}
                 className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3"
               >
-                <div className="text-xs font-bold text-slate-900">{tcrm.logActionTitle}</div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-xs font-bold text-slate-900">
+                    {editingLogId ? tcrm.saveLogBtn : tcrm.logActionTitle}
+                  </div>
+                  {editingLogId && (
+                    <button
+                      type="button"
+                      onClick={resetSupplierLogDraft}
+                      className="text-[11px] font-semibold text-slate-500 hover:text-slate-900 underline"
+                    >
+                      {tcrm.cancelEditLogBtn}
+                    </button>
+                  )}
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-600 mb-1">
@@ -928,7 +974,11 @@ export function MartSuppliersPanel({
                     disabled={savingLog}
                     className="btn-primary px-4 py-2 text-xs disabled:opacity-60"
                   >
-                    {savingLog ? tcrm.addingLogBtn : tcrm.addLogBtn}
+                    {savingLog
+                      ? tcrm.addingLogBtn
+                      : editingLogId
+                      ? tcrm.saveLogBtn
+                      : tcrm.addLogBtn}
                   </button>
                 </div>
               </form>
@@ -949,9 +999,38 @@ export function MartSuppliersPanel({
                           <span className="font-semibold text-slate-800">
                             {tcrm.channels[log.channel]} · {tcrm.outcomes[log.outcome]}
                           </span>
-                          <span className="font-mono">
-                            {formatMartDateTime(log.createdAt, lang)}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono">
+                              {formatMartDateTime(log.createdAt, lang)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => startEditSupplierLog(log)}
+                              aria-label={tcrm.editLogBtn}
+                              className="text-slate-500 hover:text-[#0B5336] p-0.5"
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (!isLiveBackend) return;
+                                try {
+                                  await deleteMartRecord("Mart_CRM_Logs", log.id);
+                                  onCrmLogDeleted?.(log.id);
+                                  if (editingLogId === log.id) resetSupplierLogDraft();
+                                  onNotify("success", tcrm.msgLogDeleted);
+                                } catch (err) {
+                                  const apiErr = err as MartApiError;
+                                  onNotify("error", translateMartError(apiErr?.message, lang, apiErr?.code));
+                                }
+                              }}
+                              aria-label={t.common.delete}
+                              className="text-red-500 hover:text-red-700 p-0.5"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </div>
                         </div>
                         <p className="text-slate-700 leading-relaxed">{log.summary}</p>
                         {log.nextFollowUpDate && (

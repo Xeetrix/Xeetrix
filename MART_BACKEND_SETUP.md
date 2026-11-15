@@ -57,11 +57,15 @@ MART_ADMIN_PASSWORD=your_secure_mart_password
 MART_API_TOKEN=your_optional_matching_script_token
 ```
 
+> **Automatic Integrity Sync:**
+> - Editing a category or label slug (`cascadeTaxonomySlugChange`) automatically updates linked `Mart_Products` (`categories` / `labels` CSV slugs) and child `parentSlug` references.
+> - Cancelling, deleting, or marking own-stock order items as `Returned` / `Cancelled` (`syncOrderStockOnUpdate`) automatically calculates net deltas and restores own-stock quantities (including matching Color × Size variation matrix cells) while keeping `dropship` inventory untouched.
+
 ---
 
 ## Step 4: Admin Portal Workflow (`/mart/admin`)
 
 1. Unlock `/mart/admin` with `MART_ADMIN_PASSWORD` and switch between **EN / বাংলা** anytime.
 2. Upload official **bKash Merchant QR** and **Bangla QR** images + merchant account numbers in **Storefront Settings** (stored in `Xeetrix_Mart_Storage/PaymentQR`).
-3. Create **Promo & Discount Coupons** (`%` or flat `৳`), manage **Own Stock** or **Dropshipping** SKUs with **multi-image galleries, Color × Size stock/price matrices, and Wholesale tier pricing**, and fulfill orders item-by-item in **Orders**.
-4. Monitor real **Net Profit, Coupon Discounts, Supplier Payables & Dropship Receivables** in **Accounting & P&L**, and track VIP/High-Risk buyers & daily follow-ups in **Client CRM (360°)**.
+3. Create & edit **Categories, Labels, Coupons**, and **Products** (with **Clone/Duplicate**, Color × Size stock/price matrices, multi-image galleries, and Wholesale tier pricing) — editing slugs automatically syncs linked products.
+4. Manage **Orders** (edit customer/delivery/discount/TrxID details, delete orders, toggle item statuses, and print invoices with automatic own-stock restoration on cancel/return) and monitor real **Net Profit, Supplier Payables, Dropship Receivables & Client CRM (360°)** across all tabs.
