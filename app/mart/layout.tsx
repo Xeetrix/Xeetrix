@@ -38,6 +38,11 @@ export const metadata: Metadata = {
     description:
       "Shop verified electronics, home essentials, and lifestyle products with transparent BDT pricing and fast nationwide delivery across Bangladesh.",
   },
+  icons: {
+    icon: "/assets/aistudio/mart-favicon.png",
+    shortcut: "/assets/aistudio/mart-favicon.png",
+    apple: "/assets/aistudio/mart-favicon.png",
+  },
 };
 
 export default function MartLayout({
