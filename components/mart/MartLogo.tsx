@@ -18,40 +18,19 @@ export function MartLogo({ inverted = false, className = "" }: MartLogoProps) {
   return (
     <span className={`inline-flex items-center gap-2.5 whitespace-nowrap shrink-0 ${className}`}>
       <span
-        className={`flex h-9 w-9 items-center justify-center rounded-xl shrink-0 ${
+        className={`flex h-9 w-9 items-center justify-center rounded-xl shrink-0 overflow-hidden ${
           inverted
-            ? "bg-white/10 border border-white/20 text-gold-400"
-            : "bg-[#0B5336] text-white"
+            ? "bg-white/10 border border-white/20 p-1"
+            : "bg-[#0B5336] p-0.5"
         }`}
       >
-        <svg
-          width="20"
-          height="20"
-          viewBox="0 0 24 24"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-          aria-hidden="true"
-        >
-          <path
-            d="M6.5 8H17.5L18.8 19.2C18.9 20.1 18.2 21 17.3 21H6.7C5.8 21 5.1 20.1 5.2 19.2L6.5 8Z"
-            stroke="currentColor"
-            strokeWidth="1.9"
-            strokeLinejoin="round"
-          />
-          <path
-            d="M9 8V6.2C9 4.4 10.3 3 12 3C13.7 3 15 4.4 15 6.2V8"
-            stroke="currentColor"
-            strokeWidth="1.9"
-            strokeLinecap="round"
-          />
-          <path
-            d="M9.5 12.5L11.3 14.3L14.8 10.8"
-            stroke="#F59E0B"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/assets/aistudio/mart-emblem.png"
+          alt="Xeetrix Mart"
+          referrerPolicy="no-referrer"
+          className="h-full w-full object-contain"
+        />
       </span>
       <span className="inline-flex items-baseline gap-1 whitespace-nowrap shrink-0">
         <span
