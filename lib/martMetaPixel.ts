@@ -1,11 +1,23 @@
 /**
- * Meta (Facebook) Pixel helper library for Xeetrix Mart
- * Pixel ID: 1737437691431259
+ * Hybrid Meta (Facebook) Browser Pixel + Server-Side Conversions API (CAPI)
+ * for Xeetrix Mart
+ * Pixel / Dataset ID: 1737437691431259
  * Scoped strictly to customer-facing Mart routes (/mart and /mart/p/[slug]),
  * explicitly excluding /mart/admin.
  */
 
 export const MART_META_PIXEL_ID = "1737437691431259";
+
+const FBC_STORAGE_KEY = "xeetrix_mart_meta_fbc_v1";
+const CUSTOMER_PREF_STORAGE_KEY = "xeetrix_mart_customer_pref_v1";
+
+export interface MartMetaCustomerContext {
+  name?: string;
+  phone?: string;
+  address?: string;
+  deliveryArea?: string;
+  externalId?: string;
+}
 
 declare global {
   interface Window {
@@ -19,26 +31,139 @@ export function isMartAdminRoute(pathname?: string | null): boolean {
   return pathname.startsWith("/mart/admin");
 }
 
-function canFireMartPixel(): boolean {
+function isBrowserCustomerMartRoute(): boolean {
   if (typeof window === "undefined") return false;
-  if (isMartAdminRoute(window.location.pathname)) return false;
-  return typeof window.fbq === "function";
+  return !isMartAdminRoute(window.location.pathname);
 }
 
-export function trackMartPixelEvent(
-  eventName: string,
-  params?: Record<string, unknown>
-): void {
-  if (!canFireMartPixel()) return;
+export function generateMartEventId(eventName: string): string {
+  const prefix = String(eventName || "evt")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+  const rand = Math.random().toString(36).slice(2, 10);
+  return `xm_${prefix}_${Date.now()}_${rand}`;
+}
+
+function readCookieValue(cookieName: string): string {
+  if (typeof document === "undefined" || !document.cookie) return "";
+  const match = document.cookie
+    .split("; ")
+    .find((row) => row.startsWith(`${cookieName}=`));
+  return match ? decodeURIComponent(match.split("=").slice(1).join("=")) : "";
+}
+
+/**
+ * Captures `fbclid` from URL query parameters on landing and formats it
+ * per Meta specification: `fb.1.<timestamp_ms>.<fbclid>`
+ */
+export function captureMartMetaClickIdFromUrl(): string {
+  if (typeof window === "undefined") return "";
   try {
-    if (params) {
-      window.fbq?.("track", eventName, params);
-    } else {
-      window.fbq?.("track", eventName);
+    const params = new URLSearchParams(window.location.search);
+    const fbclid = params.get("fbclid")?.trim();
+    if (fbclid) {
+      const formattedFbc = `fb.1.${Date.now()}.${fbclid}`;
+      try {
+        window.localStorage.setItem(FBC_STORAGE_KEY, formattedFbc);
+      } catch {
+        // Ignore storage quota errors
+      }
+      return formattedFbc;
+    }
+    const cookieFbc = readCookieValue("_fbc");
+    if (cookieFbc) return cookieFbc;
+    return window.localStorage.getItem(FBC_STORAGE_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function resolveSavedCustomerContext(
+  explicit?: MartMetaCustomerContext
+): MartMetaCustomerContext {
+  const merged: MartMetaCustomerContext = { ...(explicit || {}) };
+  if (typeof window === "undefined") return merged;
+
+  try {
+    const raw = window.localStorage.getItem(CUSTOMER_PREF_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as {
+        customerName?: string;
+        phone?: string;
+        address?: string;
+        deliveryArea?: string;
+      };
+      if (!merged.name && parsed.customerName) {
+        merged.name = parsed.customerName;
+      }
+      if (!merged.phone && parsed.phone) {
+        merged.phone = parsed.phone;
+      }
+      if (!merged.address && parsed.address) {
+        merged.address = parsed.address;
+      }
+      if (!merged.deliveryArea && parsed.deliveryArea) {
+        merged.deliveryArea = parsed.deliveryArea;
+      }
     }
   } catch {
-    // Prevent ad-blocker or third-party script exceptions from affecting checkout UX
+    // Ignore storage read errors
   }
+
+  return merged;
+}
+
+/**
+ * Fires an event to BOTH Browser Meta Pixel (`window.fbq`) AND
+ * Server-Side Conversions API (`/api/mart/meta-capi`) with a shared `eventID`
+ * so Meta Events Manager deduplicates them automatically.
+ */
+export function trackMartPixelEvent(
+  eventName: string,
+  customData?: Record<string, unknown>,
+  customer?: MartMetaCustomerContext
+): string {
+  if (!isBrowserCustomerMartRoute()) return "";
+
+  const eventId = generateMartEventId(eventName);
+  const payloadData = customData || {};
+
+  // 1. Fire Browser Meta Pixel with shared eventID
+  try {
+    if (typeof window.fbq === "function") {
+      window.fbq("track", eventName, payloadData, { eventID: eventId });
+    }
+  } catch {
+    // Prevent ad-blocker or third-party script errors from affecting storefront UX
+  }
+
+  // 2. Fire Server-Side Meta Conversions API (CAPI) with the exact same eventId
+  try {
+    const fbp = readCookieValue("_fbp");
+    const fbc = captureMartMetaClickIdFromUrl();
+    const resolvedCustomer = resolveSavedCustomerContext(customer);
+
+    void fetch("/api/mart/meta-capi", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        eventName,
+        eventId,
+        eventSourceUrl: window.location.href,
+        customData: payloadData,
+        customer: resolvedCustomer,
+        fbp,
+        fbc,
+      }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    // Ignore network errors on background analytics dispatch
+  }
+
+  return eventId;
 }
 
 export function trackMartPageView(): void {
@@ -55,8 +180,9 @@ export function trackMartViewContent(product: {
 }): void {
   const contentId = String(product.sku || product.id || "").trim();
   if (!contentId) return;
-  const contentName =
-    String(product.nameEn || product.nameBn || contentId).trim();
+  const contentName = String(
+    product.nameEn || product.nameBn || contentId
+  ).trim();
   const unitPrice = Math.max(0, Number(product.price) || 0);
 
   trackMartPixelEvent("ViewContent", {
@@ -131,6 +257,7 @@ export function trackMartInitiateCheckout(payload: {
     unitPrice: number;
   }>;
   value: number;
+  customer?: MartMetaCustomerContext;
 }): void {
   if (!payload.items || payload.items.length === 0) return;
 
@@ -147,14 +274,18 @@ export function trackMartInitiateCheckout(payload: {
     0
   );
 
-  trackMartPixelEvent("InitiateCheckout", {
-    content_ids: contentIds,
-    contents,
-    content_type: "product",
-    num_items: numItems,
-    value: Math.max(0, Number(payload.value) || 0),
-    currency: "BDT",
-  });
+  trackMartPixelEvent(
+    "InitiateCheckout",
+    {
+      content_ids: contentIds,
+      contents,
+      content_type: "product",
+      num_items: numItems,
+      value: Math.max(0, Number(payload.value) || 0),
+      currency: "BDT",
+    },
+    payload.customer
+  );
 }
 
 export function trackMartPurchase(payload: {
@@ -166,6 +297,7 @@ export function trackMartPurchase(payload: {
     unitPrice: number;
   }>;
   totalAmount: number;
+  customer?: MartMetaCustomerContext;
 }): void {
   const contentIds = payload.items
     .map((item) => String(item.sku || item.productId || "").trim())
@@ -180,13 +312,20 @@ export function trackMartPurchase(payload: {
     0
   );
 
-  trackMartPixelEvent("Purchase", {
-    content_ids: contentIds,
-    contents,
-    content_type: "product",
-    num_items: numItems,
-    value: Math.max(0, Number(payload.totalAmount) || 0),
-    currency: "BDT",
-    order_id: String(payload.orderId || "").trim(),
-  });
+  trackMartPixelEvent(
+    "Purchase",
+    {
+      content_ids: contentIds,
+      contents,
+      content_type: "product",
+      num_items: numItems,
+      value: Math.max(0, Number(payload.totalAmount) || 0),
+      currency: "BDT",
+      order_id: String(payload.orderId || "").trim(),
+    },
+    {
+      ...payload.customer,
+      externalId: payload.customer?.phone || payload.orderId,
+    }
+  );
 }

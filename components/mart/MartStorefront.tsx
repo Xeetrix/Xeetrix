@@ -1311,6 +1311,13 @@ export function MartStorefront({
           unitPrice: it.unitPrice,
         })),
         totalAmount: srv ? Number(srv.totalAmount) || grandTotal : grandTotal,
+        customer: {
+          name: customerName.trim(),
+          phone: phone.trim(),
+          address: address.trim(),
+          deliveryArea,
+          externalId: phone.trim() || res.id,
+        },
       });
 
       setCart([]);
@@ -3854,6 +3861,12 @@ export function MartStorefront({
                           };
                         }),
                         value: grandTotal,
+                        customer: {
+                          name: customerName.trim(),
+                          phone: phone.trim(),
+                          address: address.trim(),
+                          deliveryArea,
+                        },
                       });
                     }}
                     className="btn-primary flex-1 sm:flex-initial px-6 py-3 text-xs sm:text-sm gap-2 min-h-[46px]"

@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import Script from "next/script";
 import {
+  captureMartMetaClickIdFromUrl,
   isMartAdminRoute,
   MART_META_PIXEL_ID,
   trackMartPageView,
@@ -11,22 +12,20 @@ import {
 
 export function MartMetaPixel() {
   const pathname = usePathname();
-  const initialPathTrackedRef = useRef<string | null>(null);
+  const lastTrackedPathRef = useRef<string | null>(null);
 
   const isExcludedAdmin = !pathname || isMartAdminRoute(pathname);
 
   useEffect(() => {
     if (isExcludedAdmin || !pathname) return;
 
-    // Initial page load fires PageView directly in the inline bootstrap script;
-    // subsequent SPA route changes (/mart <-> /mart/p/[slug]) fire PageView here.
-    if (initialPathTrackedRef.current === null) {
-      initialPathTrackedRef.current = pathname;
-      return;
-    }
+    // Capture ?fbclid=... on landing so _fbc is persisted for the entire session
+    captureMartMetaClickIdFromUrl();
 
-    if (initialPathTrackedRef.current !== pathname) {
-      initialPathTrackedRef.current = pathname;
+    if (lastTrackedPathRef.current !== pathname) {
+      lastTrackedPathRef.current = pathname;
+      // Fires both Browser fbq('track', 'PageView', {}, { eventID }) and
+      // Server CAPI POST /api/mart/meta-capi with the same eventId for deduplication
       trackMartPageView();
     }
   }, [pathname, isExcludedAdmin]);
@@ -51,7 +50,6 @@ t.src=v;s=b.getElementsByTagName(e)[0];
 s.parentNode.insertBefore(t,s)}(window, document,'script',
 'https://connect.facebook.net/en_US/fbevents.js');
 fbq('init', '${MART_META_PIXEL_ID}');
-fbq('track', 'PageView');
           `.trim(),
         }}
       />
