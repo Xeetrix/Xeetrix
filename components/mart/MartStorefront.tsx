@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -86,6 +86,13 @@ import {
   isProductOrderable,
 } from "@/lib/martOps";
 import { runMartSmartSearch } from "@/lib/martSearchEngine";
+import {
+  trackMartAddToCart,
+  trackMartInitiateCheckout,
+  trackMartPurchase,
+  trackMartSearch,
+  trackMartViewContent,
+} from "@/lib/martMetaPixel";
 
 const CART_STORAGE_KEY = "xeetrix_mart_cart_v2";
 const CUSTOMER_PREF_STORAGE_KEY = "xeetrix_mart_customer_pref_v1";
@@ -612,6 +619,8 @@ export function MartStorefront({
     [products, focusedProductSlug]
   );
 
+  const lastTrackedPdpIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!focusedProduct) return;
     const colors = parseProductColors(focusedProduct.colorsJson);
@@ -630,6 +639,17 @@ export function MartStorefront({
         : ""
     );
     setPdpQty(1);
+    if (lastTrackedPdpIdRef.current !== focusedProduct.id) {
+      lastTrackedPdpIdRef.current = focusedProduct.id;
+      trackMartViewContent({
+        id: focusedProduct.id,
+        sku: focusedProduct.sku,
+        nameEn: focusedProduct.nameEn,
+        nameBn: focusedProduct.nameBn,
+        price: focusedProduct.price,
+        categories: focusedProduct.categories,
+      });
+    }
     if (typeof window !== "undefined") {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
@@ -692,6 +712,15 @@ export function MartStorefront({
       }),
     [searchQuery, products, visibleCategories, visibleLabels, lang]
   );
+
+  useEffect(() => {
+    const clean = searchQuery.trim();
+    if (clean.length < 2) return;
+    const timer = setTimeout(() => {
+      trackMartSearch(clean, smartSearchBundle.matchedProducts.length);
+    }, 650);
+    return () => clearTimeout(timer);
+  }, [searchQuery, smartSearchBundle.matchedProducts.length]);
 
   const filteredProducts = useMemo(() => {
     const hasSearch = searchQuery.trim().length > 0;
@@ -951,6 +980,15 @@ export function MartStorefront({
     });
 
     setConfirmedInvoice(null);
+    trackMartAddToCart({
+      id: product.id,
+      sku: matchedCell?.sku || product.sku,
+      nameEn: product.nameEn,
+      nameBn: product.nameBn,
+      unitPrice: unitPricing.baseUnitPrice,
+      quantity: Math.min(maxCap, qtyToAdd),
+      variant: chosenVariant,
+    });
     const bannerMsg = `${displayName} — ${t.catalog.addedToCartSuffix}`;
     setAddedBanner(bannerMsg);
     setTimeout(() => {
@@ -1094,6 +1132,14 @@ export function MartStorefront({
         : ""
     );
     setQuickViewQty(1);
+    trackMartViewContent({
+      id: product.id,
+      sku: product.sku,
+      nameEn: product.nameEn,
+      nameBn: product.nameBn,
+      price: product.price,
+      categories: product.categories,
+    });
   }
 
   async function handleApplyCoupon() {
@@ -1254,6 +1300,17 @@ export function MartStorefront({
         transactionId: paymentMethod === "Mobile Banking" ? transactionId.trim() : "",
         items: confirmedItems.length > 0 ? confirmedItems : orderItems,
         createdAt: new Date().toISOString(),
+      });
+
+      trackMartPurchase({
+        orderId: res.id,
+        items: (confirmedItems.length > 0 ? confirmedItems : orderItems).map((it) => ({
+          sku: it.variantSku || it.sku,
+          productId: it.productId,
+          quantity: it.quantity,
+          unitPrice: it.unitPrice,
+        })),
+        totalAmount: srv ? Number(srv.totalAmount) || grandTotal : grandTotal,
       });
 
       setCart([]);
@@ -3786,6 +3843,18 @@ export function MartStorefront({
                     onClick={() => {
                       setCheckoutError(null);
                       setCheckoutStep(2);
+                      trackMartInitiateCheckout({
+                        items: cart.map((item) => {
+                          const { effectiveUnitPrice } = resolveCartItemUnit(item);
+                          return {
+                            sku: item.variantSku || item.sku,
+                            productId: item.productId,
+                            quantity: item.quantity,
+                            unitPrice: effectiveUnitPrice,
+                          };
+                        }),
+                        value: grandTotal,
+                      });
                     }}
                     className="btn-primary flex-1 sm:flex-initial px-6 py-3 text-xs sm:text-sm gap-2 min-h-[46px]"
                   >

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Noto_Sans_Bengali } from "next/font/google";
 import { MartI18nProvider } from "@/components/mart/MartI18nProvider";
+import { MartMetaPixel } from "@/components/mart/MartMetaPixel";
 
 const notoSansBengali = Noto_Sans_Bengali({
   subsets: ["bengali", "latin"],
@@ -54,6 +55,7 @@ export default function MartLayout({
     <div
       className={`${notoSansBengali.variable} [font-family:var(--font-dm-sans),var(--font-noto-bengali),sans-serif]`}
     >
+      <MartMetaPixel />
       <MartI18nProvider>{children}</MartI18nProvider>
     </div>
   );
