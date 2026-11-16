@@ -42,6 +42,18 @@ export interface MartDictionary {
     cartAriaSuffix: string;
     menuToggleAria: string;
     mobileSearchPlaceholder: string;
+    skipToContent: string;
+    voiceSearchAria: string;
+    voiceListening: string;
+    recentSearchesTitle: string;
+    clearRecentBtn: string;
+    trendingSearchesTitle: string;
+    autoCompleteTitle: string;
+    matchedCategoriesTitle: string;
+    liveProductsTitle: string;
+    didYouMeanPrefix: string;
+    seeAllResultsPrefix: string;
+    noInstantMatchHint: string;
   };
   footer: {
     description: string;
@@ -105,6 +117,8 @@ export interface MartDictionary {
     generalFallback: string;
     subcategoriesLabel: string;
     allInCategoryBtn: string;
+    didYouMeanBannerPrefix: string;
+    showingClosestMatchesBanner: string;
   };
   quickView: {
     closeAria: string;
@@ -542,8 +556,8 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
       errorFallback: "Something went wrong. Please try again.",
     },
     header: {
-      searchPlaceholder: "Search products, SKU, category, or label...",
-      searchAria: "Search store products",
+      searchPlaceholder: "Search in English, বাংলা, or Banglish (e.g. watch, ঘড়ি, ghori)...",
+      searchAria: "Search store products in English, Bengali, or Banglish",
       allCategoriesOption: "All Categories",
       filterCategoryAria: "Filter by category",
       trackOrder: "Track Order",
@@ -551,7 +565,19 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
       cartAriaPrefix: "Open shopping cart with",
       cartAriaSuffix: "items",
       menuToggleAria: "Toggle store menu",
-      mobileSearchPlaceholder: "Search products...",
+      mobileSearchPlaceholder: "Search products (English / বাংলা / Banglish)...",
+      skipToContent: "Skip to main content",
+      voiceSearchAria: "Search by voice",
+      voiceListening: "Listening...",
+      recentSearchesTitle: "Recent Searches",
+      clearRecentBtn: "Clear",
+      trendingSearchesTitle: "Trending Searches",
+      autoCompleteTitle: "Suggested Keywords",
+      matchedCategoriesTitle: "Matching Categories",
+      liveProductsTitle: "Instant Product Matches",
+      didYouMeanPrefix: "Did you mean:",
+      seeAllResultsPrefix: "See all results for",
+      noInstantMatchHint: "Showing closest & popular matches",
     },
     footer: {
       description:
@@ -618,6 +644,9 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
       generalFallback: "General",
       subcategoriesLabel: "Sub-categories",
       allInCategoryBtn: "All in category",
+      didYouMeanBannerPrefix: "Did you mean",
+      showingClosestMatchesBanner:
+        "No exact match for your spelling — showing closest & recommended products below:",
     },
     quickView: {
       closeAria: "Close product quick view",
@@ -1079,8 +1108,8 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
       errorFallback: "একটি সমস্যা হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।",
     },
     header: {
-      searchPlaceholder: "পণ্য, SKU, ক্যাটাগরি বা লেবেল খুঁজুন...",
-      searchAria: "স্টোরের পণ্য খুঁজুন",
+      searchPlaceholder: "বাংলা, ইংরেজি বা বাংলিশে খুঁজুন (যেমন: ঘড়ি, watch, ghori)...",
+      searchAria: "বাংলা, ইংরেজি বা বাংলিশে স্টোরের পণ্য খুঁজুন",
       allCategoriesOption: "সব ক্যাটাগরি",
       filterCategoryAria: "ক্যাটাগরি অনুযায়ী ফিল্টার করুন",
       trackOrder: "অর্ডার ট্র্যাক",
@@ -1088,7 +1117,19 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
       cartAriaPrefix: "শপিং কার্ট খুলুন, আইটেম সংখ্যা",
       cartAriaSuffix: "টি",
       menuToggleAria: "স্টোর মেনু খুলুন বা বন্ধ করুন",
-      mobileSearchPlaceholder: "পণ্য খুঁজুন...",
+      mobileSearchPlaceholder: "পণ্য খুঁজুন (বাংলা / English / Banglish)...",
+      skipToContent: "মূল কন্টেন্টে যান",
+      voiceSearchAria: "মুখে বলে পণ্য খুঁজুন",
+      voiceListening: "শুনছি...",
+      recentSearchesTitle: "সাম্প্রতিক সার্চ",
+      clearRecentBtn: "মুছুন",
+      trendingSearchesTitle: "জনপ্রিয় সার্চ",
+      autoCompleteTitle: "সাজেস্টেড শব্দ",
+      matchedCategoriesTitle: "মিলে যাওয়া ক্যাটাগরি",
+      liveProductsTitle: "তাৎক্ষণিক মিলে যাওয়া পণ্য",
+      didYouMeanPrefix: "আপনি কি খুঁজছেন:",
+      seeAllResultsPrefix: "সব ফলাফল দেখুন:",
+      noInstantMatchHint: "সবচেয়ে কাছাকাছি ও জনপ্রিয় পণ্য দেখানো হচ্ছে",
     },
     footer: {
       description:
@@ -1155,6 +1196,9 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
       generalFallback: "সাধারণ",
       subcategoriesLabel: "সাব-ক্যাটাগরি",
       allInCategoryBtn: "সব পণ্য",
+      didYouMeanBannerPrefix: "আপনি কি খুঁজছিলেন",
+      showingClosestMatchesBanner:
+        "আপনার লেখা বানানের হুবহু পণ্য পাওয়া যায়নি — নিচে সবচেয়ে কাছাকাছি ও জনপ্রিয় পণ্যগুলো দেখানো হচ্ছে:",
     },
     quickView: {
       closeAria: "প্রোডাক্ট প্রিভিউ বন্ধ করুন",

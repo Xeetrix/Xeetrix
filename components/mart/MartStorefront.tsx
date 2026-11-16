@@ -85,6 +85,7 @@ import {
   getProductOrderableMaxQty,
   isProductOrderable,
 } from "@/lib/martOps";
+import { runMartSmartSearch } from "@/lib/martSearchEngine";
 
 const CART_STORAGE_KEY = "xeetrix_mart_cart_v2";
 const CUSTOMER_PREF_STORAGE_KEY = "xeetrix_mart_customer_pref_v1";
@@ -303,6 +304,20 @@ export function MartStorefront({
   const [trackingLoading, setTrackingLoading] = useState(false);
   const [trackingError, setTrackingError] = useState<string | null>(null);
   const [trackedOrder, setTrackedOrder] = useState<MartOrder | null>(null);
+
+  // Hydrate initial ?q= search query parameter if present (supports Schema.org SearchAction & shared search links)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const qParam = params.get("q");
+      if (qParam && qParam.trim()) {
+        setSearchQuery(qParam.trim());
+      }
+    } catch {
+      // Ignore URLSearchParams errors
+    }
+  }, []);
 
   // Hydrate Storefront Live Data (Instant SWR Snapshot Cache + Proxy Revalidation, Zero Dummy Data)
   useEffect(() => {
@@ -666,9 +681,23 @@ export function MartStorefront({
     }, 2500);
   }
 
+  const smartSearchBundle = useMemo(
+    () =>
+      runMartSmartSearch({
+        query: searchQuery,
+        products,
+        categories: visibleCategories,
+        labels: visibleLabels,
+        lang,
+      }),
+    [searchQuery, products, visibleCategories, visibleLabels, lang]
+  );
+
   const filteredProducts = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    const list = products.filter((p) => {
+    const hasSearch = searchQuery.trim().length > 0;
+    const baseList = hasSearch ? smartSearchBundle.matchedProducts : products;
+
+    const list = baseList.filter((p) => {
       const prodCats = parseCsvSlugs(p.categories);
       const prodLabels = parseCsvSlugs(p.labels);
 
@@ -680,37 +709,7 @@ export function MartStorefront({
         selectedLabels.length === 0 ||
         prodLabels.some((lSlug) => selectedLabels.includes(lSlug));
 
-      let searchOk = true;
-      if (q) {
-        const catTexts = prodCats
-          .map((slug) => {
-            const c = categoryMap.get(slug);
-            return c ? `${c.nameEn} ${c.nameBn} ${c.slug}` : slug;
-          })
-          .join(" ");
-        const lblTexts = prodLabels
-          .map((slug) => {
-            const l = labelMap.get(slug);
-            return l ? `${l.nameEn} ${l.nameBn} ${l.slug}` : slug;
-          })
-          .join(" ");
-
-        const haystack = [
-          p.nameEn,
-          p.nameBn,
-          p.sku,
-          p.descriptionEn,
-          p.descriptionBn,
-          catTexts,
-          lblTexts,
-        ]
-          .join(" ")
-          .toLowerCase();
-
-        searchOk = haystack.includes(q);
-      }
-
-      return catOk && labelOk && searchOk;
+      return catOk && labelOk;
     });
 
     if (sortBy === "price_asc") {
@@ -724,15 +723,18 @@ export function MartStorefront({
         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
     }
+    if (hasSearch) {
+      // Preserve relevance ranking from smart search engine when sorting by featured
+      return list;
+    }
     return [...list].sort((a, b) => Number(b.featured) - Number(a.featured));
   }, [
     products,
+    smartSearchBundle.matchedProducts,
     expandedSelectedCategories,
     selectedLabels,
     searchQuery,
     sortBy,
-    categoryMap,
-    labelMap,
   ]);
 
   const productMap = useMemo(() => {
@@ -1550,9 +1552,6 @@ export function MartStorefront({
         searchQuery={searchQuery}
         onSearchChange={(val) => {
           setSearchQuery(val);
-          if (focusedProductSlug && val.trim().length > 0) {
-            router.push("/mart");
-          }
         }}
         categories={visibleCategories}
         selectedCategories={selectedCategories}
@@ -1574,11 +1573,29 @@ export function MartStorefront({
           setTrackOpen(true);
           setTrackingError(null);
         }}
+        searchBundle={smartSearchBundle}
+        onSelectProductSuggestion={(prod) => navigateToProductPage(prod)}
+        onAddToCartFromSearch={(prod) =>
+          addToCart(prod, {
+            qtyToAdd: 1,
+            openDrawer: false,
+            overrideImage: prod.imageUrl,
+          })
+        }
+        onCommitSearch={(term) => {
+          if (focusedProductSlug && term.trim()) {
+            router.push(`/mart?q=${encodeURIComponent(term.trim())}`);
+          }
+        }}
       />
 
       {/* Cart Feedback Toast */}
       {addedBanner && (
-        <div className="fixed bottom-4 left-3 right-3 sm:left-auto sm:right-5 sm:bottom-5 z-50 flex items-center justify-between gap-3 rounded-xl border border-brand-200 bg-white px-4 py-3 text-xs font-semibold text-slate-900 shadow-elevated">
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-4 left-3 right-3 sm:left-auto sm:right-5 sm:bottom-5 z-50 flex items-center justify-between gap-3 rounded-xl border border-brand-200 bg-white px-4 py-3 text-xs font-semibold text-slate-900 shadow-elevated"
+        >
           <div className="flex items-center gap-2.5 min-w-0">
             <CheckCircle2 className="h-4 w-4 text-[#0B5336] shrink-0" />
             <span className="truncate">{addedBanner}</span>
@@ -1596,7 +1613,7 @@ export function MartStorefront({
         </div>
       )}
 
-      <main className="flex-1">
+      <main id="main-content" className="flex-1">
         {focusedProductSlug ? (
           /* DEDICATED FULL PRODUCT DETAIL PAGE (/mart/p/[slug]) */
           <section className="py-6 sm:py-10 lg:py-12 pb-28 sm:pb-14">
@@ -2633,6 +2650,41 @@ export function MartStorefront({
               );
             })()}
 
+            {/* Smart Search "Did You Mean?" Correction Banner */}
+            {!loading && searchQuery.trim().length > 0 && smartSearchBundle.didYouMean && (
+              <div className="rounded-2xl border border-brand-200 bg-brand-50/70 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm">
+                  <RotateCcw className="h-4 w-4 text-[#0B5336] shrink-0" />
+                  <span className="text-slate-700 font-medium">
+                    {t.catalog.didYouMeanBannerPrefix}:
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSearchQuery(smartSearchBundle.didYouMean!.suggestedTerm)
+                    }
+                    className="rounded-lg bg-[#0B5336] px-3 py-1 text-xs font-bold text-white hover:bg-[#08412A] transition-colors"
+                  >
+                    {smartSearchBundle.didYouMean.suggestedTerm}
+                  </button>
+                </div>
+                {smartSearchBundle.autoCompleteTerms.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {smartSearchBundle.autoCompleteTerms.slice(0, 3).map((term) => (
+                      <button
+                        key={term}
+                        type="button"
+                        onClick={() => setSearchQuery(term)}
+                        className="rounded-lg border border-brand-200 bg-white px-2.5 py-1 text-xs font-semibold text-[#0B5336] hover:bg-brand-50 transition-colors"
+                      >
+                        {term}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Catalog Loading / Empty / 2-Column Mobile Product Grid */}
             {loading ? (
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-5 lg:gap-6">
@@ -2679,19 +2731,50 @@ export function MartStorefront({
                 </div>
               </div>
             ) : filteredProducts.length === 0 ? (
-              <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center space-y-3">
-                <Package className="h-10 w-10 text-slate-300 mx-auto" />
-                <h2 className="font-display text-lg font-semibold text-slate-900">
-                  {t.catalog.noMatchTitle}
-                </h2>
-                <p className="text-sm text-slate-500">{t.catalog.noMatchDesc}</p>
-                <button
-                  type="button"
-                  onClick={resetAllFilters}
-                  className="btn-outline px-4 py-2 text-xs"
-                >
-                  {t.catalog.resetFiltersBtn}
-                </button>
+              <div className="space-y-6">
+                <div className="rounded-2xl border border-slate-200 bg-white p-8 sm:p-12 text-center space-y-3">
+                  <Package className="h-10 w-10 text-slate-300 mx-auto" />
+                  <h2 className="font-display text-lg font-semibold text-slate-900">
+                    {t.catalog.noMatchTitle}
+                  </h2>
+                  <p className="text-sm text-slate-600">{t.catalog.noMatchDesc}</p>
+                  <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                    {smartSearchBundle.didYouMean && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSearchQuery(smartSearchBundle.didYouMean!.suggestedTerm)
+                        }
+                        className="btn-primary px-4 py-2 text-xs gap-1.5"
+                      >
+                        <span>
+                          {t.catalog.didYouMeanBannerPrefix}:{" "}
+                          {smartSearchBundle.didYouMean.suggestedTerm}
+                        </span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={resetAllFilters}
+                      className="btn-outline px-4 py-2 text-xs"
+                    >
+                      {t.catalog.resetFiltersBtn}
+                    </button>
+                  </div>
+                </div>
+
+                {smartSearchBundle.fallbackProducts.length > 0 && (
+                  <div className="space-y-4">
+                    <div className="text-xs sm:text-sm font-semibold text-slate-700">
+                      {t.catalog.showingClosestMatchesBanner}
+                    </div>
+                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-5 lg:gap-6">
+                      {smartSearchBundle.fallbackProducts.map((product) =>
+                        renderProductCard(product)
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-5 lg:gap-6">
