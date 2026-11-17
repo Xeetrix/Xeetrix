@@ -61,6 +61,7 @@ import {
   findDuplicateProductSku,
   generateProductSkuFromCategories,
   generateVariantSubSku,
+  getCategoryHierarchyMeta,
   getStoredMartAdminPass,
   MART_CONTACT_EMAIL,
   MART_CONTACT_PHONE,
@@ -68,6 +69,7 @@ import {
   MartAdminBundle,
   MartApiError,
   MartCategory,
+  MartCategoryHierarchyMeta,
   MartCollectionMode,
   MartCoupon,
   MartCrmLog,
@@ -99,6 +101,7 @@ import {
   sanitizeSkuCodeToken,
   serializeProductAttributes,
   slugifyCategory,
+  STARTER_THREE_LEVEL_CATEGORIES,
   updateMartRecord,
   updateMartStoreSettings,
   uploadMartImageToDrive,
@@ -317,6 +320,7 @@ export function MartAdminClient() {
   const [catImageUrl, setCatImageUrl] = useState("");
   const [uploadingCatImg, setUploadingCatImg] = useState(false);
   const [savingCategory, setSavingCategory] = useState(false);
+  const [seedingStarterCats, setSeedingStarterCats] = useState(false);
 
   // Label Form (Mart_Labels)
   const [editingLabelId, setEditingLabelId] = useState<string | null>(null);
@@ -1716,6 +1720,73 @@ export function MartAdminClient() {
     }
   }
 
+  async function handleSeedStarterThreeLevelCategories() {
+    if (!data?.isLiveBackend) {
+      showNotice("error", t.admin.products.errConnectBackend);
+      return;
+    }
+    const existingSlugs = new Set(categories.map((c) => c.slug));
+    const missingItems = STARTER_THREE_LEVEL_CATEGORIES.filter(
+      (item) => !existingSlugs.has(item.slug)
+    );
+    if (missingItems.length === 0) {
+      showNotice(
+        "success",
+        lang === "bn"
+          ? "৩-লেভেল স্ট্যান্ডার্ড ক্যাটাগরিগুলো ইতিমধ্যে যুক্ত আছে।"
+          : "All standard 3-level categories are already present."
+      );
+      return;
+    }
+
+    setSeedingStarterCats(true);
+    try {
+      const createdRecords: MartCategory[] = [];
+      for (const item of missingItems) {
+        const payload = {
+          nameEn: item.nameEn,
+          nameBn: item.nameBn,
+          slug: item.slug,
+          skuCode: item.skuCode,
+          parentSlug: item.parentSlug,
+          descriptionEn: item.descriptionEn,
+          descriptionBn: item.descriptionBn,
+          imageUrl: "",
+          sortOrder: item.sortOrder,
+          active: true,
+        };
+        const res = await createMartRecord("Mart_Categories", payload);
+        createdRecords.push({
+          id: res.id,
+          ...payload,
+          createdAt: new Date().toISOString(),
+        });
+      }
+
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              categories: [...prev.categories, ...createdRecords].sort(
+                (a, b) => a.sortOrder - b.sortOrder
+              ),
+            }
+          : prev
+      );
+      showNotice(
+        "success",
+        lang === "bn"
+          ? `${toLocalizedDigits(createdRecords.length, lang)}টি ৩-লেভেল ক্যাটাগরি (Main > Sub > Child) সফলভাবে যুক্ত হয়েছে!`
+          : `Added ${createdRecords.length} standard 3-level categories (Main > Sub > Child)!`
+      );
+    } catch (err) {
+      const apiErr = err as MartApiError;
+      showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
+    } finally {
+      setSeedingStarterCats(false);
+    }
+  }
+
   function resetLabelForm() {
     setEditingLabelId(null);
     setLblNameEn("");
@@ -1912,6 +1983,73 @@ export function MartAdminClient() {
     return map;
   }, [categories]);
 
+  const categoryHierarchyMap = useMemo(() => {
+    const map = new Map<string, MartCategoryHierarchyMeta>();
+    categories.forEach((c) => {
+      if (c.slug) {
+        map.set(c.slug, getCategoryHierarchyMeta(c.slug, categories));
+      }
+    });
+    return map;
+  }, [categories]);
+
+  const sortedCategoriesForTree = useMemo(() => {
+    const l1List = categories
+      .filter((c) => (categoryHierarchyMap.get(c.slug)?.level || 1) === 1)
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.nameEn.localeCompare(b.nameEn));
+
+    const l2ByParent = new Map<string, MartCategory[]>();
+    const l3ByParent = new Map<string, MartCategory[]>();
+    const orphans: MartCategory[] = [];
+
+    categories.forEach((c) => {
+      const meta = categoryHierarchyMap.get(c.slug);
+      const lvl = meta?.level || 1;
+      if (lvl === 2) {
+        const pSlug = c.parentSlug;
+        if (pSlug && categoryMap.has(pSlug)) {
+          const arr = l2ByParent.get(pSlug) || [];
+          arr.push(c);
+          l2ByParent.set(pSlug, arr);
+        } else {
+          orphans.push(c);
+        }
+      } else if (lvl === 3) {
+        const pSlug = c.parentSlug;
+        if (pSlug && categoryMap.has(pSlug)) {
+          const arr = l3ByParent.get(pSlug) || [];
+          arr.push(c);
+          l3ByParent.set(pSlug, arr);
+        } else {
+          orphans.push(c);
+        }
+      }
+    });
+
+    const ordered: MartCategory[] = [];
+    l1List.forEach((l1) => {
+      ordered.push(l1);
+      const subs = (l2ByParent.get(l1.slug) || []).sort(
+        (a, b) => a.sortOrder - b.sortOrder || a.nameEn.localeCompare(b.nameEn)
+      );
+      subs.forEach((l2) => {
+        ordered.push(l2);
+        const children = (l3ByParent.get(l2.slug) || []).sort(
+          (a, b) => a.sortOrder - b.sortOrder || a.nameEn.localeCompare(b.nameEn)
+        );
+        children.forEach((l3) => ordered.push(l3));
+      });
+    });
+
+    orphans.forEach((o) => {
+      if (!ordered.some((item) => item.id === o.id)) {
+        ordered.push(o);
+      }
+    });
+
+    return ordered;
+  }, [categories, categoryHierarchyMap, categoryMap]);
+
   const labelMap = useMemo(() => {
     const map = new Map<string, MartLabel>();
     labels.forEach((l) => {
@@ -1921,14 +2059,30 @@ export function MartAdminClient() {
   }, [labels]);
 
   const categoryProductCounts = useMemo(() => {
-    const map = new Map<string, number>();
-    products.forEach((p) => {
-      parseCsvSlugs(p.categories).forEach((slug) => {
-        map.set(slug, (map.get(slug) || 0) + 1);
+    // Count products assigned directly to each category OR any of its descendant sub/child categories
+    const descendantsBySlug = new Map<string, Set<string>>();
+    categories.forEach((c) => {
+      descendantsBySlug.set(c.slug, new Set([c.slug]));
+    });
+    categories.forEach((c) => {
+      const meta = categoryHierarchyMap.get(c.slug);
+      meta?.chain.forEach((ancestor) => {
+        const set = descendantsBySlug.get(ancestor.slug) || new Set([ancestor.slug]);
+        set.add(c.slug);
+        descendantsBySlug.set(ancestor.slug, set);
       });
     });
+
+    const map = new Map<string, number>();
+    categories.forEach((c) => {
+      const allowed = descendantsBySlug.get(c.slug) || new Set([c.slug]);
+      const count = products.filter((p) =>
+        parseCsvSlugs(p.categories).some((s) => allowed.has(s))
+      ).length;
+      map.set(c.slug, count);
+    });
     return map;
-  }, [products]);
+  }, [categories, categoryHierarchyMap, products]);
 
   const labelProductCounts = useMemo(() => {
     const map = new Map<string, number>();
@@ -3792,7 +3946,7 @@ export function MartAdminClient() {
                                 </span>
                               ) : (
                                 <span className="text-[10px] font-mono font-semibold text-[#0B5336]">
-                                  { `XM-${liveSkuPreview.catCode}-${liveSkuPreview.subCode}` }
+                                  {`XM-${liveSkuPreview.l1Code}-${liveSkuPreview.l2Code}-${liveSkuPreview.l3Code}`}
                                 </span>
                               )}
                             </div>
@@ -4848,17 +5002,17 @@ export function MartAdminClient() {
                               <div className="flex items-center gap-1.5 min-w-0">
                                 <Star className="h-3 w-3 text-gold-600 fill-gold-500 shrink-0" />
                                 <span className="font-semibold text-slate-800 truncate">
-                                  {lang === "bn" ? "Primary SKU ক্যাটাগরি:" : "Primary SKU Category:"}{" "}
+                                  {lang === "bn" ? "Primary ৩-লেভেল SKU:" : "Primary 3-Level SKU:"}{" "}
                                   <span className="text-[#0B5336]">
-                                    {liveSkuPreview.catNameEn}
-                                    {liveSkuPreview.subCode !== "GEN"
-                                      ? ` › ${liveSkuPreview.subNameEn}`
-                                      : ""}
+                                    {lang === "bn"
+                                      ? liveSkuPreview.breadcrumbBn
+                                      : liveSkuPreview.breadcrumbEn}
                                   </span>
                                 </span>
                               </div>
                               <span className="font-mono text-[10px] font-bold text-[#0B5336] bg-white border border-brand-200 rounded px-1.5 py-0.5 shrink-0">
-                                XM-{liveSkuPreview.catCode}-{liveSkuPreview.subCode}
+                                XM-{liveSkuPreview.l1Code}-{liveSkuPreview.l2Code}-
+                                {liveSkuPreview.l3Code}
                               </span>
                             </div>
                           )}
@@ -4868,20 +5022,17 @@ export function MartAdminClient() {
                               {t.admin.products.noCategoriesHint}
                             </p>
                           ) : (
-                            <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto pr-1">
-                              {categories.map((cat) => {
+                            <div className="flex flex-wrap gap-1.5 max-h-56 overflow-y-auto pr-1">
+                              {sortedCategoriesForTree.map((cat) => {
                                 const checked = prodCategories.includes(cat.slug);
                                 const isPrimarySelected = prodCategories[0] === cat.slug;
+                                const meta = categoryHierarchyMap.get(cat.slug);
+                                const lvl = meta?.level || 1;
                                 const catCode = resolveCategorySkuCode(cat);
-                                const catLabel = pickLocalized(
-                                  cat.nameEn,
-                                  cat.nameBn,
-                                  lang,
-                                  cat.slug
-                                );
-                                const parent = cat.parentSlug
-                                  ? categoryMap.get(cat.parentSlug)
-                                  : null;
+                                const fullBreadcrumb =
+                                  lang === "bn"
+                                    ? meta?.breadcrumbBn || cat.nameBn || cat.nameEn
+                                    : meta?.breadcrumbEn || cat.nameEn || cat.slug;
                                 return (
                                   <div
                                     key={cat.id}
@@ -4898,11 +5049,20 @@ export function MartAdminClient() {
                                         onChange={() => toggleProdCategorySlug(cat.slug)}
                                         className="sr-only"
                                       />
-                                      <span>
-                                        {parent
-                                          ? `${pickLocalized(parent.nameEn, parent.nameBn, lang)} › ${catLabel}`
-                                          : catLabel}
+                                      <span
+                                        className={`rounded px-1 py-0.2 font-mono text-[9px] font-bold ${
+                                          checked
+                                            ? "bg-white/20 text-white"
+                                            : lvl === 3
+                                            ? "bg-brand-50 text-[#0B5336] border border-brand-200"
+                                            : lvl === 2
+                                            ? "bg-amber-50 text-amber-800 border border-amber-200"
+                                            : "bg-slate-200 text-slate-700"
+                                        }`}
+                                      >
+                                        L{lvl}
                                       </span>
+                                      <span>{fullBreadcrumb}</span>
                                       <span
                                         className={`rounded px-1 py-0.2 font-mono text-[9px] font-bold ${
                                           checked
@@ -4938,7 +5098,7 @@ export function MartAdminClient() {
                                           }
                                           className="ml-0.5 rounded bg-white/15 hover:bg-gold-400 hover:text-slate-950 px-1 py-0.2 text-[9px] font-semibold text-emerald-100 transition-colors whitespace-nowrap"
                                         >
-                                          {lang === "bn" ? "★ Set Primary" : "★ Set Primary"}
+                                          ★ Set Primary
                                         </button>
                                       ))}
                                   </div>
@@ -5925,8 +6085,8 @@ export function MartAdminClient() {
                         </div>
                         <p className="text-[10px] text-slate-500 mt-1 font-mono">
                           {lang === "bn"
-                            ? "যেমন: FSH, MEN, ELC, AUD (XM-[CAT]-[SUB]-0001)"
-                            : "Used in XM-[CAT]-[SUB]-0001"}
+                            ? "যেমন: FSH, KID, GRL (XM-[L1]-[L2]-[L3]-0001)"
+                            : "Used in XM-[L1]-[L2]-[L3]-0001"}
                         </p>
                       </div>
                     </div>
@@ -5934,21 +6094,65 @@ export function MartAdminClient() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          {t.admin.taxonomy.catParentLabel}
+                          {lang === "bn"
+                            ? "প্যারেন্ট ক্যাটাগরি (Level 1 Main / Level 2 Sub / Level 3 Child)"
+                            : "Parent Category (Defines Level 1 / Level 2 / Level 3)"}
                         </label>
                         <select
                           value={catParentSlug}
                           onChange={(e) => setCatParentSlug(e.target.value)}
                           className="input text-xs"
                         >
-                          <option value="">{t.admin.taxonomy.catParentNone}</option>
-                          {categories
-                            .filter((cat) => cat.id !== editingCategoryId)
-                            .map((cat) => (
-                              <option key={cat.slug} value={cat.slug}>
-                                {pickLocalized(cat.nameEn, cat.nameBn, lang, cat.slug)}
-                              </option>
-                            ))}
+                          <option value="">
+                            {lang === "bn"
+                              ? "★ কোনোটিই নয় — Level 1: Main Category তৈরি হবে"
+                              : "★ None — Creates a Level 1: Main Category"}
+                          </option>
+                          <optgroup
+                            label={
+                              lang === "bn"
+                                ? "Level 1: Main Categories (সিলেক্ট করলে Level 2 Sub-Category হবে)"
+                                : "Level 1: Main Categories (Select to create Level 2 Sub-Category)"
+                            }
+                          >
+                            {sortedCategoriesForTree
+                              .filter(
+                                (cat) =>
+                                  cat.id !== editingCategoryId &&
+                                  (categoryHierarchyMap.get(cat.slug)?.level || 1) === 1
+                              )
+                              .map((cat) => (
+                                <option key={cat.slug} value={cat.slug}>
+                                  [L1 · {resolveCategorySkuCode(cat)}]{" "}
+                                  {pickLocalized(cat.nameEn, cat.nameBn, lang, cat.slug)}
+                                </option>
+                              ))}
+                          </optgroup>
+                          <optgroup
+                            label={
+                              lang === "bn"
+                                ? "Level 2: Sub-Categories (সিলেক্ট করলে Level 3 Child Category হবে)"
+                                : "Level 2: Sub-Categories (Select to create Level 3 Child Category)"
+                            }
+                          >
+                            {sortedCategoriesForTree
+                              .filter(
+                                (cat) =>
+                                  cat.id !== editingCategoryId &&
+                                  (categoryHierarchyMap.get(cat.slug)?.level || 1) === 2
+                              )
+                              .map((cat) => {
+                                const meta = categoryHierarchyMap.get(cat.slug);
+                                return (
+                                  <option key={cat.slug} value={cat.slug}>
+                                    [L2 · {meta?.l1Code}-{meta?.l2Code}]{" "}
+                                    {lang === "bn"
+                                      ? meta?.breadcrumbBn
+                                      : meta?.breadcrumbEn}
+                                  </option>
+                                );
+                              })}
+                          </optgroup>
                         </select>
                       </div>
                       <div>
@@ -5963,6 +6167,68 @@ export function MartAdminClient() {
                         />
                       </div>
                     </div>
+
+                    {/* Live 3-Level Category & SKU Prefix Preview Box */}
+                    {(() => {
+                      const draftCode =
+                        sanitizeSkuCodeToken(catSkuCode) ||
+                        deriveDefaultCategorySkuCode(
+                          catNameEn || catNameBn || "GEN",
+                          catSlug || slugifyCategory(catNameEn || catNameBn),
+                          categories
+                            .filter((c) => c.id !== editingCategoryId)
+                            .map((c) => resolveCategorySkuCode(c))
+                        );
+                      const parentMeta = catParentSlug
+                        ? categoryHierarchyMap.get(catParentSlug)
+                        : undefined;
+                      const resultingLevel: 1 | 2 | 3 = !parentMeta
+                        ? 1
+                        : parentMeta.level === 1
+                        ? 2
+                        : 3;
+                      const previewL1 =
+                        resultingLevel === 1
+                          ? draftCode
+                          : parentMeta?.l1Code || "GEN";
+                      const previewL2 =
+                        resultingLevel === 1
+                          ? "GEN"
+                          : resultingLevel === 2
+                          ? draftCode
+                          : parentMeta?.l2Code || "GEN";
+                      const previewL3 = resultingLevel === 3 ? draftCode : "GEN";
+
+                      return (
+                        <div className="rounded-xl border border-brand-200 bg-brand-50/60 px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="rounded bg-[#0B5336] px-2 py-0.5 font-mono text-[10px] font-bold text-white shrink-0">
+                              Level {resultingLevel} ·{" "}
+                              {resultingLevel === 1
+                                ? "Main Category"
+                                : resultingLevel === 2
+                                ? "Sub-Category"
+                                : "Child Category"}
+                            </span>
+                            <span className="text-slate-700 truncate font-medium">
+                              {parentMeta
+                                ? `${
+                                    lang === "bn"
+                                      ? parentMeta.breadcrumbBn
+                                      : parentMeta.breadcrumbEn
+                                  } › `
+                                : ""}
+                              <strong className="text-[#0B5336]">
+                                {catNameEn || catNameBn || (lang === "bn" ? "নতুন ক্যাটাগরি" : "New Category")}
+                              </strong>
+                            </span>
+                          </div>
+                          <span className="font-mono text-[11px] font-bold text-[#0B5336] bg-white border border-brand-200 rounded-lg px-2 py-0.5 shrink-0">
+                            XM-{previewL1}-{previewL2}-{previewL3}-0001
+                          </span>
+                        </div>
+                      );
+                    })()}
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
@@ -6067,28 +6333,70 @@ export function MartAdminClient() {
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-                  <div className="px-4 sm:px-6 py-4 border-b border-slate-200">
-                    <h3 className="font-display text-sm font-bold text-slate-900">
-                      {t.admin.taxonomy.catListTitle} ({toLocalizedDigits(categories.length, lang)})
-                    </h3>
+                  <div className="px-4 sm:px-6 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h3 className="font-display text-sm font-bold text-slate-900">
+                        {t.admin.taxonomy.catListTitle} ({toLocalizedDigits(categories.length, lang)})
+                      </h3>
+                      <p className="text-[11px] text-slate-500">
+                        {lang === "bn"
+                          ? "৩-লেভেল ট্রি (L1 Main ➔ L2 Sub ➔ L3 Child) ও SKU প্রিফিক্স"
+                          : "3-Level Hierarchy (L1 Main ➔ L2 Sub ➔ L3 Child) & SKU Prefix"}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={seedingStarterCats}
+                      onClick={handleSeedStarterThreeLevelCategories}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-brand-200 bg-brand-50 px-3 py-1.5 text-xs font-semibold text-[#0B5336] hover:bg-[#0B5336] hover:text-white transition-colors disabled:opacity-50"
+                    >
+                      <Layers className="h-3.5 w-3.5" />
+                      <span>
+                        {seedingStarterCats
+                          ? lang === "bn"
+                            ? "লোড হচ্ছে..."
+                            : "Seeding 3-Level Tree..."
+                          : lang === "bn"
+                          ? "ডিফল্ট ৩-লেভেল ক্যাটাগরি লোড করুন"
+                          : "Load Starter 3-Level Tree"}
+                      </span>
+                    </button>
                   </div>
                   <div className="divide-y divide-slate-100">
-                    {categories.length === 0 ? (
-                      <div className="p-6 text-center text-xs text-slate-500">
-                        {t.admin.taxonomy.catEmpty}
+                    {sortedCategoriesForTree.length === 0 ? (
+                      <div className="p-6 text-center space-y-3">
+                        <p className="text-xs text-slate-500">{t.admin.taxonomy.catEmpty}</p>
+                        <button
+                          type="button"
+                          disabled={seedingStarterCats}
+                          onClick={handleSeedStarterThreeLevelCategories}
+                          className="btn-primary px-4 py-2 text-xs gap-1.5"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          <span>
+                            {lang === "bn"
+                              ? "১-ক্লিকে স্ট্যান্ডার্ড ৩-লেভেল ক্যাটাগরি ট্রি যুক্ত করুন"
+                              : "1-Click Seed Standard 3-Level Category Tree"}
+                          </span>
+                        </button>
                       </div>
                     ) : (
-                      categories.map((cat) => {
-                        const parent = cat.parentSlug
-                          ? categoryMap.get(cat.parentSlug)
-                          : null;
+                      sortedCategoriesForTree.map((cat) => {
+                        const meta = categoryHierarchyMap.get(cat.slug);
+                        const lvl = meta?.level || 1;
                         return (
                           <div
                             key={cat.id}
-                            className="px-4 sm:px-6 py-3 flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 text-xs"
+                            className={`px-4 sm:px-6 py-3 flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 text-xs ${
+                              lvl === 2
+                                ? "bg-slate-50/60 pl-7 sm:pl-10"
+                                : lvl === 3
+                                ? "bg-slate-50/90 pl-11 sm:pl-16"
+                                : "bg-white"
+                            }`}
                           >
                             <div className="flex items-center gap-3 min-w-0">
-                              <div className="h-9 w-9 rounded-lg bg-slate-100 border border-slate-200 overflow-hidden shrink-0">
+                              <div className="h-9 w-9 rounded-lg bg-slate-100 border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center">
                                 {cat.imageUrl ? (
                                   // eslint-disable-next-line @next/next/no-img-element
                                   <img
@@ -6097,27 +6405,41 @@ export function MartAdminClient() {
                                     referrerPolicy="no-referrer"
                                     className="h-full w-full object-cover"
                                   />
-                                ) : null}
+                                ) : (
+                                  <span className="font-mono text-[10px] font-bold text-[#0B5336]">
+                                    {resolveCategorySkuCode(cat)}
+                                  </span>
+                                )}
                               </div>
                               <div className="min-w-0">
-                                <div className="font-semibold text-slate-900 truncate flex items-center gap-1.5">
+                                <div className="font-semibold text-slate-900 truncate flex flex-wrap items-center gap-1.5">
+                                  <span
+                                    className={`shrink-0 rounded px-1.5 py-0.2 font-mono text-[10px] font-bold ${
+                                      lvl === 1
+                                        ? "bg-slate-900 text-white"
+                                        : lvl === 2
+                                        ? "bg-amber-100 text-amber-900 border border-amber-200"
+                                        : "bg-brand-50 text-[#0B5336] border border-brand-200"
+                                    }`}
+                                  >
+                                    {lvl === 1 ? "L1 Main" : lvl === 2 ? "↳ L2 Sub" : "↳↳ L3 Child"}
+                                  </span>
                                   <span className="truncate">
                                     {cat.nameEn}
                                     {cat.nameBn ? ` · ${cat.nameBn}` : ""}
                                   </span>
-                                  <span className="shrink-0 rounded bg-brand-50 border border-brand-200 px-1.5 py-0.5 font-mono text-[10px] font-bold text-[#0B5336]">
+                                  <span className="shrink-0 rounded bg-brand-50 border border-brand-200 px-1.5 py-0.2 font-mono text-[10px] font-bold text-[#0B5336]">
                                     {resolveCategorySkuCode(cat)}
                                   </span>
                                 </div>
-                                <div className="font-mono text-[11px] text-slate-400 truncate tabular-nums">
-                                  /{cat.slug}
-                                  {parent
-                                    ? ` · ${t.admin.taxonomy.catParentPrefix} ${pickLocalized(
-                                        parent.nameEn,
-                                        parent.nameBn,
-                                        lang
-                                      )}`
-                                    : ""}
+                                <div className="font-mono text-[11px] text-slate-500 truncate tabular-nums mt-0.5">
+                                  <span className="text-[#0B5336] font-semibold">
+                                    XM-{meta?.codePath || "GEN-GEN-GEN"}-XXXX
+                                  </span>
+                                  {" · "}
+                                  <span>
+                                    {lang === "bn" ? meta?.breadcrumbBn : meta?.breadcrumbEn}
+                                  </span>
                                   {` · ${toLocalizedDigits(
                                     categoryProductCounts.get(cat.slug) || 0,
                                     lang
@@ -6125,7 +6447,29 @@ export function MartAdminClient() {
                                 </div>
                               </div>
                             </div>
-                            <div className="flex items-center gap-2 shrink-0">
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {lvl < 3 && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    resetCategoryForm();
+                                    setCatParentSlug(cat.slug);
+                                    scrollWorkspaceToTop();
+                                  }}
+                                  title={
+                                    lvl === 1
+                                      ? lang === "bn"
+                                        ? "এর অধীনে Level 2 Sub-Category যোগ করুন"
+                                        : "Add Level 2 Sub-Category under this Main Category"
+                                      : lang === "bn"
+                                      ? "এর অধীনে Level 3 Child Category যোগ করুন"
+                                      : "Add Level 3 Child Category under this Sub-Category"
+                                  }
+                                  className="rounded-lg border border-brand-200 bg-brand-50 px-2 py-1 text-[10px] font-semibold text-[#0B5336] hover:bg-[#0B5336] hover:text-white transition-colors whitespace-nowrap"
+                                >
+                                  + L{lvl + 1}
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={() => handleToggleCategory(cat)}

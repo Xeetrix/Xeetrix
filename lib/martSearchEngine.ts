@@ -2,8 +2,10 @@ import {
   MartCategory,
   MartLabel,
   MartProduct,
+  parseProductAttributes,
   parseProductColors,
   parseProductSizes,
+  parseProductTags,
   parseProductVariants,
 } from "./martApi";
 import { MartLang, parseCsvSlugs, pickLocalized } from "./martI18n";

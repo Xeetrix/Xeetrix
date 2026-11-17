@@ -48,9 +48,11 @@ import {
   findMartProductBySlugOrSku,
   findMatchingVariant,
   getCachedMartPublicSnapshot,
+  getCategoryHierarchyMeta,
   MART_CONTACT_EMAIL,
   MART_CONTACT_PHONE,
   MART_CONTACT_TEL,
+  MART_GENDER_OPTIONS,
   MartApiError,
   MartCategory,
   MartDeliveryArea,
@@ -65,8 +67,10 @@ import {
   normalizeMartImageUrl,
   parseGalleryUrls,
   parseOrderItems,
+  parseProductAttributes,
   parseProductColors,
   parseProductSizes,
+  parseProductTags,
   parseProductVariants,
   parseVariationMatrix,
   placeMartOrder,
@@ -229,10 +233,17 @@ export function MartStorefront({
   const [settings, setSettings] = useState<MartSettings>(DEFAULT_MART_SETTINGS);
   const [loading, setLoading] = useState(true);
 
-  // Multi-Category, Label & Search Filter State
+  // Multi-Category, Label, Smart Attribute, Tag & Price Filter State
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
+  const [selectedGenders, setSelectedGenders] = useState<string[]>([]);
+  const [selectedAgeGroups, setSelectedAgeGroups] = useState<string[]>([]);
+  const [selectedMaterials, setSelectedMaterials] = useState<string[]>([]);
+  const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [minPriceInput, setMinPriceInput] = useState("");
+  const [maxPriceInput, setMaxPriceInput] = useState("");
   const [sortBy, setSortBy] = useState<SortOption>("featured");
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
   const categoryRailRef = useRef<HTMLDivElement>(null);
@@ -585,15 +596,6 @@ export function MartStorefront({
     return visibleCategories.find((c) => c.slug === slug) || categoryMap.get(slug) || null;
   }, [selectedCategories, visibleCategories, categoryMap]);
 
-  const activeCategoryParent = useMemo(() => {
-    if (!activeCategoryObj?.parentSlug) return null;
-    return (
-      visibleCategories.find((c) => c.slug === activeCategoryObj.parentSlug) ||
-      categoryMap.get(activeCategoryObj.parentSlug) ||
-      null
-    );
-  }, [activeCategoryObj, visibleCategories, categoryMap]);
-
   const activeCategoryChildren = useMemo(() => {
     if (!activeCategoryObj) return [];
     return childCategoriesByParent.get(activeCategoryObj.slug) || [];
@@ -632,11 +634,52 @@ export function MartStorefront({
     );
   }
 
+  function toggleStringFilter(
+    setter: React.Dispatch<React.SetStateAction<string[]>>,
+    value: string
+  ) {
+    setter((prev) =>
+      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
+    );
+  }
+
   function resetAllFilters() {
     setSelectedCategories([]);
     setSelectedLabels([]);
+    setSelectedGenders([]);
+    setSelectedAgeGroups([]);
+    setSelectedMaterials([]);
+    setSelectedBrands([]);
+    setSelectedTags([]);
+    setMinPriceInput("");
+    setMaxPriceInput("");
     setSearchQuery("");
   }
+
+  const availableAttributeFacets = useMemo(() => {
+    const genders = new Set<string>();
+    const ageGroups = new Set<string>();
+    const materials = new Set<string>();
+    const brands = new Set<string>();
+    const tags = new Set<string>();
+
+    products.forEach((p) => {
+      const attrs = parseProductAttributes(p.attributesJson);
+      if (attrs.gender) genders.add(attrs.gender);
+      if (attrs.ageGroup) ageGroups.add(attrs.ageGroup);
+      if (attrs.material) materials.add(attrs.material);
+      if (attrs.brand) brands.add(attrs.brand);
+      parseProductTags(p.tags).forEach((tVal) => tags.add(tVal));
+    });
+
+    return {
+      genders: MART_GENDER_OPTIONS.filter((g) => genders.has(g.value)),
+      ageGroups: Array.from(ageGroups),
+      materials: Array.from(materials),
+      brands: Array.from(brands),
+      tags: Array.from(tags),
+    };
+  }, [products]);
 
   const focusedProduct = useMemo(
     () => findMartProductBySlugOrSku(products, focusedProductSlug),
@@ -749,10 +792,14 @@ export function MartStorefront({
   const filteredProducts = useMemo(() => {
     const hasSearch = searchQuery.trim().length > 0;
     const baseList = hasSearch ? smartSearchBundle.matchedProducts : products;
+    const minPrice = minPriceInput.trim() !== "" ? Number(minPriceInput) : null;
+    const maxPrice = maxPriceInput.trim() !== "" ? Number(maxPriceInput) : null;
 
     const list = baseList.filter((p) => {
       const prodCats = parseCsvSlugs(p.categories);
       const prodLabels = parseCsvSlugs(p.labels);
+      const prodAttrs = parseProductAttributes(p.attributesJson);
+      const prodTags = parseProductTags(p.tags).map((tVal) => tVal.toLowerCase());
 
       const catOk =
         expandedSelectedCategories.size === 0 ||
@@ -762,7 +809,54 @@ export function MartStorefront({
         selectedLabels.length === 0 ||
         prodLabels.some((lSlug) => selectedLabels.includes(lSlug));
 
-      return catOk && labelOk;
+      const genderOk =
+        selectedGenders.length === 0 ||
+        (prodAttrs.gender !== "" &&
+          (selectedGenders.includes(prodAttrs.gender) ||
+            ((selectedGenders.includes("Boys") || selectedGenders.includes("Girls")) &&
+              prodAttrs.gender === "Unisex")));
+
+      const ageOk =
+        selectedAgeGroups.length === 0 ||
+        (Boolean(prodAttrs.ageGroup) &&
+          selectedAgeGroups.some(
+            (ag) => ag.toLowerCase() === (prodAttrs.ageGroup || "").toLowerCase()
+          ));
+
+      const materialOk =
+        selectedMaterials.length === 0 ||
+        (Boolean(prodAttrs.material) &&
+          selectedMaterials.some(
+            (mat) => mat.toLowerCase() === (prodAttrs.material || "").toLowerCase()
+          ));
+
+      const brandOk =
+        selectedBrands.length === 0 ||
+        (Boolean(prodAttrs.brand) &&
+          selectedBrands.some(
+            (br) => br.toLowerCase() === (prodAttrs.brand || "").toLowerCase()
+          ));
+
+      const tagOk =
+        selectedTags.length === 0 ||
+        selectedTags.some((selTag) => prodTags.includes(selTag.toLowerCase()));
+
+      const minPriceOk =
+        minPrice === null || !Number.isFinite(minPrice) || p.price >= minPrice;
+      const maxPriceOk =
+        maxPrice === null || !Number.isFinite(maxPrice) || p.price <= maxPrice;
+
+      return (
+        catOk &&
+        labelOk &&
+        genderOk &&
+        ageOk &&
+        materialOk &&
+        brandOk &&
+        tagOk &&
+        minPriceOk &&
+        maxPriceOk
+      );
     });
 
     if (sortBy === "price_asc") {
@@ -786,6 +880,13 @@ export function MartStorefront({
     smartSearchBundle.matchedProducts,
     expandedSelectedCategories,
     selectedLabels,
+    selectedGenders,
+    selectedAgeGroups,
+    selectedMaterials,
+    selectedBrands,
+    selectedTags,
+    minPriceInput,
+    maxPriceInput,
     searchQuery,
     sortBy,
   ]);
@@ -1395,8 +1496,17 @@ export function MartStorefront({
     }
   }
 
-  const hasActiveFilters =
-    selectedCategories.length > 0 || selectedLabels.length > 0 || searchQuery.trim().length > 0;
+  const activeFacetCount =
+    selectedCategories.length +
+    selectedLabels.length +
+    selectedGenders.length +
+    selectedAgeGroups.length +
+    selectedMaterials.length +
+    selectedBrands.length +
+    selectedTags.length +
+    (minPriceInput.trim() !== "" || maxPriceInput.trim() !== "" ? 1 : 0);
+
+  const hasActiveFilters = activeFacetCount > 0 || searchQuery.trim().length > 0;
 
   function renderProductCard(product: MartProduct) {
     const hasDiscount =
@@ -2222,15 +2332,99 @@ export function MartStorefront({
                         </div>
                       </div>
 
-                      {/* Full Product Overview & Description Section */}
-                      <div className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-8 space-y-3 shadow-card">
-                        <h2 className="font-display text-lg sm:text-xl font-bold text-slate-900">
-                          {t.quickView.specificationsTitle}
-                        </h2>
-                        <div className="text-sm sm:text-base text-slate-700 leading-relaxed whitespace-pre-line">
-                          {pDesc}
-                        </div>
-                      </div>
+                      {/* Full Product Overview, Structured Attributes & Tags Section */}
+                      {(() => {
+                        const pAttrs = parseProductAttributes(focusedProduct.attributesJson);
+                        const pTags = parseProductTags(focusedProduct.tags);
+                        const genderOpt = MART_GENDER_OPTIONS.find(
+                          (g) => g.value === pAttrs.gender
+                        );
+                        const hasStructuredSpecs = Boolean(
+                          pAttrs.gender || pAttrs.ageGroup || pAttrs.material || pAttrs.brand
+                        );
+
+                        return (
+                          <div className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-8 space-y-5 shadow-card">
+                            <h2 className="font-display text-lg sm:text-xl font-bold text-slate-900">
+                              {t.quickView.specificationsTitle}
+                            </h2>
+
+                            {hasStructuredSpecs && (
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                                {pAttrs.gender && (
+                                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5">
+                                    <div className="text-[11px] font-medium text-slate-500">
+                                      {lang === "bn" ? "লিঙ্গ / ধরন" : "Gender / Fit"}
+                                    </div>
+                                    <div className="text-xs sm:text-sm font-bold text-slate-900 mt-0.5">
+                                      {genderOpt
+                                        ? lang === "bn"
+                                          ? genderOpt.labelBn
+                                          : genderOpt.labelEn
+                                        : pAttrs.gender}
+                                    </div>
+                                  </div>
+                                )}
+                                {pAttrs.ageGroup && (
+                                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5">
+                                    <div className="text-[11px] font-medium text-slate-500">
+                                      {lang === "bn" ? "বয়স সীমা" : "Age Group"}
+                                    </div>
+                                    <div className="text-xs sm:text-sm font-bold text-slate-900 mt-0.5">
+                                      {pAttrs.ageGroup}
+                                    </div>
+                                  </div>
+                                )}
+                                {pAttrs.material && (
+                                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5">
+                                    <div className="text-[11px] font-medium text-slate-500">
+                                      {lang === "bn" ? "ম্যাটেরিয়াল / ফেব্রিক" : "Material / Fabric"}
+                                    </div>
+                                    <div className="text-xs sm:text-sm font-bold text-slate-900 mt-0.5">
+                                      {pAttrs.material}
+                                    </div>
+                                  </div>
+                                )}
+                                {pAttrs.brand && (
+                                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5">
+                                    <div className="text-[11px] font-medium text-slate-500">
+                                      {lang === "bn" ? "ব্র্যান্ড" : "Brand"}
+                                    </div>
+                                    <div className="text-xs sm:text-sm font-bold text-slate-900 mt-0.5">
+                                      {pAttrs.brand}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            <div className="text-sm sm:text-base text-slate-700 leading-relaxed whitespace-pre-line">
+                              {pDesc}
+                            </div>
+
+                            {pTags.length > 0 && (
+                              <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center gap-1.5">
+                                <span className="text-xs font-semibold text-slate-500 mr-1">
+                                  {lang === "bn" ? "ট্যাগসমূহ:" : "Tags:"}
+                                </span>
+                                {pTags.map((tagVal) => (
+                                  <button
+                                    key={tagVal}
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedTags([tagVal]);
+                                      router.push("/mart");
+                                    }}
+                                    className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] transition-colors"
+                                  >
+                                    #{tagVal}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
 
                       {/* Related Products Section */}
                       {relatedProducts.length > 0 && (
@@ -2559,19 +2753,16 @@ export function MartStorefront({
                     type="button"
                     onClick={() => setFilterDrawerOpen((prev) => !prev)}
                     className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 min-h-[34px] ${
-                      filterDrawerOpen || selectedCategories.length > 0 || selectedLabels.length > 0
+                      filterDrawerOpen || activeFacetCount > 0
                         ? "border-[#0B5336] bg-brand-50 text-[#0B5336]"
                         : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
                     }`}
                   >
                     <SlidersHorizontal className="h-3.5 w-3.5" />
                     <span>{lang === "bn" ? "সব ফিল্টার" : "All Filters"}</span>
-                    {(selectedCategories.length + selectedLabels.length > 0) && (
+                    {activeFacetCount > 0 && (
                       <span className="font-mono text-[10px] font-bold rounded bg-[#0B5336] text-white px-1.5 py-0.2 tabular-nums">
-                        {toLocalizedDigits(
-                          selectedCategories.length + selectedLabels.length,
-                          lang
-                        )}
+                        {toLocalizedDigits(activeFacetCount, lang)}
                       </span>
                     )}
                   </button>
@@ -2703,7 +2894,7 @@ export function MartStorefront({
                     </div>
                   </div>
 
-                  {visibleLabels.length > 0 && (
+                      {visibleLabels.length > 0 && (
                     <div className="space-y-1.5">
                       <div className="text-[11px] font-semibold text-slate-500">
                         {t.catalog.labelsTitle}
@@ -2729,6 +2920,195 @@ export function MartStorefront({
                       </div>
                     </div>
                   )}
+
+                  {/* Smart Attributes (Gender, Age Group, Material, Brand) & Price Range Row */}
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3 pt-2 border-t border-slate-200/80">
+                    {/* Price Range Filter */}
+                    <div className="md:col-span-5 space-y-1.5">
+                      <div className="text-[11px] font-semibold text-slate-500">
+                        {lang === "bn" ? "মূল্য সীমা (BDT ৳)" : "Price Range (BDT ৳)"}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <input
+                          type="number"
+                          min={0}
+                          value={minPriceInput}
+                          onChange={(e) => setMinPriceInput(e.target.value)}
+                          placeholder={lang === "bn" ? "সর্বনিম্ন ৳" : "Min ৳"}
+                          className="w-24 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-mono text-slate-800 outline-none focus:border-[#0B5336]"
+                        />
+                        <span className="text-xs text-slate-400">–</span>
+                        <input
+                          type="number"
+                          min={0}
+                          value={maxPriceInput}
+                          onChange={(e) => setMaxPriceInput(e.target.value)}
+                          placeholder={lang === "bn" ? "সর্বোচ্চ ৳" : "Max ৳"}
+                          className="w-24 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-mono text-slate-800 outline-none focus:border-[#0B5336]"
+                        />
+                        {[
+                          { label: lang === "bn" ? "৳৫০০ এর নিচে" : "Under ৳500", min: "", max: "500" },
+                          { label: lang === "bn" ? "৳৫০০–৳১০০০" : "৳500–৳1000", min: "500", max: "1000" },
+                          { label: lang === "bn" ? "৳১০০০+" : "৳1000+", min: "1000", max: "" },
+                        ].map((preset) => {
+                          const isPresetActive =
+                            minPriceInput === preset.min && maxPriceInput === preset.max;
+                          return (
+                            <button
+                              key={preset.label}
+                              type="button"
+                              onClick={() => {
+                                if (isPresetActive) {
+                                  setMinPriceInput("");
+                                  setMaxPriceInput("");
+                                } else {
+                                  setMinPriceInput(preset.min);
+                                  setMaxPriceInput(preset.max);
+                                }
+                              }}
+                              className={`rounded-lg border px-2 py-1 text-[11px] font-mono font-semibold transition-colors ${
+                                isPresetActive
+                                  ? "border-[#0B5336] bg-[#0B5336] text-white"
+                                  : "border-slate-200 bg-white text-slate-600 hover:border-[#0B5336]"
+                              }`}
+                            >
+                              {preset.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Gender Filter */}
+                    {availableAttributeFacets.genders.length > 0 && (
+                      <div className="md:col-span-4 space-y-1.5">
+                        <div className="text-[11px] font-semibold text-slate-500">
+                          {lang === "bn" ? "লিঙ্গ / ধরন (Gender)" : "Gender / Fit"}
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {availableAttributeFacets.genders.map((gOpt) => {
+                            const active = selectedGenders.includes(gOpt.value);
+                            return (
+                              <button
+                                key={gOpt.value}
+                                type="button"
+                                onClick={() =>
+                                  toggleStringFilter(setSelectedGenders, gOpt.value)
+                                }
+                                className={`rounded-lg border px-2.5 py-1 text-xs font-semibold transition-colors ${
+                                  active
+                                    ? "border-[#0B5336] bg-[#0B5336] text-white"
+                                    : "border-slate-200 bg-white text-slate-700 hover:border-[#0B5336]"
+                                }`}
+                              >
+                                {lang === "bn" ? gOpt.labelBn : gOpt.labelEn}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Age Group / Material / Brand Filters */}
+                    {(availableAttributeFacets.ageGroups.length > 0 ||
+                      availableAttributeFacets.materials.length > 0 ||
+                      availableAttributeFacets.brands.length > 0) && (
+                      <div className="md:col-span-3 space-y-1.5">
+                        <div className="text-[11px] font-semibold text-slate-500">
+                          {lang === "bn"
+                            ? "বয়স / ফেব্রিক / ব্র্যান্ড"
+                            : "Age / Material / Brand"}
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {availableAttributeFacets.ageGroups.map((ag) => {
+                            const active = selectedAgeGroups.includes(ag);
+                            return (
+                              <button
+                                key={`ag-${ag}`}
+                                type="button"
+                                onClick={() =>
+                                  toggleStringFilter(setSelectedAgeGroups, ag)
+                                }
+                                className={`rounded-lg border px-2 py-1 text-[11px] font-semibold transition-colors ${
+                                  active
+                                    ? "border-[#0B5336] bg-[#0B5336] text-white"
+                                    : "border-slate-200 bg-white text-slate-700 hover:border-[#0B5336]"
+                                }`}
+                              >
+                                {ag}
+                              </button>
+                            );
+                          })}
+                          {availableAttributeFacets.materials.map((mat) => {
+                            const active = selectedMaterials.includes(mat);
+                            return (
+                              <button
+                                key={`mat-${mat}`}
+                                type="button"
+                                onClick={() =>
+                                  toggleStringFilter(setSelectedMaterials, mat)
+                                }
+                                className={`rounded-lg border px-2 py-1 text-[11px] font-semibold transition-colors ${
+                                  active
+                                    ? "border-[#0B5336] bg-[#0B5336] text-white"
+                                    : "border-slate-200 bg-white text-slate-700 hover:border-[#0B5336]"
+                                }`}
+                              >
+                                {mat}
+                              </button>
+                            );
+                          })}
+                          {availableAttributeFacets.brands.map((br) => {
+                            const active = selectedBrands.includes(br);
+                            return (
+                              <button
+                                key={`br-${br}`}
+                                type="button"
+                                onClick={() =>
+                                  toggleStringFilter(setSelectedBrands, br)
+                                }
+                                className={`rounded-lg border px-2 py-1 text-[11px] font-semibold transition-colors ${
+                                  active
+                                    ? "border-[#0B5336] bg-[#0B5336] text-white"
+                                    : "border-slate-200 bg-white text-slate-700 hover:border-[#0B5336]"
+                                }`}
+                              >
+                                {br}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Smart Product Tags Filter Row */}
+                  {availableAttributeFacets.tags.length > 0 && (
+                    <div className="space-y-1.5 pt-2 border-t border-slate-200/80">
+                      <div className="text-[11px] font-semibold text-slate-500">
+                        {lang === "bn" ? "স্মার্ট প্রোডাক্ট ট্যাগ (Tags)" : "Smart Product Tags"}
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {availableAttributeFacets.tags.map((tagVal) => {
+                          const active = selectedTags.includes(tagVal);
+                          return (
+                            <button
+                              key={tagVal}
+                              type="button"
+                              onClick={() => toggleStringFilter(setSelectedTags, tagVal)}
+                              className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
+                                active
+                                  ? "border-[#0B5336] bg-[#0B5336] text-white"
+                                  : "border-slate-200 bg-white text-slate-700 hover:border-[#0B5336]"
+                              }`}
+                            >
+                              #{tagVal}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -2747,14 +3127,12 @@ export function MartStorefront({
                 lang
               );
               const activeThumb = categoryThumbMap[activeCategoryObj.slug] || "";
-              const parentTitle = activeCategoryParent
-                ? pickLocalized(
-                    activeCategoryParent.nameEn,
-                    activeCategoryParent.nameBn,
-                    lang,
-                    activeCategoryParent.slug
-                  )
-                : "";
+
+              const activeHierarchy = getCategoryHierarchyMeta(
+                activeCategoryObj.slug,
+                visibleCategories
+              );
+              const ancestorChain = activeHierarchy.chain.slice(0, -1);
 
               return (
                 <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-4 shadow-xs">
@@ -2766,20 +3144,33 @@ export function MartStorefront({
                   />
                   <div className="flex-1 min-w-0 space-y-2">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex flex-wrap items-center gap-2 min-w-0">
-                        {activeCategoryParent && (
-                          <button
-                            type="button"
-                            onClick={() => setSelectedCategories([activeCategoryParent.slug])}
-                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] min-h-[30px]"
-                          >
-                            <ArrowLeft className="h-3 w-3" />
-                            <span>{parentTitle}</span>
-                          </button>
-                        )}
+                      <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                        {ancestorChain.map((anc) => {
+                          const ancTitle = pickLocalized(
+                            anc.nameEn,
+                            anc.nameBn,
+                            lang,
+                            anc.slug
+                          );
+                          return (
+                            <React.Fragment key={anc.slug}>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedCategories([anc.slug])}
+                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] min-h-[30px]"
+                              >
+                                <span>{ancTitle}</span>
+                              </button>
+                              <span className="text-slate-400 text-xs font-bold">›</span>
+                            </React.Fragment>
+                          );
+                        })}
                         <h2 className="font-display text-lg sm:text-xl font-bold text-slate-900 truncate">
                           {activeTitle}
                         </h2>
+                        <span className="rounded bg-slate-100 border border-slate-200 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-600">
+                          L{activeHierarchy.level} · {activeHierarchy.codePath}
+                        </span>
                       </div>
                       <span className="font-mono text-xs font-semibold text-[#0B5336] bg-brand-50 border border-brand-200 rounded-lg px-2.5 py-1 tabular-nums whitespace-nowrap">
                         {toLocalizedDigits(filteredProducts.length, lang)}{" "}

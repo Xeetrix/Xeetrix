@@ -808,33 +808,50 @@ export function slugifyCategory(text: string): string {
 }
 
 /**
- * Canonical 3-letter uppercase SKU codes for standard Xeetrix Mart Categories & Sub-Categories.
+ * Canonical 3-letter uppercase SKU codes for standard Xeetrix Mart Level 1, Level 2 & Level 3 Categories.
  */
 const PRESET_CATEGORY_SKU_CODES: Record<string, string> = {
-  // Fashion & Apparel
+  // Level 1: Main Categories
   "fashion-apparel": "FSH",
   "fashion-and-apparel": "FSH",
   fashion: "FSH",
   apparel: "APR",
+  "electronics-gadgets": "ELC",
+  "electronics-and-gadgets": "ELC",
+  electronics: "ELC",
+  gadgets: "GDG",
+  "home-living": "HOM",
+  "home-and-living": "HOM",
+  "mother-baby-care": "MBC",
+  "mother-and-baby-care": "MBC",
+  "sports-outdoors": "SPT",
+  "sports-and-outdoors": "SPT",
+  sports: "SPT",
+  "health-beauty": "HLT",
+  "health-and-beauty": "HLT",
+  beauty: "BTY",
+  "groceries-daily-essentials": "GRC",
+  "groceries-and-daily-essentials": "GRC",
+  groceries: "GRC",
+  "seasonal-items": "SSN",
+  seasonal: "SSN",
+
+  // Level 2: Sub-Categories
+  "kids-baby": "KID",
+  "baby-kids": "KID",
+  "baby-and-kids": "KID",
+  kids: "KID",
+  baby: "BBY",
   "mens-clothing": "MEN",
   "men-clothing": "MEN",
   mens: "MEN",
   "womens-clothing": "WMN",
   "women-clothing": "WMN",
   womens: "WMN",
-  "baby-kids": "KID",
-  "baby-and-kids": "KID",
-  baby: "BBY",
-  kids: "KID",
   "footwear-bags": "FTW",
   "footwear-and-bags": "FTW",
   footwear: "FTW",
   bags: "BAG",
-  // Electronics & Gadgets
-  "electronics-gadgets": "ELC",
-  "electronics-and-gadgets": "ELC",
-  electronics: "ELC",
-  gadgets: "GDG",
   "audio-headphones": "AUD",
   "audio-and-headphones": "AUD",
   audio: "AUD",
@@ -844,25 +861,268 @@ const PRESET_CATEGORY_SKU_CODES: Record<string, string> = {
   watches: "WCH",
   "mobile-accessories": "MOB",
   mobile: "MOB",
-  // Home, Kitchen & Lifestyle
-  "home-living": "HOM",
-  "home-and-living": "HOM",
   "home-decor": "DEC",
   decor: "DEC",
   "kitchen-dining": "KTC",
   "kitchen-and-dining": "KTC",
   kitchen: "KTC",
-  // Essentials, Health & Sports
-  "groceries-daily-essentials": "GRC",
-  "groceries-and-daily-essentials": "GRC",
-  groceries: "GRC",
-  "health-beauty": "HLT",
-  "health-and-beauty": "HLT",
-  beauty: "BTY",
-  "sports-outdoors": "SPT",
-  "sports-and-outdoors": "SPT",
-  sports: "SPT",
+  "toys-games": "TOY",
+  "toys-and-games": "TOY",
+  toys: "TOY",
+  "cricket-football": "CRF",
+  "winter-warmers": "WNT",
+
+  // Level 3: Child Categories
+  "girls-clothing": "GRL",
+  girls: "GRL",
+  "boys-clothing": "BOY",
+  boys: "BOY",
+  "baby-sleepwear-blankets": "BSL",
+  "mens-winter-wear": "MWN",
+  "mens-tshirts-polos": "MTS",
+  "womens-winter-wear": "WWN",
+  "womens-ethnic-wear": "WET",
+  "board-games-puzzles": "BRD",
+  "football-indoor-sports": "FTB",
+  "wireless-earbuds": "EBD",
+  "bluetooth-speakers": "SPK",
+  "smart-watches": "SWC",
+  "fast-chargers-cables": "CHG",
+  "cookware-utensils": "CKW",
+  "bedding-blankets": "BED",
 };
+
+export interface StarterCategorySeedItem {
+  slug: string;
+  parentSlug: string;
+  skuCode: string;
+  nameEn: string;
+  nameBn: string;
+  descriptionEn: string;
+  descriptionBn: string;
+  sortOrder: number;
+}
+
+/**
+ * Standard 3-Level Category Tree (Main > Sub > Child) for 1-click bootstrapping in Admin Panel.
+ */
+export const STARTER_THREE_LEVEL_CATEGORIES: StarterCategorySeedItem[] = [
+  // LEVEL 1: MAIN CATEGORIES
+  {
+    slug: "fashion-apparel",
+    parentSlug: "",
+    skuCode: "FSH",
+    nameEn: "Fashion & Apparel",
+    nameBn: "ফ্যাশন ও পোশাক",
+    descriptionEn: "Complete wardrobe collection for kids, men, and women.",
+    descriptionBn: "শিশু, পুরুষ ও নারীদের সব ধরনের আধুনিক পোশাক ও ফ্যাশন কালেকশন।",
+    sortOrder: 10,
+  },
+  {
+    slug: "electronics-gadgets",
+    parentSlug: "",
+    skuCode: "ELC",
+    nameEn: "Electronics & Gadgets",
+    nameBn: "ইলেকট্রনিক্স ও গ্যাজেট",
+    descriptionEn: "Authentic audio gear, smart wearables, and mobile accessories.",
+    descriptionBn: "অরিজিনাল অডিও গিয়ার, স্মার্ট ওয়্যারেবল এবং মোবাইল অ্যাক্সেসরিজ।",
+    sortOrder: 20,
+  },
+  {
+    slug: "mother-baby-care",
+    parentSlug: "",
+    skuCode: "MBC",
+    nameEn: "Mother & Baby Care",
+    nameBn: "মা ও শিশু যত্ন",
+    descriptionEn: "Safe baby essentials, toys, and educational games.",
+    descriptionBn: "নবজাতক ও শিশুদের প্রয়োজনীয় সামগ্রী, খেলনা ও শিক্ষণীয় গেমস।",
+    sortOrder: 30,
+  },
+  {
+    slug: "home-living",
+    parentSlug: "",
+    skuCode: "HOM",
+    nameEn: "Home & Living",
+    nameBn: "হোম ও লিভিং",
+    descriptionEn: "Kitchen essentials, bedding, and modern home decor.",
+    descriptionBn: "কিচেন সামগ্রী, বেডিং এবং আধুনিক ঘর সাজানোর পণ্য।",
+    sortOrder: 40,
+  },
+  {
+    slug: "sports-outdoors",
+    parentSlug: "",
+    skuCode: "SPT",
+    nameEn: "Sports & Outdoors",
+    nameBn: "স্পোর্টস ও আউটডোর",
+    descriptionEn: "Outdoor sports gear, indoor games, and fitness accessories.",
+    descriptionBn: "আউটডোর স্পোর্টস গিয়ার, ইনডোর গেমস এবং ফিটনেস সামগ্রী।",
+    sortOrder: 50,
+  },
+
+  // LEVEL 2: SUB-CATEGORIES
+  {
+    slug: "kids-baby",
+    parentSlug: "fashion-apparel",
+    skuCode: "KID",
+    nameEn: "Kids & Baby",
+    nameBn: "কিডস ও বেবি পোশাক",
+    descriptionEn: "Comfortable everyday and winter clothing for boys, girls, and infants.",
+    descriptionBn: "ছেলে ও মেয়ে বাচ্চাদের আরামদায়ক প্রতিদিনের ও শীতের পোশাক।",
+    sortOrder: 11,
+  },
+  {
+    slug: "mens-clothing",
+    parentSlug: "fashion-apparel",
+    skuCode: "MEN",
+    nameEn: "Men's Clothing",
+    nameBn: "পুরুষদের পোশাক",
+    descriptionEn: "Jackets, hoodies, t-shirts, and casual wear for men.",
+    descriptionBn: "পুরুষদের জ্যাকেট, হুডি, টি-শার্ট ও ক্যাজুয়াল পোশাক।",
+    sortOrder: 12,
+  },
+  {
+    slug: "womens-clothing",
+    parentSlug: "fashion-apparel",
+    skuCode: "WMN",
+    nameEn: "Women's Clothing",
+    nameBn: "নারীদের পোশাক",
+    descriptionEn: "Overcoats, cardigans, and modest fashion for women.",
+    descriptionBn: "নারীদের ওভারকোট, কার্ডিগান ও আধুনিক ফ্যাশন পোশাক।",
+    sortOrder: 13,
+  },
+  {
+    slug: "audio-headphones",
+    parentSlug: "electronics-gadgets",
+    skuCode: "AUD",
+    nameEn: "Audio & Headphones",
+    nameBn: "অডিও ও হেডফোন",
+    descriptionEn: "TWS earbuds, neckbands, and wireless speakers.",
+    descriptionBn: "টিডব্লিউএস ইয়ারবাড, নেকব্যান্ড এবং ওয়্যারলেস স্পিকার।",
+    sortOrder: 21,
+  },
+  {
+    slug: "smart-wearables",
+    parentSlug: "electronics-gadgets",
+    skuCode: "WCH",
+    nameEn: "Smart Wearables",
+    nameBn: "স্মার্ট ওয়্যারেবল",
+    descriptionEn: "Smart watches and fitness bands.",
+    descriptionBn: "স্মার্ট ওয়াচ এবং ফিটনেস ট্র্যাকার।",
+    sortOrder: 22,
+  },
+  {
+    slug: "toys-games",
+    parentSlug: "mother-baby-care",
+    skuCode: "TOY",
+    nameEn: "Toys & Games",
+    nameBn: "খেলনা ও গেমস",
+    descriptionEn: "Board games, puzzles, and learning toys for kids.",
+    descriptionBn: "শিশুদের বোর্ড গেম, পাজল ও শিক্ষণীয় খেলনা।",
+    sortOrder: 31,
+  },
+  {
+    slug: "kitchen-dining",
+    parentSlug: "home-living",
+    skuCode: "KTC",
+    nameEn: "Kitchen & Dining",
+    nameBn: "কিচেন ও ডাইনিং",
+    descriptionEn: "Smart kitchen tools, cookware, and organizers.",
+    descriptionBn: "স্মার্ট কিচেন টুলস, কুকওয়্যার ও অর্গানাইজার।",
+    sortOrder: 41,
+  },
+  {
+    slug: "cricket-football",
+    parentSlug: "sports-outdoors",
+    skuCode: "CRF",
+    nameEn: "Cricket & Football",
+    nameBn: "ক্রিকেট ও ফুটবল",
+    descriptionEn: "Team sports equipment and indoor recreation.",
+    descriptionBn: "টিম স্পোর্টস সামগ্রী এবং ইনডোর গেমস।",
+    sortOrder: 51,
+  },
+
+  // LEVEL 3: CHILD CATEGORIES
+  {
+    slug: "girls-clothing",
+    parentSlug: "kids-baby",
+    skuCode: "GRL",
+    nameEn: "Girls' Clothing",
+    nameBn: "মেয়ে বাচ্চাদের পোশাক",
+    descriptionEn: "Overcoats, hoodies, frocks, and winter sets for girls.",
+    descriptionBn: "মেয়ে বাচ্চাদের ওভারকোট, হুডি, ফ্রক এবং শীতের পোশাক।",
+    sortOrder: 111,
+  },
+  {
+    slug: "boys-clothing",
+    parentSlug: "kids-baby",
+    skuCode: "BOY",
+    nameEn: "Boys' Clothing",
+    nameBn: "ছেলে বাচ্চাদের পোশাক",
+    descriptionEn: "Jackets, hoodies, sweatshirts, and sets for boys.",
+    descriptionBn: "ছেলে বাচ্চাদের জ্যাকেট, হুডি, সোয়েটশার্ট ও সেট।",
+    sortOrder: 112,
+  },
+  {
+    slug: "baby-sleepwear-blankets",
+    parentSlug: "kids-baby",
+    skuCode: "BSL",
+    nameEn: "Baby Sleepwear & Blankets",
+    nameBn: "বেবি স্লিপিং ব্যাগ ও ব্ল্যাঙ্কেট",
+    descriptionEn: "Plush baby sleeping bags, swaddles, and soft blankets.",
+    descriptionBn: "নবজাতক ও ছোট বাচ্চাদের স্লিপিং ব্যাগ, সোয়াডল ও নরম কম্বল।",
+    sortOrder: 113,
+  },
+  {
+    slug: "mens-winter-wear",
+    parentSlug: "mens-clothing",
+    skuCode: "MWN",
+    nameEn: "Men's Winter Wear",
+    nameBn: "পুরুষদের শীতের পোশাক",
+    descriptionEn: "Premium hoodies, sweatshirts, and jackets for men.",
+    descriptionBn: "পুরুষদের প্রিমিয়াম হুডি, সোয়েটশার্ট এবং জ্যাকেট।",
+    sortOrder: 121,
+  },
+  {
+    slug: "womens-winter-wear",
+    parentSlug: "womens-clothing",
+    skuCode: "WWN",
+    nameEn: "Women's Winter Wear",
+    nameBn: "নারীদের শীতের পোশাক",
+    descriptionEn: "Stylish winter overcoats, shawls, and cardigans.",
+    descriptionBn: "নারীদের স্টাইলিশ ওভারকোট, শাল ও কার্ডিগান।",
+    sortOrder: 131,
+  },
+  {
+    slug: "wireless-earbuds",
+    parentSlug: "audio-headphones",
+    skuCode: "EBD",
+    nameEn: "Wireless Earbuds",
+    nameBn: "ওয়্যারলেস ইয়ারবাড",
+    descriptionEn: "Noise-cancelling TWS earbuds and Bluetooth headsets.",
+    descriptionBn: "নয়েজ-ক্যান্সেলিং টিডব্লিউএস ইয়ারবাড ও ব্লুটুথ হেডসেট।",
+    sortOrder: 211,
+  },
+  {
+    slug: "board-games-puzzles",
+    parentSlug: "toys-games",
+    skuCode: "BRD",
+    nameEn: "Board Games & Puzzles",
+    nameBn: "বোর্ড গেম ও পাজল",
+    descriptionEn: "Family board games, brain teasers, and educational puzzles.",
+    descriptionBn: "ফ্যামিলি বোর্ড গেম, ব্রেইন টিজার এবং শিক্ষণীয় পাজল।",
+    sortOrder: 311,
+  },
+  {
+    slug: "football-indoor-sports",
+    parentSlug: "cricket-football",
+    skuCode: "FTB",
+    nameEn: "Football & Indoor Sports",
+    nameBn: "ফুটবল ও ইনডোর স্পোর্টস",
+    descriptionEn: "Footballs, jerseys, and indoor tabletop sports.",
+    descriptionBn: "ফুটবল, জার্সি এবং ইনডোর টেবিলটপ স্পোর্টস সামগ্রী।",
+    sortOrder: 511,
+  },
+];
 
 const PRESET_COLOR_SKU_CODES: Record<string, string> = {
   black: "BLK",
@@ -1029,19 +1289,104 @@ export function resolveCategorySkuCode(cat?: Partial<MartCategory> | null): stri
   return deriveDefaultCategorySkuCode(cat.nameEn || cat.nameBn, cat.slug);
 }
 
+export interface MartCategoryHierarchyMeta {
+  level: 1 | 2 | 3;
+  chain: MartCategory[]; // [L1] or [L1, L2] or [L1, L2, L3]
+  l1?: MartCategory;
+  l2?: MartCategory;
+  l3?: MartCategory;
+  l1Code: string;
+  l2Code: string;
+  l3Code: string;
+  codePath: string; // e.g. "FSH-KID-GRL" or "FSH-KID-GEN"
+  breadcrumbEn: string;
+  breadcrumbBn: string;
+}
+
 /**
- * Resolves the [CAT] and [SUB] 3-letter codes from a product's selected category slugs:
- * - Uses the first (primary) selected category.
- * - If the primary selected category is a Sub-Category (has `parentSlug`), [CAT] is the Parent's code and [SUB] is the Sub-Category's code.
- * - If the primary selected category is a Parent Category:
- *     - If a child Sub-Category under that Parent is also selected, [CAT] is Parent and [SUB] is that first matching child Sub-Category.
- *     - Otherwise, [CAT] is the Parent's code and [SUB] is "GEN" (e.g., XM-FSH-GEN-0001).
- * - If no category is selected, returns { catCode: "GEN", subCode: "GEN" }.
+ * Resolves the 3-level ancestry chain (`Level 1 Main > Level 2 Sub > Level 3 Child`) for any category slug.
+ */
+export function getCategoryHierarchyMeta(
+  slug: string,
+  categories: MartCategory[]
+): MartCategoryHierarchyMeta {
+  const catMap = new Map<string, MartCategory>();
+  categories.forEach((c) => {
+    if (c.slug) catMap.set(c.slug, c);
+  });
+
+  const target = catMap.get(slug.trim());
+  if (!target) {
+    return {
+      level: 1,
+      chain: [],
+      l1Code: "GEN",
+      l2Code: "GEN",
+      l3Code: "GEN",
+      codePath: "GEN-GEN-GEN",
+      breadcrumbEn: slug || "General",
+      breadcrumbBn: slug || "সাধারণ",
+    };
+  }
+
+  const chain: MartCategory[] = [target];
+  const visited = new Set<string>([target.slug]);
+  let curr = target;
+
+  while (curr.parentSlug && catMap.has(curr.parentSlug) && !visited.has(curr.parentSlug) && chain.length < 3) {
+    const parent = catMap.get(curr.parentSlug)!;
+    chain.unshift(parent);
+    visited.add(parent.slug);
+    curr = parent;
+  }
+
+  const level = (Math.min(3, Math.max(1, chain.length)) as 1 | 2 | 3);
+  const l1 = chain[0];
+  const l2 = chain[1];
+  const l3 = chain[2];
+
+  const l1Code = l1 ? resolveCategorySkuCode(l1) : "GEN";
+  const l2Code = l2 ? resolveCategorySkuCode(l2) : "GEN";
+  const l3Code = l3 ? resolveCategorySkuCode(l3) : "GEN";
+
+  return {
+    level,
+    chain,
+    l1,
+    l2,
+    l3,
+    l1Code,
+    l2Code,
+    l3Code,
+    codePath: `${l1Code}-${l2Code}-${l3Code}`,
+    breadcrumbEn: chain.map((c) => c.nameEn || c.nameBn || c.slug).join(" › "),
+    breadcrumbBn: chain.map((c) => c.nameBn || c.nameEn || c.slug).join(" › "),
+  };
+}
+
+/**
+ * Resolves the 3-level `[L1]-[L2]-[L3]` 3-letter codes from a product's selected category slugs:
+ * - Uses the first (primary) selected category (`selectedCategorySlugs[0]`).
+ * - If the primary selected category is Level 3 (Child): uses its exact L1, L2, L3 codes (e.g., `FSH-KID-GRL`).
+ * - If the primary selected category is Level 2 (Sub): checks if one of its Level 3 children is also selected; otherwise L3 = `GEN` (`FSH-KID-GEN`).
+ * - If the primary selected category is Level 1 (Main): checks if a Level 3 or Level 2 descendant under it is also selected; otherwise missing levels default to `GEN` (`FSH-GEN-GEN`).
  */
 export function resolvePrimaryCatSubSkuCodes(
   selectedCategorySlugs: string[],
   categories: MartCategory[]
 ): {
+  l1Code: string;
+  l2Code: string;
+  l3Code: string;
+  l1Slug: string;
+  l2Slug: string;
+  l3Slug: string;
+  l1NameEn: string;
+  l2NameEn: string;
+  l3NameEn: string;
+  breadcrumbEn: string;
+  breadcrumbBn: string;
+  // Backward-compatible aliases
   catCode: string;
   subCode: string;
   catSlug: string;
@@ -1060,6 +1405,17 @@ export function resolvePrimaryCatSubSkuCodes(
 
   if (validSlugs.length === 0) {
     return {
+      l1Code: "GEN",
+      l2Code: "GEN",
+      l3Code: "GEN",
+      l1Slug: "",
+      l2Slug: "",
+      l3Slug: "",
+      l1NameEn: "General (GEN)",
+      l2NameEn: "General (GEN)",
+      l3NameEn: "General (GEN)",
+      breadcrumbEn: "General (GEN › GEN › GEN)",
+      breadcrumbBn: "সাধারণ (GEN › GEN › GEN)",
       catCode: "GEN",
       subCode: "GEN",
       catSlug: "",
@@ -1069,57 +1425,77 @@ export function resolvePrimaryCatSubSkuCodes(
     };
   }
 
-  const firstCat = catMap.get(validSlugs[0])!;
+  let effectiveMeta = getCategoryHierarchyMeta(validSlugs[0], categories);
 
-  // Case 1: First selected item is a Sub-Category with a valid Parent Category
-  if (firstCat.parentSlug && catMap.has(firstCat.parentSlug)) {
-    const parentCat = catMap.get(firstCat.parentSlug)!;
-    return {
-      catCode: resolveCategorySkuCode(parentCat),
-      subCode: resolveCategorySkuCode(firstCat),
-      catSlug: parentCat.slug,
-      subSlug: firstCat.slug,
-      catNameEn: parentCat.nameEn || parentCat.slug,
-      subNameEn: firstCat.nameEn || firstCat.slug,
-    };
+  // If the primary selected category is Level 2, check if one of its Level 3 children is also selected
+  if (effectiveMeta.level === 2 && effectiveMeta.l2) {
+    const l2Slug = effectiveMeta.l2.slug;
+    const matchingL3Slug = validSlugs.find((s) => {
+      const m = getCategoryHierarchyMeta(s, categories);
+      return m.level === 3 && m.l2?.slug === l2Slug;
+    });
+    if (matchingL3Slug) {
+      effectiveMeta = getCategoryHierarchyMeta(matchingL3Slug, categories);
+    }
+  } else if (effectiveMeta.level === 1 && effectiveMeta.l1) {
+    // If the primary selected category is Level 1, check if a Level 3 or Level 2 descendant under it is also selected
+    const l1Slug = effectiveMeta.l1.slug;
+    const matchingL3Slug = validSlugs.find((s) => {
+      const m = getCategoryHierarchyMeta(s, categories);
+      return m.level === 3 && m.l1?.slug === l1Slug;
+    });
+    if (matchingL3Slug) {
+      effectiveMeta = getCategoryHierarchyMeta(matchingL3Slug, categories);
+    } else {
+      const matchingL2Slug = validSlugs.find((s) => {
+        const m = getCategoryHierarchyMeta(s, categories);
+        return m.level === 2 && m.l1?.slug === l1Slug;
+      });
+      if (matchingL2Slug) {
+        effectiveMeta = getCategoryHierarchyMeta(matchingL2Slug, categories);
+      }
+    }
   }
 
-  // Case 2: First selected item is a Parent Category — check if one of its Sub-Categories is also selected
-  const matchingChildSlug = validSlugs.find((slug) => {
-    const candidate = catMap.get(slug);
-    return candidate && candidate.parentSlug === firstCat.slug;
-  });
+  const l1NameEn = effectiveMeta.l1
+    ? effectiveMeta.l1.nameEn || effectiveMeta.l1.slug
+    : "General (GEN)";
+  const l2NameEn = effectiveMeta.l2
+    ? effectiveMeta.l2.nameEn || effectiveMeta.l2.slug
+    : "General (GEN)";
+  const l3NameEn = effectiveMeta.l3
+    ? effectiveMeta.l3.nameEn || effectiveMeta.l3.slug
+    : "General (GEN)";
 
-  if (matchingChildSlug) {
-    const childCat = catMap.get(matchingChildSlug)!;
-    return {
-      catCode: resolveCategorySkuCode(firstCat),
-      subCode: resolveCategorySkuCode(childCat),
-      catSlug: firstCat.slug,
-      subSlug: childCat.slug,
-      catNameEn: firstCat.nameEn || firstCat.slug,
-      subNameEn: childCat.nameEn || childCat.slug,
-    };
-  }
-
-  // Case 3: Only a Parent Category is selected -> [SUB] = "GEN" (e.g. XM-FSH-GEN-0001)
   return {
-    catCode: resolveCategorySkuCode(firstCat),
-    subCode: "GEN",
-    catSlug: firstCat.slug,
-    subSlug: "",
-    catNameEn: firstCat.nameEn || firstCat.slug,
-    subNameEn: "General (GEN)",
+    l1Code: effectiveMeta.l1Code,
+    l2Code: effectiveMeta.l2Code,
+    l3Code: effectiveMeta.l3Code,
+    l1Slug: effectiveMeta.l1?.slug || "",
+    l2Slug: effectiveMeta.l2?.slug || "",
+    l3Slug: effectiveMeta.l3?.slug || "",
+    l1NameEn,
+    l2NameEn,
+    l3NameEn,
+    breadcrumbEn: effectiveMeta.breadcrumbEn,
+    breadcrumbBn: effectiveMeta.breadcrumbBn,
+    catCode: effectiveMeta.l1Code,
+    subCode: `${effectiveMeta.l2Code}-${effectiveMeta.l3Code}`,
+    catSlug: effectiveMeta.l1?.slug || "",
+    subSlug: effectiveMeta.l3?.slug || effectiveMeta.l2?.slug || "",
+    catNameEn: l1NameEn,
+    subNameEn: effectiveMeta.l3 ? `${l2NameEn} › ${l3NameEn}` : l2NameEn,
   };
 }
 
 /**
- * Computes the next sequential 4-digit SKU (`XM-[CAT]-[SUB]-[SERIAL]`) using the strict MAX + 1 rule.
+ * Computes the next sequential 4-digit 3-Level SKU (`XM-[L1]-[L2]-[L3]-[SERIAL]`) using the strict MAX + 1 rule.
  * Never reuses deleted serial numbers.
  */
 export function computeNextSequentialSku(
-  catCode: string,
-  subCode: string,
+  l1Code: string,
+  l2Code: string,
+  l3Code: string,
   products: Array<Pick<MartProduct, "id" | "sku">>,
   excludeProductId?: string | null
 ): {
@@ -1128,9 +1504,10 @@ export function computeNextSequentialSku(
   nextSerial: number;
   highestExistingSerial: number;
 } {
-  const cleanCat = sanitizeSkuCodeToken(catCode) || "GEN";
-  const cleanSub = sanitizeSkuCodeToken(subCode) || "GEN";
-  const prefix = `XM-${cleanCat}-${cleanSub}-`;
+  const cleanL1 = sanitizeSkuCodeToken(l1Code) || "GEN";
+  const cleanL2 = sanitizeSkuCodeToken(l2Code) || "GEN";
+  const cleanL3 = sanitizeSkuCodeToken(l3Code) || "GEN";
+  const prefix = `XM-${cleanL1}-${cleanL2}-${cleanL3}-`;
   const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const serialRegex = new RegExp(`^${escapedPrefix}(\\d+)`, "i");
 
@@ -1174,6 +1551,14 @@ export function generateProductSkuFromCategories(
   excludeProductId?: string | null
 ): {
   sku: string;
+  l1Code: string;
+  l2Code: string;
+  l3Code: string;
+  l1NameEn: string;
+  l2NameEn: string;
+  l3NameEn: string;
+  breadcrumbEn: string;
+  breadcrumbBn: string;
   catCode: string;
   subCode: string;
   catNameEn: string;
@@ -1183,13 +1568,22 @@ export function generateProductSkuFromCategories(
 } {
   const resolved = resolvePrimaryCatSubSkuCodes(selectedCategorySlugs, categories);
   const seq = computeNextSequentialSku(
-    resolved.catCode,
-    resolved.subCode,
+    resolved.l1Code,
+    resolved.l2Code,
+    resolved.l3Code,
     products,
     excludeProductId
   );
   return {
     sku: seq.sku,
+    l1Code: resolved.l1Code,
+    l2Code: resolved.l2Code,
+    l3Code: resolved.l3Code,
+    l1NameEn: resolved.l1NameEn,
+    l2NameEn: resolved.l2NameEn,
+    l3NameEn: resolved.l3NameEn,
+    breadcrumbEn: resolved.breadcrumbEn,
+    breadcrumbBn: resolved.breadcrumbBn,
     catCode: resolved.catCode,
     subCode: resolved.subCode,
     catNameEn: resolved.catNameEn,
@@ -1249,15 +1643,15 @@ export function deriveColorSkuCode(colorNameEn?: string): string {
 }
 
 /**
- * Builds a structured variant sub-SKU from the base SKU, color name, and size:
- * e.g. Base "XM-FSH-MEN-0001" + Color "Black" + Size "XL" -> "XM-FSH-MEN-0001-BLK-XL"
+ * Builds a structured variant sub-SKU from the 3-level base SKU, color name, and size:
+ * e.g. Base "XM-FSH-KID-GRL-0001" + Color "Pink" + Size "M" -> "XM-FSH-KID-GRL-0001-PNK-M"
  */
 export function generateVariantSubSku(
   baseSku: string,
   colorNameEn?: string,
   size?: string
 ): string {
-  const cleanBase = String(baseSku || "").trim().toUpperCase() || "XM-GEN-GEN-0001";
+  const cleanBase = String(baseSku || "").trim().toUpperCase() || "XM-GEN-GEN-GEN-0001";
   const colorCode = colorNameEn ? deriveColorSkuCode(colorNameEn) : "";
   const sizeToken = String(size || "")
     .trim()
