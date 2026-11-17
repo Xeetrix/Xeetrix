@@ -149,7 +149,11 @@ export async function callMartScriptPost<T = Record<string, unknown>>(
     throw new MartScriptError(
       json.error || "Mart backend rejected the request.",
       json.code,
-      json.code === "OUT_OF_STOCK" || json.code === "VARIANT_UNAVAILABLE" ? 409 : 400
+      json.code === "OUT_OF_STOCK" ||
+        json.code === "VARIANT_UNAVAILABLE" ||
+        json.code === "DUPLICATE_SKU"
+        ? 409
+        : 400
     );
   }
 

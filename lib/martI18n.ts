@@ -523,6 +523,7 @@ export interface MartDictionary {
     GENERIC_NETWORK: string;
     OUT_OF_STOCK: string;
     VARIANT_UNAVAILABLE: string;
+    DUPLICATE_SKU: string;
   };
 }
 
@@ -1077,6 +1078,8 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
       GENERIC_NETWORK: "Connection error. Please check your internet and try again.",
       OUT_OF_STOCK: "One or more selected items do not have enough stock available.",
       VARIANT_UNAVAILABLE: "Selected color or size option is currently unavailable.",
+      DUPLICATE_SKU:
+        "Duplicate SKU conflict! Another product already uses this SKU code. Click Regenerate SKU to assign the next available serial.",
     },
   },
   bn: {
@@ -1631,6 +1634,8 @@ export const MART_DICTIONARY: Record<MartLang, MartDictionary> = {
       GENERIC_NETWORK: "নেটওয়ার্ক সংযোগে সমস্যা হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।",
       OUT_OF_STOCK: "নির্বাচিত এক বা একাধিক পণ্যের পর্যাপ্ত স্টক বর্তমানে নেই।",
       VARIANT_UNAVAILABLE: "নির্বাচিত কালার বা সাইজ অপশনটি বর্তমানে উপলব্ধ নয়।",
+      DUPLICATE_SKU:
+        "ডুপ্লিকেট SKU কনফ্লিক্ট! এই SKU কোডটি ইতিমধ্যে অন্য একটি প্রোডাক্টে ব্যবহৃত হয়েছে। পরবর্তী সিরিয়াল পেতে Regenerate SKU বাটনে ক্লিক করুন।",
     },
   },
 };
@@ -1743,6 +1748,9 @@ export function translateMartError(
   }
   if (msg.includes("variant_unavailable") || msg.includes("variant unavailable") || msg.includes("no longer available")) {
     return dict.VARIANT_UNAVAILABLE;
+  }
+  if (msg.includes("duplicate_sku") || msg.includes("duplicate sku")) {
+    return dict.DUPLICATE_SKU;
   }
   return rawMessage || MART_DICTIONARY[lang].common.errorFallback;
 }

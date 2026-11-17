@@ -58,6 +58,7 @@ var MART_SCHEMA = {
     "id",
     "slug",
     "parentSlug",
+    "skuCode",
     "nameEn",
     "nameBn",
     "descriptionEn",
@@ -472,7 +473,7 @@ function normalizeMartCell(header, val) {
     }
     return num;
   }
-  if (header === "code" || header === "discountCode") {
+  if (header === "code" || header === "discountCode" || header === "sku" || header === "skuCode") {
     return String(val || "").trim().toUpperCase();
   }
   return val === null || val === undefined ? "" : String(val);
@@ -1651,6 +1652,24 @@ function doPost(e) {
         payload = enrichOrderPayloadServerSide(ss, payload);
       } else if (sheetName === "Mart_Products") {
         payload = sanitizeProductFieldsAndSyncStock(payload, "");
+        var newSku = String(payload.sku || "").trim().toUpperCase();
+        if (newSku) {
+          var existingProds = readMartRows(sheet, "Mart_Products");
+          for (var ep = 0; ep < existingProds.length; ep++) {
+            if (String(existingProds[ep].sku || "").trim().toUpperCase() === newSku) {
+              return jsonOut({
+                ok: false,
+                code: "DUPLICATE_SKU",
+                conflictProductId: existingProds[ep].id,
+                error:
+                  "Duplicate SKU conflict: " +
+                  newSku +
+                  " is already assigned to " +
+                  (existingProds[ep].nameEn || existingProds[ep].id)
+              });
+            }
+          }
+        }
       }
 
       var now = new Date().toISOString();
@@ -1768,6 +1787,29 @@ function doPost(e) {
           prodSyncObj[uKeys[uk]] = updates[uKeys[uk]];
         }
         sanitizeProductFieldsAndSyncStock(prodSyncObj, prevRowObj.variationMatrixJson);
+        var updatedSku =
+          prodSyncObj.sku !== undefined ? String(prodSyncObj.sku || "").trim().toUpperCase() : "";
+        if (updatedSku) {
+          var allProdsForCheck = readMartRows(updSheet, "Mart_Products");
+          for (var pc = 0; pc < allProdsForCheck.length; pc++) {
+            var candidateProd = allProdsForCheck[pc];
+            if (
+              String(candidateProd.id) !== targetId &&
+              String(candidateProd.sku || "").trim().toUpperCase() === updatedSku
+            ) {
+              return jsonOut({
+                ok: false,
+                code: "DUPLICATE_SKU",
+                conflictProductId: candidateProd.id,
+                error:
+                  "Duplicate SKU conflict: " +
+                  updatedSku +
+                  " is already assigned to " +
+                  (candidateProd.nameEn || candidateProd.id)
+              });
+            }
+          }
+        }
         updates = prodSyncObj;
       }
 

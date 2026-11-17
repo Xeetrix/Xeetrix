@@ -142,6 +142,7 @@ export interface MartCategory {
   id: string;
   slug: string;
   parentSlug: string;
+  skuCode?: string;
   nameEn: string;
   nameBn: string;
   descriptionEn: string;
@@ -422,10 +423,13 @@ export function normalizeCouponRecord(raw: Partial<MartCoupon>): MartCoupon {
 function normalizeCategoryRecord(raw: Partial<MartCategory>): MartCategory {
   const nameEn = String(raw.nameEn || raw.name || "");
   const nameBn = String(raw.nameBn || "");
+  const slug = String(raw.slug || slugifyTaxonomy(nameEn || nameBn || raw.id || ""));
+  const explicitCode = sanitizeSkuCodeToken(raw.skuCode);
   return {
     id: String(raw.id || ""),
-    slug: String(raw.slug || slugifyTaxonomy(nameEn || nameBn || raw.id || "")),
+    slug,
     parentSlug: String(raw.parentSlug || ""),
+    skuCode: explicitCode || deriveDefaultCategorySkuCode(nameEn, slug),
     nameEn,
     nameBn,
     descriptionEn: String(raw.descriptionEn || raw.description || ""),
@@ -694,6 +698,466 @@ export function parseOrderItems(itemsJson?: string): MartOrderItem[] {
 
 export function slugifyCategory(text: string): string {
   return slugifyTaxonomy(text);
+}
+
+/**
+ * Canonical 3-letter uppercase SKU codes for standard Xeetrix Mart Categories & Sub-Categories.
+ */
+const PRESET_CATEGORY_SKU_CODES: Record<string, string> = {
+  // Fashion & Apparel
+  "fashion-apparel": "FSH",
+  "fashion-and-apparel": "FSH",
+  fashion: "FSH",
+  apparel: "APR",
+  "mens-clothing": "MEN",
+  "men-clothing": "MEN",
+  mens: "MEN",
+  "womens-clothing": "WMN",
+  "women-clothing": "WMN",
+  womens: "WMN",
+  "baby-kids": "KID",
+  "baby-and-kids": "KID",
+  baby: "BBY",
+  kids: "KID",
+  "footwear-bags": "FTW",
+  "footwear-and-bags": "FTW",
+  footwear: "FTW",
+  bags: "BAG",
+  // Electronics & Gadgets
+  "electronics-gadgets": "ELC",
+  "electronics-and-gadgets": "ELC",
+  electronics: "ELC",
+  gadgets: "GDG",
+  "audio-headphones": "AUD",
+  "audio-and-headphones": "AUD",
+  audio: "AUD",
+  headphones: "HDP",
+  "smart-wearables": "WCH",
+  wearables: "WCH",
+  watches: "WCH",
+  "mobile-accessories": "MOB",
+  mobile: "MOB",
+  // Home, Kitchen & Lifestyle
+  "home-living": "HOM",
+  "home-and-living": "HOM",
+  "home-decor": "DEC",
+  decor: "DEC",
+  "kitchen-dining": "KTC",
+  "kitchen-and-dining": "KTC",
+  kitchen: "KTC",
+  // Essentials, Health & Sports
+  "groceries-daily-essentials": "GRC",
+  "groceries-and-daily-essentials": "GRC",
+  groceries: "GRC",
+  "health-beauty": "HLT",
+  "health-and-beauty": "HLT",
+  beauty: "BTY",
+  "sports-outdoors": "SPT",
+  "sports-and-outdoors": "SPT",
+  sports: "SPT",
+};
+
+const PRESET_COLOR_SKU_CODES: Record<string, string> = {
+  black: "BLK",
+  "jet black": "BLK",
+  "matte black": "MBK",
+  white: "WHT",
+  "off white": "OWH",
+  navy: "NVY",
+  "navy blue": "NVB",
+  "sky blue": "SKY",
+  "royal blue": "RBL",
+  blue: "BLU",
+  red: "RED",
+  crimson: "CRM",
+  maroon: "MRN",
+  burgundy: "BRG",
+  green: "GRN",
+  "olive green": "OLV",
+  olive: "OLV",
+  emerald: "EMR",
+  mint: "MNT",
+  teal: "TEL",
+  yellow: "YLW",
+  mustard: "MST",
+  gold: "GLD",
+  golden: "GLD",
+  silver: "SLV",
+  pink: "PNK",
+  "baby pink": "BPK",
+  "rose gold": "RSG",
+  rose: "RSE",
+  purple: "PRP",
+  lavender: "LAV",
+  violet: "VLT",
+  orange: "ORG",
+  coral: "CRL",
+  brown: "BRN",
+  chocolate: "CHC",
+  coffee: "CFE",
+  camel: "CML",
+  tan: "TAN",
+  beige: "BGE",
+  cream: "CRM",
+  khaki: "KHK",
+  gray: "GRY",
+  grey: "GRY",
+  charcoal: "CHR",
+  ash: "ASH",
+  multicolor: "MLT",
+  multi: "MLT",
+};
+
+export function sanitizeSkuCodeToken(raw?: string): string {
+  if (!raw) return "";
+  return String(raw)
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, 3);
+}
+
+/**
+ * Derives a clean, deterministic 3-letter uppercase SKU code from a category name or slug.
+ * If `existingCodes` is provided, avoids collisions by testing alternate 3-letter combinations.
+ */
+export function deriveDefaultCategorySkuCode(
+  nameEn?: string,
+  slug?: string,
+  existingCodes?: Iterable<string>
+): string {
+  const usedSet = existingCodes
+    ? new Set(Array.from(existingCodes, (c) => String(c || "").toUpperCase()))
+    : null;
+  const normSlug = slugifyTaxonomy(slug || nameEn || "");
+  if (normSlug && PRESET_CATEGORY_SKU_CODES[normSlug]) {
+    const preset = PRESET_CATEGORY_SKU_CODES[normSlug];
+    if (!usedSet || !usedSet.has(preset)) {
+      return preset;
+    }
+  }
+
+  const cleanText = String(nameEn || slug || "")
+    .toUpperCase()
+    .replace(/&/g, " ")
+    .replace(/[^A-Z0-9\s]/g, " ")
+    .trim();
+
+  const words = cleanText
+    .split(/\s+/)
+    .filter((w) => w && !["AND", "THE", "FOR", "WITH", "OF", "IN"].includes(w));
+
+  // Check if first word matches preset
+  if (words.length > 0) {
+    const firstWordLower = words[0].toLowerCase();
+    if (PRESET_CATEGORY_SKU_CODES[firstWordLower]) {
+      const preset = PRESET_CATEGORY_SKU_CODES[firstWordLower];
+      if (!usedSet || !usedSet.has(preset)) {
+        return preset;
+      }
+    }
+  }
+
+  const candidates: string[] = [];
+  const pushCandidate = (c: string) => {
+    const clean = sanitizeSkuCodeToken(c);
+    if (clean.length === 3 && !candidates.includes(clean)) {
+      candidates.push(clean);
+    }
+  };
+
+  if (words.length > 0) {
+    const primary = words[0];
+    const consonants = primary[0] + primary.slice(1).replace(/[AEIOU]/g, "");
+    if (consonants.length >= 3) {
+      pushCandidate(consonants.slice(0, 3));
+    }
+    if (primary.length >= 3) {
+      pushCandidate(primary.slice(0, 3));
+    }
+    if (words.length >= 2) {
+      const w1 = words[0];
+      const w2 = words[1];
+      pushCandidate(w1.slice(0, 2) + w2.slice(0, 1));
+      pushCandidate(w1.slice(0, 1) + w2.slice(0, 2));
+    }
+    if (words.length >= 3) {
+      pushCandidate(words[0][0] + words[1][0] + words[2][0]);
+    }
+  }
+
+  const allLetters = words.join("");
+  if (allLetters.length >= 3) {
+    pushCandidate(allLetters.slice(0, 3));
+    for (let i = 1; i < allLetters.length - 1; i++) {
+      for (let j = i + 1; j < allLetters.length; j++) {
+        pushCandidate(allLetters[0] + allLetters[i] + allLetters[j]);
+      }
+    }
+  } else if (allLetters.length > 0) {
+    pushCandidate(allLetters.padEnd(3, "X"));
+  }
+
+  for (const cand of candidates) {
+    if (!usedSet || !usedSet.has(cand)) {
+      return cand;
+    }
+  }
+
+  const base2 = (candidates[0] || "CAT").slice(0, 2);
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789";
+  for (let i = 0; i < alphabet.length; i++) {
+    const fallback = `${base2}${alphabet[i]}`;
+    if (!usedSet || !usedSet.has(fallback)) {
+      return fallback;
+    }
+  }
+
+  return candidates[0] || "GEN";
+}
+
+export function resolveCategorySkuCode(cat?: Partial<MartCategory> | null): string {
+  if (!cat) return "GEN";
+  const explicit = sanitizeSkuCodeToken(cat.skuCode);
+  if (explicit.length === 3) return explicit;
+  return deriveDefaultCategorySkuCode(cat.nameEn || cat.nameBn, cat.slug);
+}
+
+/**
+ * Resolves the [CAT] and [SUB] 3-letter codes from a product's selected category slugs:
+ * - Uses the first (primary) selected category.
+ * - If the primary selected category is a Sub-Category (has `parentSlug`), [CAT] is the Parent's code and [SUB] is the Sub-Category's code.
+ * - If the primary selected category is a Parent Category:
+ *     - If a child Sub-Category under that Parent is also selected, [CAT] is Parent and [SUB] is that first matching child Sub-Category.
+ *     - Otherwise, [CAT] is the Parent's code and [SUB] is "GEN" (e.g., XM-FSH-GEN-0001).
+ * - If no category is selected, returns { catCode: "GEN", subCode: "GEN" }.
+ */
+export function resolvePrimaryCatSubSkuCodes(
+  selectedCategorySlugs: string[],
+  categories: MartCategory[]
+): {
+  catCode: string;
+  subCode: string;
+  catSlug: string;
+  subSlug: string;
+  catNameEn: string;
+  subNameEn: string;
+} {
+  const catMap = new Map<string, MartCategory>();
+  categories.forEach((c) => {
+    if (c.slug) catMap.set(c.slug, c);
+  });
+
+  const validSlugs = selectedCategorySlugs
+    .map((s) => s.trim())
+    .filter((s) => Boolean(s && catMap.has(s)));
+
+  if (validSlugs.length === 0) {
+    return {
+      catCode: "GEN",
+      subCode: "GEN",
+      catSlug: "",
+      subSlug: "",
+      catNameEn: "General",
+      subNameEn: "General",
+    };
+  }
+
+  const firstCat = catMap.get(validSlugs[0])!;
+
+  // Case 1: First selected item is a Sub-Category with a valid Parent Category
+  if (firstCat.parentSlug && catMap.has(firstCat.parentSlug)) {
+    const parentCat = catMap.get(firstCat.parentSlug)!;
+    return {
+      catCode: resolveCategorySkuCode(parentCat),
+      subCode: resolveCategorySkuCode(firstCat),
+      catSlug: parentCat.slug,
+      subSlug: firstCat.slug,
+      catNameEn: parentCat.nameEn || parentCat.slug,
+      subNameEn: firstCat.nameEn || firstCat.slug,
+    };
+  }
+
+  // Case 2: First selected item is a Parent Category — check if one of its Sub-Categories is also selected
+  const matchingChildSlug = validSlugs.find((slug) => {
+    const candidate = catMap.get(slug);
+    return candidate && candidate.parentSlug === firstCat.slug;
+  });
+
+  if (matchingChildSlug) {
+    const childCat = catMap.get(matchingChildSlug)!;
+    return {
+      catCode: resolveCategorySkuCode(firstCat),
+      subCode: resolveCategorySkuCode(childCat),
+      catSlug: firstCat.slug,
+      subSlug: childCat.slug,
+      catNameEn: firstCat.nameEn || firstCat.slug,
+      subNameEn: childCat.nameEn || childCat.slug,
+    };
+  }
+
+  // Case 3: Only a Parent Category is selected -> [SUB] = "GEN" (e.g. XM-FSH-GEN-0001)
+  return {
+    catCode: resolveCategorySkuCode(firstCat),
+    subCode: "GEN",
+    catSlug: firstCat.slug,
+    subSlug: "",
+    catNameEn: firstCat.nameEn || firstCat.slug,
+    subNameEn: "General (GEN)",
+  };
+}
+
+/**
+ * Computes the next sequential 4-digit SKU (`XM-[CAT]-[SUB]-[SERIAL]`) using the strict MAX + 1 rule.
+ * Never reuses deleted serial numbers.
+ */
+export function computeNextSequentialSku(
+  catCode: string,
+  subCode: string,
+  products: Array<Pick<MartProduct, "id" | "sku">>,
+  excludeProductId?: string | null
+): {
+  sku: string;
+  prefix: string;
+  nextSerial: number;
+  highestExistingSerial: number;
+} {
+  const cleanCat = sanitizeSkuCodeToken(catCode) || "GEN";
+  const cleanSub = sanitizeSkuCodeToken(subCode) || "GEN";
+  const prefix = `XM-${cleanCat}-${cleanSub}-`;
+  const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const serialRegex = new RegExp(`^${escapedPrefix}(\\d+)`, "i");
+
+  let highestExistingSerial = 0;
+  const existingSkuSet = new Set<string>();
+
+  products.forEach((p) => {
+    if (excludeProductId && p.id === excludeProductId) return;
+    const rawSku = String(p.sku || "").trim().toUpperCase();
+    if (!rawSku) return;
+    existingSkuSet.add(rawSku);
+
+    const match = rawSku.match(serialRegex);
+    if (match && match[1]) {
+      const parsed = parseInt(match[1], 10);
+      if (Number.isFinite(parsed) && parsed > highestExistingSerial) {
+        highestExistingSerial = parsed;
+      }
+    }
+  });
+
+  let nextSerial = highestExistingSerial + 1;
+  let candidateSku = `${prefix}${String(nextSerial).padStart(4, "0")}`;
+  while (existingSkuSet.has(candidateSku.toUpperCase())) {
+    nextSerial += 1;
+    candidateSku = `${prefix}${String(nextSerial).padStart(4, "0")}`;
+  }
+
+  return {
+    sku: candidateSku,
+    prefix,
+    nextSerial,
+    highestExistingSerial,
+  };
+}
+
+export function generateProductSkuFromCategories(
+  selectedCategorySlugs: string[],
+  categories: MartCategory[],
+  products: Array<Pick<MartProduct, "id" | "sku">>,
+  excludeProductId?: string | null
+): {
+  sku: string;
+  catCode: string;
+  subCode: string;
+  catNameEn: string;
+  subNameEn: string;
+  nextSerial: number;
+  highestExistingSerial: number;
+} {
+  const resolved = resolvePrimaryCatSubSkuCodes(selectedCategorySlugs, categories);
+  const seq = computeNextSequentialSku(
+    resolved.catCode,
+    resolved.subCode,
+    products,
+    excludeProductId
+  );
+  return {
+    sku: seq.sku,
+    catCode: resolved.catCode,
+    subCode: resolved.subCode,
+    catNameEn: resolved.catNameEn,
+    subNameEn: resolved.subNameEn,
+    nextSerial: seq.nextSerial,
+    highestExistingSerial: seq.highestExistingSerial,
+  };
+}
+
+/**
+ * Checks if any other product in `Mart_Products` already uses `candidateSku` (case-insensitive).
+ */
+export function findDuplicateProductSku(
+  candidateSku: string,
+  products: MartProduct[],
+  excludeProductId?: string | null
+): MartProduct | undefined {
+  const norm = String(candidateSku || "").trim().toUpperCase();
+  if (!norm) return undefined;
+  return products.find(
+    (p) =>
+      (!excludeProductId || p.id !== excludeProductId) &&
+      String(p.sku || "").trim().toUpperCase() === norm
+  );
+}
+
+/**
+ * Derives a clean 3-letter uppercase color code (e.g. "Black" -> "BLK", "Navy Blue" -> "NVB").
+ */
+export function deriveColorSkuCode(colorNameEn?: string): string {
+  const clean = String(colorNameEn || "").trim();
+  if (!clean) return "";
+  const lower = clean.toLowerCase().replace(/\s+/g, " ");
+  if (PRESET_COLOR_SKU_CODES[lower]) {
+    return PRESET_COLOR_SKU_CODES[lower];
+  }
+  const words = clean
+    .toUpperCase()
+    .replace(/[^A-Z0-9\s]/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length >= 2) {
+    const w1 = words[0];
+    const w2 = words[1];
+    return sanitizeSkuCodeToken(w1.slice(0, 2) + w2.slice(0, 1)) || "CLR";
+  }
+  if (words.length === 1) {
+    const w = words[0];
+    const consonants = w[0] + w.slice(1).replace(/[AEIOU]/g, "");
+    if (consonants.length >= 3) {
+      return consonants.slice(0, 3);
+    }
+    return w.slice(0, 3).padEnd(3, "X");
+  }
+  return "CLR";
+}
+
+/**
+ * Builds a structured variant sub-SKU from the base SKU, color name, and size:
+ * e.g. Base "XM-FSH-MEN-0001" + Color "Black" + Size "XL" -> "XM-FSH-MEN-0001-BLK-XL"
+ */
+export function generateVariantSubSku(
+  baseSku: string,
+  colorNameEn?: string,
+  size?: string
+): string {
+  const cleanBase = String(baseSku || "").trim().toUpperCase() || "XM-GEN-GEN-0001";
+  const colorCode = colorNameEn ? deriveColorSkuCode(colorNameEn) : "";
+  const sizeToken = String(size || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9-]/g, "");
+
+  return [cleanBase, colorCode, sizeToken].filter(Boolean).join("-");
 }
 
 function cleanProductUrlToken(text?: string): string {

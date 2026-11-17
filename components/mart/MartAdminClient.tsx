@@ -54,9 +54,13 @@ import {
   createMartRecord,
   DEFAULT_MART_SETTINGS,
   deleteMartRecord,
+  deriveDefaultCategorySkuCode,
   exportMartOrdersToCsv,
   fetchMartAdminData,
   fileToMartBase64,
+  findDuplicateProductSku,
+  generateProductSkuFromCategories,
+  generateVariantSubSku,
   getStoredMartAdminPass,
   MART_CONTACT_EMAIL,
   MART_CONTACT_PHONE,
@@ -86,6 +90,8 @@ import {
   parseProductSizes,
   parseVariationMatrix,
   prepareMartProductImageUpload,
+  resolveCategorySkuCode,
+  sanitizeSkuCodeToken,
   slugifyCategory,
   updateMartRecord,
   updateMartStoreSettings,
@@ -231,6 +237,7 @@ export function MartAdminClient() {
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [productStudioOpen, setProductStudioOpen] = useState(false);
   const [prodSku, setProdSku] = useState("");
+  const [skuManuallyEdited, setSkuManuallyEdited] = useState(false);
   const [prodNameEn, setProdNameEn] = useState("");
   const [prodNameBn, setProdNameBn] = useState("");
   const [prodCategories, setProdCategories] = useState<string[]>([]);
@@ -291,6 +298,7 @@ export function MartAdminClient() {
   const [catNameEn, setCatNameEn] = useState("");
   const [catNameBn, setCatNameBn] = useState("");
   const [catSlug, setCatSlug] = useState("");
+  const [catSkuCode, setCatSkuCode] = useState("");
   const [catParentSlug, setCatParentSlug] = useState("");
   const [catSortOrder, setCatSortOrder] = useState("0");
   const [catDescEn, setCatDescEn] = useState("");
@@ -404,8 +412,12 @@ export function MartAdminClient() {
   }
 
   function resetProductForm() {
+    const currentCats = data?.categories || [];
+    const currentProds = data?.products || [];
+    const defaultSkuInfo = generateProductSkuFromCategories([], currentCats, currentProds, null);
     setEditingProductId(null);
-    setProdSku("");
+    setProdSku(defaultSkuInfo.sku);
+    setSkuManuallyEdited(false);
     setProdNameEn("");
     setProdNameBn("");
     setProdCategories([]);
@@ -439,9 +451,36 @@ export function MartAdminClient() {
     setProdActive(true);
   }
 
+  function handleRegenerateProductSku(
+    nextCategories: string[] = prodCategories,
+    excludeId: string | null = editingProductId
+  ) {
+    const currentCats = data?.categories || [];
+    const currentProds = data?.products || [];
+    const res = generateProductSkuFromCategories(
+      nextCategories,
+      currentCats,
+      currentProds,
+      excludeId
+    );
+    setProdSku(res.sku);
+    setSkuManuallyEdited(false);
+    setProdMatrix((prev) =>
+      prev.length > 0
+        ? prev.map((row) => ({
+            ...row,
+            sku: generateVariantSubSku(res.sku, row.colorNameEn, row.size),
+          }))
+        : prev
+    );
+    return res;
+  }
+
   function startEditProduct(p: MartProduct) {
     setEditingProductId(p.id);
     setProdSku(p.sku || "");
+    // Lock existing SKU in Edit Mode unless the admin explicitly clicks "Regenerate SKU"
+    setSkuManuallyEdited(true);
     setProdNameEn(p.nameEn || "");
     setProdNameBn(p.nameBn || "");
     setProdCategories(parseCsvSlugs(p.categories));
@@ -493,13 +532,53 @@ export function MartAdminClient() {
   function startDuplicateProduct(p: MartProduct) {
     startEditProduct(p);
     setEditingProductId(null);
-    setProdSku(p.sku ? `${p.sku}-COPY` : "");
+    const prodCatSlugs = parseCsvSlugs(p.categories);
+    const currentCats = data?.categories || [];
+    const currentProds = data?.products || [];
+    const nextSkuInfo = generateProductSkuFromCategories(
+      prodCatSlugs,
+      currentCats,
+      currentProds,
+      null
+    );
+    setProdSku(nextSkuInfo.sku);
+    setSkuManuallyEdited(false);
+    const parsedMatrix = parseVariationMatrix(p.variationMatrixJson);
+    if (parsedMatrix.length > 0) {
+      setProdMatrix(
+        parsedMatrix.map((row) => ({
+          ...row,
+          sku: generateVariantSubSku(nextSkuInfo.sku, row.colorNameEn, row.size),
+        }))
+      );
+    }
   }
 
   function toggleProdCategorySlug(slug: string) {
-    setProdCategories((prev) =>
-      prev.includes(slug) ? prev.filter((s) => s !== slug) : [...prev, slug]
-    );
+    const nextCategories = prodCategories.includes(slug)
+      ? prodCategories.filter((s) => s !== slug)
+      : [...prodCategories, slug];
+    setProdCategories(nextCategories);
+    // In Add Mode, auto-update SKU from the primary category/sub-category unless manually edited
+    if (!editingProductId && !skuManuallyEdited) {
+      const currentCats = data?.categories || [];
+      const currentProds = data?.products || [];
+      const nextSkuInfo = generateProductSkuFromCategories(
+        nextCategories,
+        currentCats,
+        currentProds,
+        null
+      );
+      setProdSku(nextSkuInfo.sku);
+      setProdMatrix((prev) =>
+        prev.length > 0
+          ? prev.map((row) => ({
+              ...row,
+              sku: generateVariantSubSku(nextSkuInfo.sku, row.colorNameEn, row.size),
+            }))
+          : prev
+      );
+    }
   }
 
   function toggleProdLabelSlug(slug: string) {
@@ -693,7 +772,16 @@ export function MartAdminClient() {
     prodMatrix.forEach((m) => existingMap.set(m.key, m));
 
     const nextRows: MartVariationVariant[] = [];
-    const baseSku = prodSku.trim() || "XM";
+    const fallbackAutoSku = generateProductSkuFromCategories(
+      prodCategories,
+      data?.categories || [],
+      data?.products || [],
+      editingProductId
+    ).sku;
+    const baseSku = (prodSku.trim() || fallbackAutoSku).toUpperCase();
+    if (!prodSku.trim()) {
+      setProdSku(baseSku);
+    }
 
     if (validColors.length > 0 && sizes.length > 0) {
       validColors.forEach((c) => {
@@ -701,20 +789,23 @@ export function MartAdminClient() {
         sizes.forEach((s) => {
           const key = `${cEn}::${s}`;
           const prev = existingMap.get(key);
+          const syncedSubSku = generateVariantSubSku(baseSku, cEn, s);
           nextRows.push(
-            prev || {
-              key,
-              colorNameEn: cEn,
-              size: s,
-              sku: `${baseSku}-${cEn.slice(0, 3).toUpperCase()}-${s.toUpperCase()}`.replace(
-                /\s+/g,
-                ""
-              ),
-              priceOverride: 0,
-              costOverride: 0,
-              stock: Math.max(0, Number(prodStock) || 10),
-              active: true,
-            }
+            prev
+              ? {
+                  ...prev,
+                  sku: syncedSubSku,
+                }
+              : {
+                  key,
+                  colorNameEn: cEn,
+                  size: s,
+                  sku: syncedSubSku,
+                  priceOverride: 0,
+                  costOverride: 0,
+                  stock: Math.max(0, Number(prodStock) || 10),
+                  active: true,
+                }
           );
         });
       });
@@ -723,34 +814,46 @@ export function MartAdminClient() {
         const cEn = (c.nameEn || c.nameBn).trim();
         const key = `${cEn}::`;
         const prev = existingMap.get(key);
+        const syncedSubSku = generateVariantSubSku(baseSku, cEn, "");
         nextRows.push(
-          prev || {
-            key,
-            colorNameEn: cEn,
-            size: "",
-            sku: `${baseSku}-${cEn.slice(0, 4).toUpperCase()}`.replace(/\s+/g, ""),
-            priceOverride: 0,
-            costOverride: 0,
-            stock: Math.max(0, Number(prodStock) || 10),
-            active: true,
-          }
+          prev
+            ? {
+                ...prev,
+                sku: syncedSubSku,
+              }
+            : {
+                key,
+                colorNameEn: cEn,
+                size: "",
+                sku: syncedSubSku,
+                priceOverride: 0,
+                costOverride: 0,
+                stock: Math.max(0, Number(prodStock) || 10),
+                active: true,
+              }
         );
       });
     } else if (sizes.length > 0) {
       sizes.forEach((s) => {
         const key = `::${s}`;
         const prev = existingMap.get(key);
+        const syncedSubSku = generateVariantSubSku(baseSku, "", s);
         nextRows.push(
-          prev || {
-            key,
-            colorNameEn: "",
-            size: s,
-            sku: `${baseSku}-${s.toUpperCase()}`.replace(/\s+/g, ""),
-            priceOverride: 0,
-            costOverride: 0,
-            stock: Math.max(0, Number(prodStock) || 10),
-            active: true,
-          }
+          prev
+            ? {
+                ...prev,
+                sku: syncedSubSku,
+              }
+            : {
+                key,
+                colorNameEn: "",
+                size: s,
+                sku: syncedSubSku,
+                priceOverride: 0,
+                costOverride: 0,
+                stock: Math.max(0, Number(prodStock) || 10),
+                active: true,
+              }
         );
       });
     }
@@ -848,8 +951,38 @@ export function MartAdminClient() {
     const effectiveVariantsBn = variationMode === "simple" ? prodVariantsBn.trim() : "";
     const effectiveSizesList = variationMode === "matrix" ? prodSizesInput.trim() : "";
 
+    const autoSkuInfo = generateProductSkuFromCategories(
+      prodCategories,
+      categories,
+      products,
+      editingProductId
+    );
+    const finalSku = (prodSku.trim() || autoSkuInfo.sku).toUpperCase();
+    const duplicateProd = findDuplicateProductSku(finalSku, products, editingProductId);
+    if (duplicateProd) {
+      showNotice(
+        "error",
+        lang === "bn"
+          ? `ডুপ্লিকেট SKU কনফ্লিক্ট (${finalSku}): এটি ইতোমধ্যে "${
+              duplicateProd.nameBn || duplicateProd.nameEn
+            }" (${duplicateProd.id})-এ ব্যবহৃত হচ্ছে। পরবর্তী সিরিয়াল পেতে Regenerate SKU বাটনে ক্লিক করুন (${
+              autoSkuInfo.sku
+            })।`
+          : `Duplicate SKU Conflict (${finalSku}): Already used by "${duplicateProd.nameEn}" (${duplicateProd.id}). Click Regenerate SKU for the next available serial (${autoSkuInfo.sku}).`
+      );
+      return;
+    }
+
+    const syncedMatrix =
+      variationMode === "matrix"
+        ? cleanMatrix.map((v) => ({
+            ...v,
+            sku: v.sku || generateVariantSubSku(finalSku, v.colorNameEn, v.size),
+          }))
+        : [];
+
     const payload = {
-      sku: prodSku.trim() || `XM-${Date.now().toString().slice(-5)}`,
+      sku: finalSku,
       nameEn: prodNameEn.trim() || prodNameBn.trim(),
       nameBn: prodNameBn.trim(),
       categories: prodCategories.join(","),
@@ -870,7 +1003,7 @@ export function MartAdminClient() {
       variantsBn: effectiveVariantsBn,
       colorsJson: cleanColors.length > 0 ? JSON.stringify(cleanColors) : "",
       sizesList: effectiveSizesList,
-      variationMatrixJson: cleanMatrix.length > 0 ? JSON.stringify(cleanMatrix) : "",
+      variationMatrixJson: syncedMatrix.length > 0 ? JSON.stringify(syncedMatrix) : "",
       imageUrl: prodImageUrl.trim(),
       galleryUrls: prodGalleryUrls.filter(Boolean).join(","),
       descriptionEn: prodDescEn.trim(),
@@ -1363,6 +1496,7 @@ export function MartAdminClient() {
     setCatNameEn("");
     setCatNameBn("");
     setCatSlug("");
+    setCatSkuCode("");
     setCatParentSlug("");
     setCatSortOrder("0");
     setCatDescEn("");
@@ -1375,6 +1509,7 @@ export function MartAdminClient() {
     setCatNameEn(cat.nameEn || "");
     setCatNameBn(cat.nameBn || "");
     setCatSlug(cat.slug || "");
+    setCatSkuCode(resolveCategorySkuCode(cat));
     setCatParentSlug(cat.parentSlug || "");
     setCatSortOrder(String(cat.sortOrder ?? 0));
     setCatDescEn(cat.descriptionEn || "");
@@ -1407,10 +1542,20 @@ export function MartAdminClient() {
       return;
     }
 
+    const existingCatCodes = categories
+      .filter((c) => c.id !== editingCategoryId)
+      .map((c) => resolveCategorySkuCode(c));
+    const cleanCustomCode = sanitizeSkuCodeToken(catSkuCode);
+    const resolvedSkuCode =
+      cleanCustomCode.length === 3
+        ? cleanCustomCode
+        : deriveDefaultCategorySkuCode(baseEn, targetSlug, existingCatCodes);
+
     const payload = {
       nameEn: baseEn,
       nameBn: catNameBn.trim(),
       slug: targetSlug,
+      skuCode: resolvedSkuCode,
       parentSlug: catParentSlug === targetSlug ? "" : catParentSlug.trim(),
       descriptionEn: catDescEn.trim(),
       descriptionBn: catDescBn.trim(),
@@ -1906,6 +2051,22 @@ export function MartAdminClient() {
   const prodUnitProfit = prodUnitPriceNum - prodCostPriceNum;
   const prodMarginPct =
     prodUnitPriceNum > 0 ? Math.round((prodUnitProfit / prodUnitPriceNum) * 100) : 0;
+
+  const liveSkuPreview = useMemo(
+    () =>
+      generateProductSkuFromCategories(
+        prodCategories,
+        categories,
+        products,
+        editingProductId
+      ),
+    [prodCategories, categories, products, editingProductId]
+  );
+
+  const duplicateSkuConflict = useMemo(
+    () => findDuplicateProductSku(prodSku, products, editingProductId),
+    [prodSku, products, editingProductId]
+  );
 
   if (!authReady) {
     return (
@@ -3560,16 +3721,66 @@ export function MartAdminClient() {
                           </div>
 
                           <div className="sm:col-span-3">
-                            <label className="block text-xs font-semibold text-slate-700 mb-1">
-                              {t.admin.products.skuLabel}
-                            </label>
-                            <input
-                              type="text"
-                              value={prodSku}
-                              onChange={(e) => setProdSku(e.target.value.toUpperCase())}
-                              placeholder={t.admin.products.skuPlaceholder}
-                              className="input font-mono uppercase"
-                            />
+                            <div className="flex items-center justify-between gap-1 mb-1">
+                              <label className="block text-xs font-semibold text-slate-700">
+                                {t.admin.products.skuLabel}
+                              </label>
+                              {editingProductId ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+                                  <Lock className="h-2.5 w-2.5" />
+                                  <span>{lang === "bn" ? "লকড" : "Locked"}</span>
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-mono font-semibold text-[#0B5336]">
+                                  { `XM-${liveSkuPreview.catCode}-${liveSkuPreview.subCode}` }
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="text"
+                                value={prodSku}
+                                onChange={(e) => {
+                                  setProdSku(e.target.value.toUpperCase());
+                                  setSkuManuallyEdited(true);
+                                }}
+                                placeholder={liveSkuPreview.sku || t.admin.products.skuPlaceholder}
+                                className={`input font-mono uppercase text-xs flex-1 ${
+                                  duplicateSkuConflict
+                                    ? "border-red-400 focus:border-red-500 bg-red-50/40"
+                                    : ""
+                                }`}
+                              />
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleRegenerateProductSku(prodCategories, editingProductId)
+                                }
+                                title={
+                                  lang === "bn"
+                                    ? `ক্যাটাগরি অনুযায়ী পরবর্তী SKU জেনারেট করুন (${liveSkuPreview.sku})`
+                                    : `Regenerate sequential SKU from primary category (${liveSkuPreview.sku})`
+                                }
+                                className="h-[40px] w-[40px] shrink-0 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 hover:border-[#0B5336] hover:bg-brand-50 hover:text-[#0B5336] flex items-center justify-center transition-colors"
+                              >
+                                <RefreshCw className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                            {duplicateSkuConflict ? (
+                              <p className="text-[10px] font-semibold text-red-600 mt-1 leading-tight">
+                                {lang === "bn"
+                                  ? `ডুপ্লিকেট SKU (${duplicateSkuConflict.id})! পাশে রিফ্রেশ বাটনে চাপুন: ${liveSkuPreview.sku}`
+                                  : `Duplicate SKU (${duplicateSkuConflict.id})! Click refresh for ${liveSkuPreview.sku}`}
+                              </p>
+                            ) : (
+                              <p className="text-[10px] text-slate-400 mt-1 font-mono truncate">
+                                {editingProductId && prodSku !== liveSkuPreview.sku
+                                  ? lang === "bn"
+                                    ? `পরবর্তী সিরিয়াল: ${liveSkuPreview.sku}`
+                                    : `Next in category: ${liveSkuPreview.sku}`
+                                  : `MAX+1: ${liveSkuPreview.sku}`}
+                              </p>
+                            )}
                           </div>
                         </div>
 
@@ -4578,6 +4789,8 @@ export function MartAdminClient() {
                             <div className="flex flex-wrap gap-1.5 max-h-44 overflow-y-auto pr-1">
                               {categories.map((cat) => {
                                 const checked = prodCategories.includes(cat.slug);
+                                const isPrimarySelected = prodCategories[0] === cat.slug;
+                                const catCode = resolveCategorySkuCode(cat);
                                 const catLabel = pickLocalized(
                                   cat.nameEn,
                                   cat.nameBn,
@@ -4606,6 +4819,17 @@ export function MartAdminClient() {
                                       {parent
                                         ? `${pickLocalized(parent.nameEn, parent.nameBn, lang)} › ${catLabel}`
                                         : catLabel}
+                                    </span>
+                                    <span
+                                      className={`rounded px-1 py-0.2 font-mono text-[9px] font-bold ${
+                                        checked
+                                          ? isPrimarySelected
+                                            ? "bg-gold-400 text-slate-950"
+                                            : "bg-white/20 text-white"
+                                          : "bg-slate-200/80 text-slate-600"
+                                      }`}
+                                    >
+                                      {catCode}
                                     </span>
                                   </label>
                                 );
@@ -5313,23 +5537,78 @@ export function MartAdminClient() {
                       </div>
                     </div>
 
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        {t.admin.taxonomy.catSlugLabel}
-                      </label>
-                      <input
-                        type="text"
-                        value={catSlug}
-                        onChange={(e) => setCatSlug(e.target.value)}
-                        placeholder={
-                          slugifyCategory(catNameEn || catNameBn) ||
-                          t.admin.taxonomy.catSlugPlaceholder
-                        }
-                        className="input font-mono text-xs"
-                      />
-                      <p className="text-[11px] text-slate-500 mt-1">
-                        {t.admin.taxonomy.slugCascadeNote}
-                      </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                      <div className="sm:col-span-7">
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          {t.admin.taxonomy.catSlugLabel}
+                        </label>
+                        <input
+                          type="text"
+                          value={catSlug}
+                          onChange={(e) => setCatSlug(e.target.value)}
+                          placeholder={
+                            slugifyCategory(catNameEn || catNameBn) ||
+                            t.admin.taxonomy.catSlugPlaceholder
+                          }
+                          className="input font-mono text-xs"
+                        />
+                        <p className="text-[11px] text-slate-500 mt-1">
+                          {t.admin.taxonomy.slugCascadeNote}
+                        </p>
+                      </div>
+
+                      <div className="sm:col-span-5">
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          {lang === "bn"
+                            ? "৩-অক্ষরের SKU কোড (Auto / Custom)"
+                            : "3-Letter SKU Code (Auto / Custom)"}
+                        </label>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="text"
+                            maxLength={3}
+                            value={catSkuCode}
+                            onChange={(e) =>
+                              setCatSkuCode(sanitizeSkuCodeToken(e.target.value))
+                            }
+                            placeholder={deriveDefaultCategorySkuCode(
+                              catNameEn || catNameBn || "GEN",
+                              catSlug || slugifyCategory(catNameEn || catNameBn),
+                              categories
+                                .filter((c) => c.id !== editingCategoryId)
+                                .map((c) => resolveCategorySkuCode(c))
+                            )}
+                            className="input font-mono uppercase text-xs flex-1 tracking-widest"
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setCatSkuCode(
+                                deriveDefaultCategorySkuCode(
+                                  catNameEn || catNameBn || "GEN",
+                                  catSlug || slugifyCategory(catNameEn || catNameBn),
+                                  categories
+                                    .filter((c) => c.id !== editingCategoryId)
+                                    .map((c) => resolveCategorySkuCode(c))
+                                )
+                              )
+                            }
+                            title={
+                              lang === "bn"
+                                ? "স্বয়ংক্রিয় ইউনিক ৩-অক্ষরের কোড তৈরি করুন"
+                                : "Auto-generate unique 3-letter SKU code"
+                            }
+                            className="h-[40px] w-[40px] shrink-0 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] flex items-center justify-center"
+                          >
+                            <RefreshCw className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                        <p className="text-[10px] text-slate-500 mt-1 font-mono">
+                          {lang === "bn"
+                            ? "যেমন: FSH, MEN, ELC, AUD (XM-[CAT]-[SUB]-0001)"
+                            : "Used in XM-[CAT]-[SUB]-0001"}
+                        </p>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -5501,9 +5780,14 @@ export function MartAdminClient() {
                                 ) : null}
                               </div>
                               <div className="min-w-0">
-                                <div className="font-semibold text-slate-900 truncate">
-                                  {cat.nameEn}
-                                  {cat.nameBn ? ` · ${cat.nameBn}` : ""}
+                                <div className="font-semibold text-slate-900 truncate flex items-center gap-1.5">
+                                  <span className="truncate">
+                                    {cat.nameEn}
+                                    {cat.nameBn ? ` · ${cat.nameBn}` : ""}
+                                  </span>
+                                  <span className="shrink-0 rounded bg-brand-50 border border-brand-200 px-1.5 py-0.5 font-mono text-[10px] font-bold text-[#0B5336]">
+                                    {resolveCategorySkuCode(cat)}
+                                  </span>
                                 </div>
                                 <div className="font-mono text-[11px] text-slate-400 truncate tabular-nums">
                                   /{cat.slug}
