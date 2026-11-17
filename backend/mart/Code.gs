@@ -211,7 +211,7 @@ var PROP_DRIVE_PRODUCTS_ID = "MART_DRIVE_PRODUCTS_ID";
 var PROP_DRIVE_CATEGORIES_ID = "MART_DRIVE_CATEGORIES_ID";
 var PROP_DRIVE_PAYMENT_ID = "MART_DRIVE_PAYMENT_ID";
 
-var CACHE_PUBLIC_KEY = "xeetrix_mart_public_v4";
+var CACHE_PUBLIC_KEY = "xeetrix_mart_public_v5";
 var CACHE_TTL_SECONDS = 600; // 10 minutes; automatically busted on every mutation
 
 function jsonOut(payload) {
@@ -431,12 +431,140 @@ function invalidateMartCache() {
   try {
     var cache = CacheService.getScriptCache();
     cache.remove(CACHE_PUBLIC_KEY);
+    cache.remove("xeetrix_mart_public_v4");
     cache.remove("xeetrix_mart_public_v3");
     cache.remove("xeetrix_mart_public_v2");
     cache.remove("xeetrix_mart_public_v1");
   } catch (err) {
     // Ignore cache eviction error
   }
+}
+
+function sanitizeSkuCodeServer(raw) {
+  return String(raw || "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, 3);
+}
+
+function resolveCategorySkuCodeServer(catObj) {
+  if (!catObj) return "GEN";
+  var explicit = sanitizeSkuCodeServer(catObj.skuCode);
+  if (explicit.length === 3) return explicit;
+  var source = String(catObj.nameEn || catObj.slug || "").toUpperCase();
+  var words = source
+    .replace(/&/g, " ")
+    .replace(/[^A-Z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter(function (w) {
+      return Boolean(w) && w !== "AND" && w !== "THE" && w !== "FOR";
+    });
+  var candidate = "";
+  if (words.length >= 3) {
+    candidate = words[0].charAt(0) + words[1].charAt(0) + words[2].charAt(0);
+  } else if (words.length === 2) {
+    candidate = words[0].slice(0, 2) + words[1].slice(0, 1);
+  } else if (words.length === 1) {
+    var w = words[0];
+    var consonants = w.charAt(0) + w.slice(1).replace(/[AEIOU]/g, "");
+    candidate = (consonants.length >= 3 ? consonants : w).slice(0, 3);
+  }
+  candidate = sanitizeSkuCodeServer(candidate);
+  while (candidate.length < 3) {
+    candidate += "X";
+  }
+  return candidate || "GEN";
+}
+
+function resolveThreeLevelSkuPrefixServer(categoriesCsv, allCategories) {
+  var slugs = String(categoriesCsv || "")
+    .split(",")
+    .map(function (s) {
+      return s.trim();
+    })
+    .filter(function (s) {
+      return Boolean(s);
+    });
+  if (slugs.length === 0) {
+    return {
+      l1Code: "GEN",
+      l2Code: "GEN",
+      l3Code: "GEN",
+      prefix: "XM-GEN-GEN-GEN"
+    };
+  }
+  var bySlug = {};
+  for (var i = 0; i < allCategories.length; i++) {
+    var c = allCategories[i];
+    if (c && c.slug) {
+      bySlug[String(c.slug).trim()] = c;
+    }
+  }
+  var primarySlug = slugs[0];
+  var target = bySlug[primarySlug];
+  if (!target) {
+    var fb = resolveCategorySkuCodeServer({ nameEn: primarySlug, slug: primarySlug });
+    return {
+      l1Code: fb,
+      l2Code: "GEN",
+      l3Code: "GEN",
+      prefix: "XM-" + fb + "-GEN-GEN"
+    };
+  }
+  var chain = [target];
+  var visited = {};
+  visited[target.slug] = true;
+  var cursor = target;
+  while (cursor.parentSlug && chain.length < 3) {
+    var pSlug = String(cursor.parentSlug).trim();
+    if (!pSlug || visited[pSlug]) break;
+    var parentCat = bySlug[pSlug];
+    if (!parentCat) break;
+    visited[pSlug] = true;
+    chain.unshift(parentCat);
+    cursor = parentCat;
+  }
+  var l1Code = chain[0] ? resolveCategorySkuCodeServer(chain[0]) : "GEN";
+  var l2Code = chain[1] ? resolveCategorySkuCodeServer(chain[1]) : "GEN";
+  var l3Code = chain[2] ? resolveCategorySkuCodeServer(chain[2]) : "GEN";
+  return {
+    l1Code: l1Code,
+    l2Code: l2Code,
+    l3Code: l3Code,
+    prefix: "XM-" + l1Code + "-" + l2Code + "-" + l3Code
+  };
+}
+
+function computeNextSequentialSkuServer(
+  categoriesCsv,
+  existingProducts,
+  allCategories,
+  excludeProductId
+) {
+  var resolved = resolveThreeLevelSkuPrefixServer(categoriesCsv, allCategories);
+  var prefixWithDash = resolved.prefix + "-";
+  var maxSerial = 0;
+  for (var i = 0; i < existingProducts.length; i++) {
+    var prod = existingProducts[i];
+    if (!prod) continue;
+    if (excludeProductId && String(prod.id) === String(excludeProductId)) continue;
+    var rawSku = String(prod.sku || "").trim().toUpperCase();
+    if (rawSku.indexOf(prefixWithDash) !== 0) continue;
+    var remainder = rawSku.slice(prefixWithDash.length);
+    var match = remainder.match(/^(\d{1,6})/);
+    if (match && match[1]) {
+      var parsed = parseInt(match[1], 10);
+      if (!isNaN(parsed) && parsed > maxSerial) {
+        maxSerial = parsed;
+      }
+    }
+  }
+  var nextSerial = maxSerial + 1;
+  var serialStr = String(nextSerial);
+  while (serialStr.length < 4) {
+    serialStr = "0" + serialStr;
+  }
+  return resolved.prefix + "-" + serialStr;
 }
 
 function normalizeMartCell(header, val) {
@@ -558,6 +686,9 @@ function readMartRows(sheet, sheetName) {
       }
       if (!obj.slug) {
         obj.slug = slugifyText(obj.nameEn || obj.nameBn || obj.id);
+      }
+      if (!obj.skuCode) {
+        obj.skuCode = resolveCategorySkuCodeServer(obj);
       }
     }
 
@@ -691,10 +822,13 @@ function buildAndCachePublicBundle(ss) {
       return {
         id: p.id,
         sku: p.sku,
+        slug: p.slug || "",
         nameEn: p.nameEn,
         nameBn: p.nameBn,
         categories: p.categories,
         labels: p.labels,
+        tags: p.tags || "",
+        attributesJson: p.attributesJson || "",
         price: p.price,
         comparePrice: p.comparePrice,
         wholesaleMinQty: Number(p.wholesaleMinQty) || 0,
@@ -714,7 +848,8 @@ function buildAndCachePublicBundle(ss) {
         descriptionBn: p.descriptionBn,
         featured: p.featured,
         active: p.active,
-        createdAt: p.createdAt
+        createdAt: p.createdAt,
+        updatedAt: p.updatedAt || p.createdAt || ""
       };
     });
 
@@ -907,7 +1042,24 @@ function findVariantCellForProduct(prod, colorName, sizeName, variantSku) {
   return null;
 }
 
-function sanitizeProductFieldsAndSyncStock(obj, fallbackMatrixJson) {
+function buildVariantSubSkuServer(parentSku, colorNameEn, sizeName) {
+  var base = String(parentSku || "").trim().toUpperCase();
+  if (!base) return "";
+  var cCode = String(colorNameEn || "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, 3);
+  var sCode = String(sizeName || "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, 4);
+  var parts = [base];
+  if (cCode) parts.push(cCode);
+  if (sCode) parts.push(sCode);
+  return parts.join("-");
+}
+
+function sanitizeProductFieldsAndSyncStock(obj, fallbackMatrixJson, fallbackParentSku) {
   if (!obj || typeof obj !== "object") return obj;
   var numericCols = [
     "price",
@@ -926,6 +1078,12 @@ function sanitizeProductFieldsAndSyncStock(obj, fallbackMatrixJson) {
     }
   }
 
+  var effectiveParentSku = String(
+    obj.sku !== undefined ? obj.sku : fallbackParentSku || ""
+  )
+    .trim()
+    .toUpperCase();
+
   var effectiveMatrixStr =
     obj.variationMatrixJson !== undefined
       ? String(obj.variationMatrixJson || "")
@@ -940,11 +1098,17 @@ function sanitizeProductFieldsAndSyncStock(obj, fallbackMatrixJson) {
         for (var i = 0; i < parsedMatrix.length; i++) {
           var cell = parsedMatrix[i];
           if (!cell || typeof cell !== "object") continue;
+          var colorNameEn = String(cell.colorNameEn || "");
+          var sizeVal = String(cell.size || "");
+          var rawCellSku = String(cell.sku || "").trim().toUpperCase();
+          if (effectiveParentSku && !rawCellSku) {
+            rawCellSku = buildVariantSubSkuServer(effectiveParentSku, colorNameEn, sizeVal);
+          }
           var cleanCell = {
-            key: String(cell.key || ""),
-            colorNameEn: String(cell.colorNameEn || ""),
-            size: String(cell.size || ""),
-            sku: String(cell.sku || ""),
+            key: String(cell.key || (colorNameEn + "::" + sizeVal)),
+            colorNameEn: colorNameEn,
+            size: sizeVal,
+            sku: rawCellSku,
             priceOverride: Math.max(0, Number(cell.priceOverride) || 0),
             costOverride: Math.max(0, Number(cell.costOverride) || 0),
             stock: Math.max(0, Number(cell.stock) || 0),
@@ -956,7 +1120,7 @@ function sanitizeProductFieldsAndSyncStock(obj, fallbackMatrixJson) {
           cleanedMatrix.push(cleanCell);
         }
         if (cleanedMatrix.length > 0) {
-          if (obj.variationMatrixJson !== undefined) {
+          if (obj.variationMatrixJson !== undefined || effectiveParentSku) {
             obj.variationMatrixJson = JSON.stringify(cleanedMatrix);
           }
           if (obj.fulfillmentType !== "dropship") {
@@ -1652,11 +1816,32 @@ function doPost(e) {
           return jsonOut(availCheck);
         }
         payload = enrichOrderPayloadServerSide(ss, payload);
+      } else if (sheetName === "Mart_Categories") {
+        if (!payload.slug) {
+          payload.slug = slugifyText(payload.nameEn || payload.nameBn || "category");
+        }
+        payload.skuCode = resolveCategorySkuCodeServer(payload);
       } else if (sheetName === "Mart_Products") {
-        payload = sanitizeProductFieldsAndSyncStock(payload, "");
+        var existingProds = readMartRows(sheet, "Mart_Products");
+        var rawRequestedSku = String(payload.sku || "").trim().toUpperCase();
+        if (!rawRequestedSku || rawRequestedSku === "AUTO") {
+          var catSheetForSku = ensureMartSheet(ss, "Mart_Categories");
+          var allCatsForSku = readMartRows(catSheetForSku, "Mart_Categories");
+          payload.sku = computeNextSequentialSkuServer(
+            payload.categories || "",
+            existingProds,
+            allCatsForSku,
+            ""
+          );
+        } else {
+          payload.sku = rawRequestedSku;
+        }
+        if (!payload.slug) {
+          payload.slug = slugifyText(payload.nameEn || payload.nameBn || payload.sku);
+        }
+        payload = sanitizeProductFieldsAndSyncStock(payload, "", payload.sku);
         var newSku = String(payload.sku || "").trim().toUpperCase();
         if (newSku) {
-          var existingProds = readMartRows(sheet, "Mart_Products");
           for (var ep = 0; ep < existingProds.length; ep++) {
             if (String(existingProds[ep].sku || "").trim().toUpperCase() === newSku) {
               return jsonOut({
@@ -1736,6 +1921,73 @@ function doPost(e) {
       return jsonOut({ ok: true, id: recordId, record: record });
     }
 
+    if (action === "batchCreateRecords") {
+      if (!isAuthorizedMartAdmin(token)) {
+        return jsonOut({ ok: false, error: "Unauthorized Mart API token." });
+      }
+      var batchSheetName = String(body.sheet || "");
+      var batchHeaders = MART_SCHEMA[batchSheetName];
+      if (!batchHeaders || batchSheetName === "Mart_Settings") {
+        return jsonOut({ ok: false, error: "Invalid target sheet for batchCreateRecords." });
+      }
+      var itemsList = Array.isArray(body.records) ? body.records : [];
+      if (itemsList.length === 0) {
+        return jsonOut({ ok: true, count: 0 });
+      }
+      var batchSheet = ensureMartSheet(ss, batchSheetName);
+      var bActualHeaders = batchSheet
+        .getRange(1, 1, 1, Math.max(1, batchSheet.getLastColumn()))
+        .getValues()[0];
+      var bNow = new Date().toISOString();
+      var rowsMatrix = [];
+
+      for (var bi = 0; bi < itemsList.length; bi++) {
+        var itemData = itemsList[bi] || {};
+        if (batchSheetName === "Mart_Categories") {
+          if (!itemData.slug) {
+            itemData.slug = slugifyText(itemData.nameEn || itemData.nameBn || "cat-" + bi);
+          }
+          itemData.skuCode = resolveCategorySkuCodeServer(itemData);
+        }
+        var bId = itemData.id ? String(itemData.id) : generateMartId(batchSheetName) + "-" + bi;
+        var bRec = {};
+        for (var bh = 0; bh < batchHeaders.length; bh++) {
+          var bCol = batchHeaders[bh];
+          var bVal;
+          if (bCol === "id") {
+            bVal = bId;
+          } else if (bCol === "createdAt" || bCol === "updatedAt") {
+            bVal = itemData[bCol] || bNow;
+          } else if ((bCol === "active" || bCol === "supplierAvailable") && itemData[bCol] === undefined) {
+            bVal = true;
+          } else if (bCol === "featured" && itemData.featured === undefined) {
+            bVal = false;
+          } else if (bCol === "sortOrder" && itemData.sortOrder === undefined) {
+            bVal = (bi + 1) * 10;
+          } else {
+            bVal = itemData[bCol] !== undefined ? itemData[bCol] : "";
+          }
+          bRec[bCol] = normalizeMartCell(bCol, bVal);
+        }
+        var bRow = [];
+        for (var bah = 0; bah < bActualHeaders.length; bah++) {
+          var bHeaderName = String(bActualHeaders[bah] || "").trim();
+          bRow.push(bRec[bHeaderName] !== undefined ? bRec[bHeaderName] : "");
+        }
+        rowsMatrix.push(bRow);
+      }
+
+      if (rowsMatrix.length > 0) {
+        var appendStartRow = batchSheet.getLastRow() + 1;
+        batchSheet
+          .getRange(appendStartRow, 1, rowsMatrix.length, bActualHeaders.length)
+          .setValues(rowsMatrix);
+      }
+
+      invalidateMartCache();
+      return jsonOut({ ok: true, count: rowsMatrix.length });
+    }
+
     if (action === "updateStatus" || action === "updateRecord") {
       if (!isAuthorizedMartAdmin(token)) {
         return jsonOut({ ok: false, error: "Unauthorized Mart API token." });
@@ -1777,6 +2029,13 @@ function doPost(e) {
       if (body.status !== undefined) updates.status = body.status;
       if (body.active !== undefined) updates.active = body.active;
       if (body.featured !== undefined) updates.featured = body.featured;
+      if (updSheetName === "Mart_Categories" && updates.skuCode !== undefined) {
+        updates.skuCode = resolveCategorySkuCodeServer({
+          skuCode: updates.skuCode,
+          nameEn: updates.nameEn !== undefined ? updates.nameEn : prevRowObj.nameEn,
+          slug: updates.slug !== undefined ? updates.slug : prevRowObj.slug
+        });
+      }
       if (updSheetName === "Mart_Products") {
         var prodSyncObj = {
           fulfillmentType:
@@ -1788,7 +2047,11 @@ function doPost(e) {
         for (var uk = 0; uk < uKeys.length; uk++) {
           prodSyncObj[uKeys[uk]] = updates[uKeys[uk]];
         }
-        sanitizeProductFieldsAndSyncStock(prodSyncObj, prevRowObj.variationMatrixJson);
+        sanitizeProductFieldsAndSyncStock(
+          prodSyncObj,
+          prevRowObj.variationMatrixJson,
+          prodSyncObj.sku !== undefined ? prodSyncObj.sku : prevRowObj.sku
+        );
         var updatedSku =
           prodSyncObj.sku !== undefined ? String(prodSyncObj.sku || "").trim().toUpperCase() : "";
         if (updatedSku) {
@@ -1880,11 +2143,26 @@ function doPost(e) {
         if (String(delIds[d][0]) === delId) {
           var rowToDelete = d + 2;
           var delStockRestored = false;
+          var deletedRowObj = readSingleRowObject(delSheet, delHeaders, rowToDelete);
           if (delSheetName === "Mart_Orders") {
-            var prevOrderObj = readSingleRowObject(delSheet, delHeaders, rowToDelete);
-            delStockRestored = syncOrderStockOnUpdate(ss, prevOrderObj, "Cancelled", prevOrderObj.itemsJson);
+            delStockRestored = syncOrderStockOnUpdate(
+              ss,
+              deletedRowObj,
+              "Cancelled",
+              deletedRowObj.itemsJson
+            );
           }
           delSheet.deleteRow(rowToDelete);
+          if (delSheetName === "Mart_Categories" && deletedRowObj.slug) {
+            cascadeTaxonomySlugChange(
+              ss,
+              "Mart_Categories",
+              deletedRowObj.slug,
+              deletedRowObj.parentSlug || ""
+            );
+          } else if (delSheetName === "Mart_Labels" && deletedRowObj.slug) {
+            cascadeTaxonomySlugChange(ss, "Mart_Labels", deletedRowObj.slug, "");
+          }
           invalidateMartCache();
           return jsonOut({ ok: true, id: delId, deleted: true, stockRestored: delStockRestored });
         }

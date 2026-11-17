@@ -584,6 +584,14 @@ export function MartStorefront({
     });
   }, [visibleCategories, categoryCountsMap]);
 
+  // Top horizontal rail shows Level 1 Main Categories cleanly (falls back to all if no root categories exist)
+  const topLevelRailCategories = useMemo(() => {
+    const roots = sortedVisibleCategories.filter(
+      (cat) => !cat.parentSlug || !categoryMap.has(cat.parentSlug)
+    );
+    return roots.length > 0 ? roots : sortedVisibleCategories;
+  }, [sortedVisibleCategories, categoryMap]);
+
   function scrollCategoryRail(dir: "left" | "right") {
     if (!categoryRailRef.current) return;
     const offset = dir === "left" ? -320 : 320;
@@ -591,14 +599,36 @@ export function MartStorefront({
   }
 
   const activeCategoryObj = useMemo(() => {
-    if (selectedCategories.length !== 1) return null;
-    const slug = selectedCategories[0];
+    if (selectedCategories.length === 0) return null;
+    const slug = selectedCategories[selectedCategories.length - 1];
     return visibleCategories.find((c) => c.slug === slug) || categoryMap.get(slug) || null;
   }, [selectedCategories, visibleCategories, categoryMap]);
+
+  // Resolve [L1, L2, L3] lineage for the active category
+  const activeCategoryLineage = useMemo(() => {
+    if (!activeCategoryObj) return [] as MartCategory[];
+    const chain: MartCategory[] = [activeCategoryObj];
+    const visited = new Set<string>([activeCategoryObj.slug]);
+    let curr = activeCategoryObj;
+    while (curr.parentSlug && !visited.has(curr.parentSlug)) {
+      const parent = categoryMap.get(curr.parentSlug);
+      if (!parent) break;
+      visited.add(parent.slug);
+      chain.unshift(parent);
+      curr = parent;
+    }
+    return chain.slice(0, 3);
+  }, [activeCategoryObj, categoryMap]);
 
   const activeCategoryChildren = useMemo(() => {
     if (!activeCategoryObj) return [];
     return childCategoriesByParent.get(activeCategoryObj.slug) || [];
+  }, [activeCategoryObj, childCategoriesByParent]);
+
+  // If the selected category is a Level 3 leaf, also offer sibling Level 3 categories under the same Level 2 parent
+  const activeCategorySiblings = useMemo(() => {
+    if (!activeCategoryObj || !activeCategoryObj.parentSlug) return [];
+    return childCategoriesByParent.get(activeCategoryObj.parentSlug) || [];
   }, [activeCategoryObj, childCategoriesByParent]);
 
   // Parent-child expansion so selecting a parent category matches child categories as well
@@ -2694,8 +2724,10 @@ export function MartStorefront({
                     </span>
                   </button>
 
-                  {sortedVisibleCategories.map((cat) => {
-                    const active = selectedCategories.includes(cat.slug);
+                  {topLevelRailCategories.map((cat) => {
+                    const active =
+                      selectedCategories.includes(cat.slug) ||
+                      activeCategoryLineage[0]?.slug === cat.slug;
                     const catTitle = pickLocalized(cat.nameEn, cat.nameBn, lang, cat.slug);
                     const catThumb = categoryThumbMap[cat.slug] || "";
                     const catCount = categoryCountsMap[cat.slug] ?? 0;
@@ -2703,7 +2735,11 @@ export function MartStorefront({
                       <button
                         key={cat.slug}
                         type="button"
-                        onClick={() => toggleCategoryFilter(cat.slug)}
+                        onClick={() =>
+                          setSelectedCategories((prev) =>
+                            prev.length === 1 && prev[0] === cat.slug ? [] : [cat.slug]
+                          )
+                        }
                         className={`inline-flex items-center gap-2 pl-1.5 pr-3 py-1 rounded-xl text-xs font-semibold transition-colors whitespace-nowrap shrink-0 snap-start min-h-[38px] border ${
                           active
                             ? "bg-[#0B5336] border-[#0B5336] text-white"
@@ -2745,6 +2781,93 @@ export function MartStorefront({
                   <ChevronRight className="h-4 w-4" />
                 </button>
               </div>
+
+              {/* Row 1.5: 3-Level Category Breadcrumb & Sub/Child Drill-Down Strip */}
+              {activeCategoryObj && (
+                <div className="pt-2 border-t border-slate-100 flex flex-col gap-1.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div className="flex flex-wrap items-center gap-1 min-w-0">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedCategories([])}
+                        className="text-slate-500 hover:text-[#0B5336] font-medium"
+                      >
+                        {t.catalog.allCategories}
+                      </button>
+                      {activeCategoryLineage.map((node, idx) => {
+                        const isLast = idx === activeCategoryLineage.length - 1;
+                        return (
+                          <span key={node.slug} className="inline-flex items-center gap-1">
+                            <span className="text-slate-300">›</span>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedCategories([node.slug])}
+                              className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-semibold transition-colors ${
+                                isLast
+                                  ? "bg-brand-50 text-[#0B5336] border border-brand-200"
+                                  : "text-slate-700 hover:text-[#0B5336]"
+                              }`}
+                            >
+                              <span className="font-mono text-[9px] font-bold uppercase opacity-75">
+                                L{idx + 1}
+                              </span>
+                              <span>
+                                {pickLocalized(node.nameEn, node.nameBn, lang, node.slug)}
+                              </span>
+                            </button>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {(activeCategoryChildren.length > 0 || activeCategorySiblings.length > 1) && (
+                    <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-0.5">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 shrink-0 mr-1">
+                        {activeCategoryChildren.length > 0
+                          ? activeCategoryLineage.length === 1
+                            ? lang === "bn"
+                              ? "সাব-ক্যাটাগরি (L2):"
+                              : "Sub-Categories (L2):"
+                            : lang === "bn"
+                            ? "চাইল্ড ক্যাটাগরি (L3):"
+                            : "Child Categories (L3):"
+                          : lang === "bn"
+                          ? "একই সাব-ক্যাটাগরি:"
+                          : "Related Categories:"}
+                      </span>
+                      {(activeCategoryChildren.length > 0
+                        ? activeCategoryChildren
+                        : activeCategorySiblings
+                      ).map((sub) => {
+                        const isSubActive = selectedCategories.includes(sub.slug);
+                        const subCount = categoryCountsMap[sub.slug] ?? 0;
+                        return (
+                          <button
+                            key={sub.slug}
+                            type="button"
+                            onClick={() => setSelectedCategories([sub.slug])}
+                            className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-semibold whitespace-nowrap shrink-0 transition-colors ${
+                              isSubActive
+                                ? "border-[#0B5336] bg-[#0B5336] text-white"
+                                : "border-slate-200 bg-slate-50 text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336]"
+                            }`}
+                          >
+                            <span>{pickLocalized(sub.nameEn, sub.nameBn, lang, sub.slug)}</span>
+                            <span
+                              className={`font-mono text-[10px] tabular-nums ${
+                                isSubActive ? "text-emerald-100" : "text-slate-400"
+                              }`}
+                            >
+                              ({toLocalizedDigits(subCount, lang)})
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Row 2: Compact Collections Scroller + Filter Drawer Toggle + Sort Bar */}
               <div className="pt-2 border-t border-slate-100 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2">
@@ -2864,10 +2987,15 @@ export function MartStorefront({
                     <div className="text-[11px] font-semibold text-slate-500">
                       {t.catalog.categoriesTitle}
                     </div>
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto pr-1">
                       {sortedVisibleCategories.map((cat) => {
                         const active = selectedCategories.includes(cat.slug);
-                        const catTitle = pickLocalized(cat.nameEn, cat.nameBn, lang, cat.slug);
+                        const meta = getCategoryHierarchyMeta(cat.slug, visibleCategories);
+                        const lvl = meta?.level || 1;
+                        const catTitle =
+                          lang === "bn"
+                            ? meta?.breadcrumbBn || pickLocalized(cat.nameEn, cat.nameBn, lang, cat.slug)
+                            : meta?.breadcrumbEn || pickLocalized(cat.nameEn, cat.nameBn, lang, cat.slug);
                         const catCount = categoryCountsMap[cat.slug] ?? 0;
                         return (
                           <button
@@ -2880,6 +3008,19 @@ export function MartStorefront({
                                 : "border-slate-200 bg-white text-slate-700 hover:border-[#0B5336]"
                             }`}
                           >
+                            <span
+                              className={`rounded px-1 py-0.2 font-mono text-[9px] font-bold ${
+                                active
+                                  ? "bg-white/20 text-white"
+                                  : lvl === 3
+                                  ? "bg-brand-50 text-[#0B5336]"
+                                  : lvl === 2
+                                  ? "bg-amber-50 text-amber-800"
+                                  : "bg-slate-100 text-slate-700"
+                              }`}
+                            >
+                              L{lvl}
+                            </span>
                             <span>{catTitle}</span>
                             <span
                               className={`font-mono text-[10px] tabular-nums ${

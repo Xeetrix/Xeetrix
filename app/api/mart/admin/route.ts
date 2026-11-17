@@ -12,6 +12,7 @@ export const dynamic = "force-dynamic";
 
 const ALLOWED_MUTATION_ACTIONS = new Set([
   "createRecord",
+  "batchCreateRecords",
   "updateRecord",
   "updateStatus",
   "deleteRecord",
@@ -197,6 +198,7 @@ export async function POST(req: NextRequest) {
 
     if (
       (action === "createRecord" ||
+        action === "batchCreateRecords" ||
         action === "updateRecord" ||
         action === "updateStatus" ||
         action === "deleteRecord") &&

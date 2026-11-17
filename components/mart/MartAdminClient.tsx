@@ -49,6 +49,7 @@ import { MartAccountingPanel } from "./admin/MartAccountingPanel";
 import { MartCrmPanel } from "./admin/MartCrmPanel";
 import { MartCouponsPanel } from "./admin/MartCouponsPanel";
 import {
+  batchCreateMartRecords,
   buildMartProductUrl,
   clearStoredMartAdminPass,
   createMartRecord,
@@ -321,6 +322,8 @@ export function MartAdminClient() {
   const [uploadingCatImg, setUploadingCatImg] = useState(false);
   const [savingCategory, setSavingCategory] = useState(false);
   const [seedingStarterCats, setSeedingStarterCats] = useState(false);
+  const [prodCatSearchQuery, setProdCatSearchQuery] = useState("");
+  const [catTreeSearchQuery, setCatTreeSearchQuery] = useState("");
 
   // Label Form (Mart_Labels)
   const [editingLabelId, setEditingLabelId] = useState<string | null>(null);
@@ -1602,21 +1605,26 @@ export function MartAdminClient() {
       return;
     }
 
-    const existingCatCodes = categories
-      .filter((c) => c.id !== editingCategoryId)
+    const normalizedParent = catParentSlug === targetSlug ? "" : catParentSlug.trim();
+    const existingSiblingCatCodes = categories
+      .filter(
+        (c) =>
+          c.id !== editingCategoryId &&
+          (c.parentSlug || "").trim() === normalizedParent
+      )
       .map((c) => resolveCategorySkuCode(c));
     const cleanCustomCode = sanitizeSkuCodeToken(catSkuCode);
     const resolvedSkuCode =
       cleanCustomCode.length === 3
         ? cleanCustomCode
-        : deriveDefaultCategorySkuCode(baseEn, targetSlug, existingCatCodes);
+        : deriveDefaultCategorySkuCode(baseEn, targetSlug, existingSiblingCatCodes);
 
     const payload = {
       nameEn: baseEn,
       nameBn: catNameBn.trim(),
       slug: targetSlug,
       skuCode: resolvedSkuCode,
-      parentSlug: catParentSlug === targetSlug ? "" : catParentSlug.trim(),
+      parentSlug: normalizedParent,
       descriptionEn: catDescEn.trim(),
       descriptionBn: catDescBn.trim(),
       imageUrl: catImageUrl.trim(),
@@ -1741,33 +1749,36 @@ export function MartAdminClient() {
 
     setSeedingStarterCats(true);
     try {
-      const createdRecords: MartCategory[] = [];
-      for (const item of missingItems) {
-        const payload = {
-          nameEn: item.nameEn,
-          nameBn: item.nameBn,
-          slug: item.slug,
-          skuCode: item.skuCode,
-          parentSlug: item.parentSlug,
-          descriptionEn: item.descriptionEn,
-          descriptionBn: item.descriptionBn,
-          imageUrl: "",
-          sortOrder: item.sortOrder,
-          active: true,
-        };
-        const res = await createMartRecord("Mart_Categories", payload);
-        createdRecords.push({
-          id: res.id,
-          ...payload,
-          createdAt: new Date().toISOString(),
-        });
+      const nowIso = new Date().toISOString();
+      const batchPayloads = missingItems.map((item, idx) => ({
+        id: `CAT-SEED-${item.skuCode}-${idx + 1}`,
+        nameEn: item.nameEn,
+        nameBn: item.nameBn,
+        slug: item.slug,
+        skuCode: item.skuCode,
+        parentSlug: item.parentSlug,
+        descriptionEn: item.descriptionEn,
+        descriptionBn: item.descriptionBn,
+        imageUrl: "",
+        sortOrder: item.sortOrder,
+        active: true,
+        createdAt: nowIso,
+      }));
+
+      try {
+        await batchCreateMartRecords("Mart_Categories", batchPayloads);
+      } catch {
+        // Fallback to sequential creation if Google Sheet script is on an older deployment without batchCreateRecords
+        for (const payload of batchPayloads) {
+          await createMartRecord("Mart_Categories", payload);
+        }
       }
 
       setData((prev) =>
         prev
           ? {
               ...prev,
-              categories: [...prev.categories, ...createdRecords].sort(
+              categories: [...prev.categories, ...batchPayloads].sort(
                 (a, b) => a.sortOrder - b.sortOrder
               ),
             }
@@ -1776,8 +1787,8 @@ export function MartAdminClient() {
       showNotice(
         "success",
         lang === "bn"
-          ? `${toLocalizedDigits(createdRecords.length, lang)}টি ৩-লেভেল ক্যাটাগরি (Main > Sub > Child) সফলভাবে যুক্ত হয়েছে!`
-          : `Added ${createdRecords.length} standard 3-level categories (Main > Sub > Child)!`
+          ? `${toLocalizedDigits(batchPayloads.length, lang)}টি ৩-লেভেল ক্যাটাগরি (Main > Sub > Child) সফলভাবে যুক্ত হয়েছে!`
+          : `Added ${batchPayloads.length} standard 3-level categories (Main > Sub > Child)!`
       );
     } catch (err) {
       const apiErr = err as MartApiError;
@@ -5022,88 +5033,131 @@ export function MartAdminClient() {
                               {t.admin.products.noCategoriesHint}
                             </p>
                           ) : (
-                            <div className="flex flex-wrap gap-1.5 max-h-56 overflow-y-auto pr-1">
-                              {sortedCategoriesForTree.map((cat) => {
-                                const checked = prodCategories.includes(cat.slug);
-                                const isPrimarySelected = prodCategories[0] === cat.slug;
-                                const meta = categoryHierarchyMap.get(cat.slug);
-                                const lvl = meta?.level || 1;
-                                const catCode = resolveCategorySkuCode(cat);
-                                const fullBreadcrumb =
-                                  lang === "bn"
-                                    ? meta?.breadcrumbBn || cat.nameBn || cat.nameEn
-                                    : meta?.breadcrumbEn || cat.nameEn || cat.slug;
-                                return (
-                                  <div
-                                    key={cat.id}
-                                    className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-medium transition-colors ${
-                                      checked
-                                        ? "border-[#0B5336] bg-[#0B5336] text-white"
-                                        : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300"
-                                    }`}
-                                  >
-                                    <label className="inline-flex items-center gap-1.5 cursor-pointer">
-                                      <input
-                                        type="checkbox"
-                                        checked={checked}
-                                        onChange={() => toggleProdCategorySlug(cat.slug)}
-                                        className="sr-only"
-                                      />
-                                      <span
-                                        className={`rounded px-1 py-0.2 font-mono text-[9px] font-bold ${
+                            <div className="space-y-2">
+                              {categories.length > 8 && (
+                                <div className="relative">
+                                  <Search className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                  <input
+                                    type="text"
+                                    value={prodCatSearchQuery}
+                                    onChange={(e) => setProdCatSearchQuery(e.target.value)}
+                                    placeholder={
+                                      lang === "bn"
+                                        ? "১৬৭টি ক্যাটাগরির নাম বা SKU কোড (যেমন: SHT, GRL, WNT) দিয়ে খুঁজুন..."
+                                        : "Search 3-level categories by name or 3-letter SKU code (e.g. SHT, GRL, WNT)..."
+                                    }
+                                    className="w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-7 py-1.5 text-xs text-slate-800 outline-none focus:border-[#0B5336] focus:bg-white"
+                                  />
+                                  {prodCatSearchQuery.trim() && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setProdCatSearchQuery("")}
+                                      className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 hover:text-slate-700"
+                                    >
+                                      ✕
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                              <div className="flex flex-wrap gap-1.5 max-h-60 overflow-y-auto pr-1">
+                                {sortedCategoriesForTree
+                                  .filter((cat) => {
+                                    const q = prodCatSearchQuery.trim().toLowerCase();
+                                    if (!q) return true;
+                                    if (prodCategories.includes(cat.slug)) return true;
+                                    const meta = categoryHierarchyMap.get(cat.slug);
+                                    const code = resolveCategorySkuCode(cat).toLowerCase();
+                                    return (
+                                      (cat.nameEn || "").toLowerCase().includes(q) ||
+                                      (cat.nameBn || "").toLowerCase().includes(q) ||
+                                      (cat.slug || "").toLowerCase().includes(q) ||
+                                      code.includes(q) ||
+                                      (meta?.breadcrumbEn || "").toLowerCase().includes(q) ||
+                                      (meta?.breadcrumbBn || "").toLowerCase().includes(q)
+                                    );
+                                  })
+                                  .map((cat) => {
+                                    const checked = prodCategories.includes(cat.slug);
+                                    const isPrimarySelected = prodCategories[0] === cat.slug;
+                                    const meta = categoryHierarchyMap.get(cat.slug);
+                                    const lvl = meta?.level || 1;
+                                    const catCode = resolveCategorySkuCode(cat);
+                                    const fullBreadcrumb =
+                                      lang === "bn"
+                                        ? meta?.breadcrumbBn || cat.nameBn || cat.nameEn
+                                        : meta?.breadcrumbEn || cat.nameEn || cat.slug;
+                                    return (
+                                      <div
+                                        key={cat.id}
+                                        className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-medium transition-colors ${
                                           checked
-                                            ? "bg-white/20 text-white"
-                                            : lvl === 3
-                                            ? "bg-brand-50 text-[#0B5336] border border-brand-200"
-                                            : lvl === 2
-                                            ? "bg-amber-50 text-amber-800 border border-amber-200"
-                                            : "bg-slate-200 text-slate-700"
+                                            ? "border-[#0B5336] bg-[#0B5336] text-white"
+                                            : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300"
                                         }`}
                                       >
-                                        L{lvl}
-                                      </span>
-                                      <span>{fullBreadcrumb}</span>
-                                      <span
-                                        className={`rounded px-1 py-0.2 font-mono text-[9px] font-bold ${
-                                          checked
-                                            ? isPrimarySelected
-                                              ? "bg-gold-400 text-slate-950"
-                                              : "bg-white/20 text-white"
-                                            : "bg-slate-200/80 text-slate-600"
-                                        }`}
-                                      >
-                                        {catCode}
-                                      </span>
-                                    </label>
-                                    {checked &&
-                                      (isPrimarySelected ? (
-                                        <span
-                                          title={
-                                            lang === "bn"
-                                              ? "Primary ক্যাটাগরি (SKU নির্ধারক)"
-                                              : "Primary Category (drives SKU)"
-                                          }
-                                          className="ml-0.5 rounded bg-gold-400/90 px-1 py-0.2 text-[9px] font-bold text-slate-950 whitespace-nowrap"
-                                        >
-                                          ★ Primary
-                                        </span>
-                                      ) : (
-                                        <button
-                                          type="button"
-                                          onClick={() => handleSetPrimaryProdCategory(cat.slug)}
-                                          title={
-                                            lang === "bn"
-                                              ? "এটিকে Primary SKU ক্যাটাগরি বানান"
-                                              : "Set as Primary Category for SKU"
-                                          }
-                                          className="ml-0.5 rounded bg-white/15 hover:bg-gold-400 hover:text-slate-950 px-1 py-0.2 text-[9px] font-semibold text-emerald-100 transition-colors whitespace-nowrap"
-                                        >
-                                          ★ Set Primary
-                                        </button>
-                                      ))}
-                                  </div>
-                                );
-                              })}
+                                        <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                                          <input
+                                            type="checkbox"
+                                            checked={checked}
+                                            onChange={() => toggleProdCategorySlug(cat.slug)}
+                                            className="sr-only"
+                                          />
+                                          <span
+                                            className={`rounded px-1 py-0.2 font-mono text-[9px] font-bold ${
+                                              checked
+                                                ? "bg-white/20 text-white"
+                                                : lvl === 3
+                                                ? "bg-brand-50 text-[#0B5336] border border-brand-200"
+                                                : lvl === 2
+                                                ? "bg-amber-50 text-amber-800 border border-amber-200"
+                                                : "bg-slate-200 text-slate-700"
+                                            }`}
+                                          >
+                                            L{lvl}
+                                          </span>
+                                          <span>{fullBreadcrumb}</span>
+                                          <span
+                                            className={`rounded px-1 py-0.2 font-mono text-[9px] font-bold ${
+                                              checked
+                                                ? isPrimarySelected
+                                                  ? "bg-gold-400 text-slate-950"
+                                                  : "bg-white/20 text-white"
+                                                : "bg-slate-200/80 text-slate-600"
+                                            }`}
+                                          >
+                                            {catCode}
+                                          </span>
+                                        </label>
+                                        {checked &&
+                                          (isPrimarySelected ? (
+                                            <span
+                                              title={
+                                                lang === "bn"
+                                                  ? "Primary ক্যাটাগরি (SKU নির্ধারক)"
+                                                  : "Primary Category (drives SKU)"
+                                              }
+                                              className="ml-0.5 rounded bg-gold-400/90 px-1 py-0.2 text-[9px] font-bold text-slate-950 whitespace-nowrap"
+                                            >
+                                              ★ Primary
+                                            </span>
+                                          ) : (
+                                            <button
+                                              type="button"
+                                              onClick={() => handleSetPrimaryProdCategory(cat.slug)}
+                                              title={
+                                                lang === "bn"
+                                                  ? "এটিকে Primary SKU ক্যাটাগরি বানান"
+                                                  : "Set as Primary Category for SKU"
+                                              }
+                                              className="ml-0.5 rounded bg-white/15 hover:bg-gold-400 hover:text-slate-950 px-1 py-0.2 text-[9px] font-semibold text-emerald-100 transition-colors whitespace-nowrap"
+                                            >
+                                              ★ Set Primary
+                                            </button>
+                                          ))}
+                                      </div>
+                                    );
+                                  })}
+                              </div>
                             </div>
                           )}
                         </div>
@@ -6055,7 +6109,11 @@ export function MartAdminClient() {
                               catNameEn || catNameBn || "GEN",
                               catSlug || slugifyCategory(catNameEn || catNameBn),
                               categories
-                                .filter((c) => c.id !== editingCategoryId)
+                                .filter(
+                                  (c) =>
+                                    c.id !== editingCategoryId &&
+                                    (c.parentSlug || "").trim() === (catParentSlug || "").trim()
+                                )
                                 .map((c) => resolveCategorySkuCode(c))
                             )}
                             className="input font-mono uppercase text-xs flex-1 tracking-widest"
@@ -6068,7 +6126,12 @@ export function MartAdminClient() {
                                   catNameEn || catNameBn || "GEN",
                                   catSlug || slugifyCategory(catNameEn || catNameBn),
                                   categories
-                                    .filter((c) => c.id !== editingCategoryId)
+                                    .filter(
+                                      (c) =>
+                                        c.id !== editingCategoryId &&
+                                        (c.parentSlug || "").trim() ===
+                                          (catParentSlug || "").trim()
+                                    )
                                     .map((c) => resolveCategorySkuCode(c))
                                 )
                               )
@@ -6176,7 +6239,11 @@ export function MartAdminClient() {
                           catNameEn || catNameBn || "GEN",
                           catSlug || slugifyCategory(catNameEn || catNameBn),
                           categories
-                            .filter((c) => c.id !== editingCategoryId)
+                            .filter(
+                              (c) =>
+                                c.id !== editingCategoryId &&
+                                (c.parentSlug || "").trim() === (catParentSlug || "").trim()
+                            )
                             .map((c) => resolveCategorySkuCode(c))
                         );
                       const parentMeta = catParentSlug
@@ -6333,36 +6400,63 @@ export function MartAdminClient() {
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-                  <div className="px-4 sm:px-6 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <h3 className="font-display text-sm font-bold text-slate-900">
-                        {t.admin.taxonomy.catListTitle} ({toLocalizedDigits(categories.length, lang)})
-                      </h3>
-                      <p className="text-[11px] text-slate-500">
-                        {lang === "bn"
-                          ? "৩-লেভেল ট্রি (L1 Main ➔ L2 Sub ➔ L3 Child) ও SKU প্রিফিক্স"
-                          : "3-Level Hierarchy (L1 Main ➔ L2 Sub ➔ L3 Child) & SKU Prefix"}
-                      </p>
+                  <div className="px-4 sm:px-6 py-4 border-b border-slate-200 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h3 className="font-display text-sm font-bold text-slate-900">
+                          {t.admin.taxonomy.catListTitle} ({toLocalizedDigits(categories.length, lang)})
+                        </h3>
+                        <p className="text-[11px] text-slate-500">
+                          {lang === "bn"
+                            ? "৩-লেভেল ট্রি (L1 Main ➔ L2 Sub ➔ L3 Child) ও SKU প্রিফিক্স"
+                            : "3-Level Hierarchy (L1 Main ➔ L2 Sub ➔ L3 Child) & SKU Prefix"}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={seedingStarterCats}
+                        onClick={handleSeedStarterThreeLevelCategories}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-brand-200 bg-brand-50 px-3 py-1.5 text-xs font-semibold text-[#0B5336] hover:bg-[#0B5336] hover:text-white transition-colors disabled:opacity-50"
+                      >
+                        <Layers className="h-3.5 w-3.5" />
+                        <span>
+                          {seedingStarterCats
+                            ? lang === "bn"
+                              ? "লোড হচ্ছে..."
+                              : "Seeding 3-Level Tree..."
+                            : lang === "bn"
+                            ? "ডিফল্ট ৩-লেভেল ক্যাটাগরি লোড করুন"
+                            : "Load Starter 3-Level Tree"}
+                        </span>
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      disabled={seedingStarterCats}
-                      onClick={handleSeedStarterThreeLevelCategories}
-                      className="inline-flex items-center gap-1.5 rounded-xl border border-brand-200 bg-brand-50 px-3 py-1.5 text-xs font-semibold text-[#0B5336] hover:bg-[#0B5336] hover:text-white transition-colors disabled:opacity-50"
-                    >
-                      <Layers className="h-3.5 w-3.5" />
-                      <span>
-                        {seedingStarterCats
-                          ? lang === "bn"
-                            ? "লোড হচ্ছে..."
-                            : "Seeding 3-Level Tree..."
-                          : lang === "bn"
-                          ? "ডিফল্ট ৩-লেভেল ক্যাটাগরি লোড করুন"
-                          : "Load Starter 3-Level Tree"}
-                      </span>
-                    </button>
+                    {categories.length > 6 && (
+                      <div className="relative">
+                        <Search className="h-3.5 w-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        <input
+                          type="text"
+                          value={catTreeSearchQuery}
+                          onChange={(e) => setCatTreeSearchQuery(e.target.value)}
+                          placeholder={
+                            lang === "bn"
+                              ? "ক্যাটাগরি ট্রি খুঁজুন (নাম, স্লাগ বা ৩-অক্ষরের কোড)..."
+                              : "Filter category tree by name, slug, or 3-letter SKU code..."
+                          }
+                          className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-8 py-1.5 text-xs text-slate-800 outline-none focus:border-[#0B5336] focus:bg-white"
+                        />
+                        {catTreeSearchQuery.trim() && (
+                          <button
+                            type="button"
+                            onClick={() => setCatTreeSearchQuery("")}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 hover:text-slate-700"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <div className="divide-y divide-slate-100">
+                  <div className="divide-y divide-slate-100 max-h-[680px] overflow-y-auto">
                     {sortedCategoriesForTree.length === 0 ? (
                       <div className="p-6 text-center space-y-3">
                         <p className="text-xs text-slate-500">{t.admin.taxonomy.catEmpty}</p>
@@ -6381,7 +6475,22 @@ export function MartAdminClient() {
                         </button>
                       </div>
                     ) : (
-                      sortedCategoriesForTree.map((cat) => {
+                      sortedCategoriesForTree
+                        .filter((cat) => {
+                          const q = catTreeSearchQuery.trim().toLowerCase();
+                          if (!q) return true;
+                          const meta = categoryHierarchyMap.get(cat.slug);
+                          const code = resolveCategorySkuCode(cat).toLowerCase();
+                          return (
+                            (cat.nameEn || "").toLowerCase().includes(q) ||
+                            (cat.nameBn || "").toLowerCase().includes(q) ||
+                            (cat.slug || "").toLowerCase().includes(q) ||
+                            code.includes(q) ||
+                            (meta?.breadcrumbEn || "").toLowerCase().includes(q) ||
+                            (meta?.breadcrumbBn || "").toLowerCase().includes(q)
+                          );
+                        })
+                        .map((cat) => {
                         const meta = categoryHierarchyMap.get(cat.slug);
                         const lvl = meta?.level || 1;
                         return (
