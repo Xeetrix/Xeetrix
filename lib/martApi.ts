@@ -100,13 +100,24 @@ export interface MartCoupon {
   createdAt: string;
 }
 
+export type MartProductGender = "" | "Unisex" | "Boys" | "Girls" | "Men" | "Women";
+
+export interface MartProductAttributes {
+  gender: MartProductGender;
+  ageGroup: string;
+  material: string;
+  brand: string;
+}
+
 export interface MartProduct {
   id: string;
   sku: string;
   nameEn: string;
   nameBn: string;
-  categories: string; // Comma-separated category slugs
+  categories: string; // Comma-separated category slugs (Index 0 = Primary Category for SKU)
   labels: string; // Comma-separated label slugs
+  tags: string; // Comma-separated smart filter/search tags
+  attributesJson: string; // JSON-serialized MartProductAttributes (gender, ageGroup, material, brand)
   price: number;
   comparePrice: number;
   costPrice: number;
@@ -376,6 +387,8 @@ export function normalizeProductRecord(raw: Partial<MartProduct>): MartProduct {
     nameBn: String(raw.nameBn || ""),
     categories: cats,
     labels: String(raw.labels || ""),
+    tags: String(raw.tags || ""),
+    attributesJson: String(raw.attributesJson || ""),
     price: Number(raw.price) || 0,
     comparePrice: Number(raw.comparePrice) || 0,
     costPrice: Number(raw.costPrice) || 0,
@@ -401,6 +414,100 @@ export function normalizeProductRecord(raw: Partial<MartProduct>): MartProduct {
     active: raw.active !== false,
     createdAt: String(raw.createdAt || ""),
   };
+}
+
+export const MART_GENDER_OPTIONS: {
+  value: Exclude<MartProductGender, "">;
+  labelEn: string;
+  labelBn: string;
+}[] = [
+  { value: "Unisex", labelEn: "Unisex", labelBn: "ইউনিসেক্স" },
+  { value: "Boys", labelEn: "Boys", labelBn: "ছেলে বাচ্চা (Boys)" },
+  { value: "Girls", labelEn: "Girls", labelBn: "মেয়ে বাচ্চা (Girls)" },
+  { value: "Men", labelEn: "Men", labelBn: "পুরুষ (Men)" },
+  { value: "Women", labelEn: "Women", labelBn: "নারী (Women)" },
+];
+
+export function parseProductAttributes(attributesJson?: string): MartProductAttributes {
+  const empty: MartProductAttributes = {
+    gender: "",
+    ageGroup: "",
+    material: "",
+    brand: "",
+  };
+  if (!attributesJson) return empty;
+  try {
+    const parsed = JSON.parse(attributesJson);
+    if (!parsed || typeof parsed !== "object") return empty;
+    const rawGender = String(parsed.gender || "").trim();
+    const validGender: MartProductGender =
+      rawGender === "Unisex" ||
+      rawGender === "Boys" ||
+      rawGender === "Girls" ||
+      rawGender === "Men" ||
+      rawGender === "Women"
+        ? rawGender
+        : "";
+    return {
+      gender: validGender,
+      ageGroup: String(parsed.ageGroup || "").trim(),
+      material: String(parsed.material || "").trim(),
+      brand: String(parsed.brand || "").trim(),
+    };
+  } catch {
+    return empty;
+  }
+}
+
+export function serializeProductAttributes(attrs: Partial<MartProductAttributes>): string {
+  const clean: MartProductAttributes = {
+    gender:
+      attrs.gender === "Unisex" ||
+      attrs.gender === "Boys" ||
+      attrs.gender === "Girls" ||
+      attrs.gender === "Men" ||
+      attrs.gender === "Women"
+        ? attrs.gender
+        : "",
+    ageGroup: String(attrs.ageGroup || "").trim(),
+    material: String(attrs.material || "").trim(),
+    brand: String(attrs.brand || "").trim(),
+  };
+  if (!clean.gender && !clean.ageGroup && !clean.material && !clean.brand) {
+    return "";
+  }
+  return JSON.stringify(clean);
+}
+
+export function parseProductTags(tagsCsv?: string): string[] {
+  if (!tagsCsv) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  tagsCsv
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .forEach((tag) => {
+      const key = tag.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        out.push(tag);
+      }
+    });
+  return out;
+}
+
+/**
+ * Promotes `targetSlug` to index 0 of `selectedCategorySlugs` so it becomes the Primary Category for SKU generation.
+ */
+export function promotePrimaryCategorySlug(
+  selectedCategorySlugs: string[],
+  targetSlug: string
+): string[] {
+  const cleanTarget = targetSlug.trim();
+  if (!cleanTarget) return selectedCategorySlugs;
+  const rest = selectedCategorySlugs.filter((s) => s !== cleanTarget);
+  return [cleanTarget, ...rest];
 }
 
 export function normalizeCouponRecord(raw: Partial<MartCoupon>): MartCoupon {

@@ -64,6 +64,7 @@ import {
   getStoredMartAdminPass,
   MART_CONTACT_EMAIL,
   MART_CONTACT_PHONE,
+  MART_GENDER_OPTIONS,
   MartAdminBundle,
   MartApiError,
   MartCategory,
@@ -79,6 +80,7 @@ import {
   MartOrderStatus,
   MartProduct,
   MartProductColor,
+  MartProductGender,
   MartSettings,
   MartSupplier,
   MartTransaction,
@@ -86,12 +88,16 @@ import {
   normalizeMartImageUrl,
   parseGalleryUrls,
   parseOrderItems,
+  parseProductAttributes,
   parseProductColors,
   parseProductSizes,
+  parseProductTags,
   parseVariationMatrix,
   prepareMartProductImageUpload,
+  promotePrimaryCategorySlug,
   resolveCategorySkuCode,
   sanitizeSkuCodeToken,
+  serializeProductAttributes,
   slugifyCategory,
   updateMartRecord,
   updateMartStoreSettings,
@@ -242,6 +248,11 @@ export function MartAdminClient() {
   const [prodNameBn, setProdNameBn] = useState("");
   const [prodCategories, setProdCategories] = useState<string[]>([]);
   const [prodLabels, setProdLabels] = useState<string[]>([]);
+  const [prodTags, setProdTags] = useState("");
+  const [prodGender, setProdGender] = useState<MartProductGender>("");
+  const [prodAgeGroup, setProdAgeGroup] = useState("");
+  const [prodMaterial, setProdMaterial] = useState("");
+  const [prodBrand, setProdBrand] = useState("");
   const [prodPrice, setProdPrice] = useState("");
   const [prodComparePrice, setProdComparePrice] = useState("");
   const [prodCostPrice, setProdCostPrice] = useState("");
@@ -422,6 +433,11 @@ export function MartAdminClient() {
     setProdNameBn("");
     setProdCategories([]);
     setProdLabels([]);
+    setProdTags("");
+    setProdGender("");
+    setProdAgeGroup("");
+    setProdMaterial("");
+    setProdBrand("");
     setProdPrice("");
     setProdComparePrice("");
     setProdCostPrice("");
@@ -485,6 +501,12 @@ export function MartAdminClient() {
     setProdNameBn(p.nameBn || "");
     setProdCategories(parseCsvSlugs(p.categories));
     setProdLabels(parseCsvSlugs(p.labels));
+    setProdTags(p.tags || "");
+    const parsedAttrs = parseProductAttributes(p.attributesJson);
+    setProdGender(parsedAttrs.gender);
+    setProdAgeGroup(parsedAttrs.ageGroup);
+    setProdMaterial(parsedAttrs.material);
+    setProdBrand(parsedAttrs.brand);
     setProdPrice(String(p.price));
     setProdComparePrice(p.comparePrice ? String(p.comparePrice) : "");
     setProdCostPrice(p.costPrice ? String(p.costPrice) : "");
@@ -560,6 +582,30 @@ export function MartAdminClient() {
       : [...prodCategories, slug];
     setProdCategories(nextCategories);
     // In Add Mode, auto-update SKU from the primary category/sub-category unless manually edited
+    if (!editingProductId && !skuManuallyEdited) {
+      const currentCats = data?.categories || [];
+      const currentProds = data?.products || [];
+      const nextSkuInfo = generateProductSkuFromCategories(
+        nextCategories,
+        currentCats,
+        currentProds,
+        null
+      );
+      setProdSku(nextSkuInfo.sku);
+      setProdMatrix((prev) =>
+        prev.length > 0
+          ? prev.map((row) => ({
+              ...row,
+              sku: generateVariantSubSku(nextSkuInfo.sku, row.colorNameEn, row.size),
+            }))
+          : prev
+      );
+    }
+  }
+
+  function handleSetPrimaryProdCategory(slug: string) {
+    const nextCategories = promotePrimaryCategorySlug(prodCategories, slug);
+    setProdCategories(nextCategories);
     if (!editingProductId && !skuManuallyEdited) {
       const currentCats = data?.categories || [];
       const currentProds = data?.products || [];
@@ -981,12 +1027,22 @@ export function MartAdminClient() {
           }))
         : [];
 
+    const cleanTagsCsv = parseProductTags(prodTags).join(", ");
+    const cleanAttributesJson = serializeProductAttributes({
+      gender: prodGender,
+      ageGroup: prodAgeGroup,
+      material: prodMaterial,
+      brand: prodBrand,
+    });
+
     const payload = {
       sku: finalSku,
       nameEn: prodNameEn.trim() || prodNameBn.trim(),
       nameBn: prodNameBn.trim(),
       categories: prodCategories.join(","),
       labels: prodLabels.join(","),
+      tags: cleanTagsCsv,
+      attributesJson: cleanAttributesJson,
       price: Math.max(0, Number(prodPrice) || 0),
       comparePrice: Math.max(0, Number(prodComparePrice) || 0),
       costPrice: Math.max(0, Number(prodCostPrice) || 0),
@@ -2039,7 +2095,11 @@ export function MartAdminClient() {
         })
         .join(" ");
       const supName = p.supplierId ? supMap.get(p.supplierId)?.name || "" : p.sourceName || "";
-      return [p.nameEn, p.nameBn, p.sku, catNames, lblNames, supName]
+      const attrs = parseProductAttributes(p.attributesJson);
+      const attrSummary = [attrs.gender, attrs.ageGroup, attrs.material, attrs.brand]
+        .filter(Boolean)
+        .join(" ");
+      return [p.nameEn, p.nameBn, p.sku, catNames, lblNames, p.tags || "", attrSummary, supName]
         .join(" ")
         .toLowerCase()
         .includes(q);
@@ -4760,16 +4820,18 @@ export function MartAdminClient() {
                         </div>
                       </div>
 
-                      {/* Right Card 3: Categories & Labels Multi-Select */}
+                      {/* Right Card 3: Categories & Labels Multi-Select + Primary SKU Control */}
                       <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 space-y-4">
-                        <div className="space-y-2">
+                        <div className="space-y-2.5">
                           <div className="flex items-center justify-between gap-2">
                             <div>
                               <div className="text-xs font-bold text-slate-800">
                                 {t.admin.products.categoriesLabel}
                               </div>
                               <div className="text-[11px] text-slate-500">
-                                {t.admin.products.categoriesHint}
+                                {lang === "bn"
+                                  ? "একাধিক ক্যাটাগরি সিলেক্ট করা যাবে · প্রথমটি (★) দিয়ে SKU তৈরি হবে"
+                                  : "Multi-select supported · First selected (★) drives the SKU"}
                               </div>
                             </div>
                             <button
@@ -4781,12 +4843,32 @@ export function MartAdminClient() {
                             </button>
                           </div>
 
+                          {prodCategories.length > 0 && (
+                            <div className="rounded-lg border border-brand-200 bg-brand-50/60 px-2.5 py-1.5 flex flex-wrap items-center justify-between gap-1.5 text-[11px]">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <Star className="h-3 w-3 text-gold-600 fill-gold-500 shrink-0" />
+                                <span className="font-semibold text-slate-800 truncate">
+                                  {lang === "bn" ? "Primary SKU ক্যাটাগরি:" : "Primary SKU Category:"}{" "}
+                                  <span className="text-[#0B5336]">
+                                    {liveSkuPreview.catNameEn}
+                                    {liveSkuPreview.subCode !== "GEN"
+                                      ? ` › ${liveSkuPreview.subNameEn}`
+                                      : ""}
+                                  </span>
+                                </span>
+                              </div>
+                              <span className="font-mono text-[10px] font-bold text-[#0B5336] bg-white border border-brand-200 rounded px-1.5 py-0.5 shrink-0">
+                                XM-{liveSkuPreview.catCode}-{liveSkuPreview.subCode}
+                              </span>
+                            </div>
+                          )}
+
                           {categories.length === 0 ? (
                             <p className="text-xs text-slate-500 py-1">
                               {t.admin.products.noCategoriesHint}
                             </p>
                           ) : (
-                            <div className="flex flex-wrap gap-1.5 max-h-44 overflow-y-auto pr-1">
+                            <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto pr-1">
                               {categories.map((cat) => {
                                 const checked = prodCategories.includes(cat.slug);
                                 const isPrimarySelected = prodCategories[0] === cat.slug;
@@ -4801,37 +4883,65 @@ export function MartAdminClient() {
                                   ? categoryMap.get(cat.parentSlug)
                                   : null;
                                 return (
-                                  <label
+                                  <div
                                     key={cat.id}
-                                    className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-medium cursor-pointer transition-colors ${
+                                    className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-medium transition-colors ${
                                       checked
                                         ? "border-[#0B5336] bg-[#0B5336] text-white"
                                         : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300"
                                     }`}
                                   >
-                                    <input
-                                      type="checkbox"
-                                      checked={checked}
-                                      onChange={() => toggleProdCategorySlug(cat.slug)}
-                                      className="sr-only"
-                                    />
-                                    <span>
-                                      {parent
-                                        ? `${pickLocalized(parent.nameEn, parent.nameBn, lang)} › ${catLabel}`
-                                        : catLabel}
-                                    </span>
-                                    <span
-                                      className={`rounded px-1 py-0.2 font-mono text-[9px] font-bold ${
-                                        checked
-                                          ? isPrimarySelected
-                                            ? "bg-gold-400 text-slate-950"
-                                            : "bg-white/20 text-white"
-                                          : "bg-slate-200/80 text-slate-600"
-                                      }`}
-                                    >
-                                      {catCode}
-                                    </span>
-                                  </label>
+                                    <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        onChange={() => toggleProdCategorySlug(cat.slug)}
+                                        className="sr-only"
+                                      />
+                                      <span>
+                                        {parent
+                                          ? `${pickLocalized(parent.nameEn, parent.nameBn, lang)} › ${catLabel}`
+                                          : catLabel}
+                                      </span>
+                                      <span
+                                        className={`rounded px-1 py-0.2 font-mono text-[9px] font-bold ${
+                                          checked
+                                            ? isPrimarySelected
+                                              ? "bg-gold-400 text-slate-950"
+                                              : "bg-white/20 text-white"
+                                            : "bg-slate-200/80 text-slate-600"
+                                        }`}
+                                      >
+                                        {catCode}
+                                      </span>
+                                    </label>
+                                    {checked &&
+                                      (isPrimarySelected ? (
+                                        <span
+                                          title={
+                                            lang === "bn"
+                                              ? "Primary ক্যাটাগরি (SKU নির্ধারক)"
+                                              : "Primary Category (drives SKU)"
+                                          }
+                                          className="ml-0.5 rounded bg-gold-400/90 px-1 py-0.2 text-[9px] font-bold text-slate-950 whitespace-nowrap"
+                                        >
+                                          ★ Primary
+                                        </span>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleSetPrimaryProdCategory(cat.slug)}
+                                          title={
+                                            lang === "bn"
+                                              ? "এটিকে Primary SKU ক্যাটাগরি বানান"
+                                              : "Set as Primary Category for SKU"
+                                          }
+                                          className="ml-0.5 rounded bg-white/15 hover:bg-gold-400 hover:text-slate-950 px-1 py-0.2 text-[9px] font-semibold text-emerald-100 transition-colors whitespace-nowrap"
+                                        >
+                                          {lang === "bn" ? "★ Set Primary" : "★ Set Primary"}
+                                        </button>
+                                      ))}
+                                  </div>
                                 );
                               })}
                             </div>
@@ -4885,6 +4995,199 @@ export function MartAdminClient() {
                               })}
                             </div>
                           )}
+                        </div>
+                      </div>
+
+                      {/* Right Card 3B: Smart Attributes & Filter Tags (Gender, Age, Material, Brand, Tags) */}
+                      <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 space-y-3.5">
+                        <div className="pb-2 border-b border-slate-100">
+                          <div className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                            {lang === "bn"
+                              ? "স্মার্ট ট্যাগ ও অ্যাট্রিবিউট ফিল্টার"
+                              : "Smart Attributes & Filter Tags"}
+                          </div>
+                          <p className="text-[11px] text-slate-500 mt-0.5">
+                            {lang === "bn"
+                              ? "ক্যাটাগরি লিস্ট বড় না করে কাস্টমারদের দ্রুত ফিল্টারিংয়ের জন্য যুক্ত করুন"
+                              : "Enable customer filtering by Gender, Age, Material, Brand & Tags"}
+                          </p>
+                        </div>
+
+                        {/* Gender Selector */}
+                        <div className="space-y-1.5">
+                          <label className="block text-xs font-semibold text-slate-700">
+                            {lang === "bn" ? "লিঙ্গ / Gender" : "Gender / Target Audience"}
+                          </label>
+                          <div className="flex flex-wrap gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setProdGender("")}
+                              className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                                prodGender === ""
+                                  ? "border-slate-800 bg-slate-800 text-white"
+                                  : "border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300"
+                              }`}
+                            >
+                              {lang === "bn" ? "নির্ধারিত নয়" : "Any / None"}
+                            </button>
+                            {MART_GENDER_OPTIONS.map((gOpt) => {
+                              const active = prodGender === gOpt.value;
+                              return (
+                                <button
+                                  key={gOpt.value}
+                                  type="button"
+                                  onClick={() =>
+                                    setProdGender((prev) =>
+                                      prev === gOpt.value ? "" : gOpt.value
+                                    )
+                                  }
+                                  className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                                    active
+                                      ? "border-[#0B5336] bg-[#0B5336] text-white"
+                                      : "border-slate-200 bg-slate-50 text-slate-700 hover:border-[#0B5336]"
+                                  }`}
+                                >
+                                  {lang === "bn" ? gOpt.labelBn : gOpt.labelEn}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Age Group & Brand */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-700 mb-1">
+                              {lang === "bn" ? "বয়স সীমা (Age Group)" : "Age Group"}
+                            </label>
+                            <input
+                              type="text"
+                              value={prodAgeGroup}
+                              onChange={(e) => setProdAgeGroup(e.target.value)}
+                              placeholder={
+                                lang === "bn"
+                                  ? "যেমন: 0-2 Years, 3-7 Years"
+                                  : "e.g. 0-2 Years, 3-7 Years, Adult"
+                              }
+                              className="input text-xs"
+                            />
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {["0-2 Years", "3-7 Years", "8-14 Years", "Adult"].map((preset) => (
+                                <button
+                                  key={preset}
+                                  type="button"
+                                  onClick={() => setProdAgeGroup(preset)}
+                                  className="rounded bg-slate-100 hover:bg-brand-50 hover:text-[#0B5336] px-1.5 py-0.5 text-[10px] font-medium text-slate-600 transition-colors"
+                                >
+                                  {preset}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-700 mb-1">
+                              {lang === "bn" ? "ব্র্যান্ড (Brand)" : "Brand"}
+                            </label>
+                            <input
+                              type="text"
+                              value={prodBrand}
+                              onChange={(e) => setProdBrand(e.target.value)}
+                              placeholder={
+                                lang === "bn" ? "যেমন: Xeetrix, Joykiddy" : "e.g. Xeetrix, Joykiddy"
+                              }
+                              className="input text-xs"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Material / Fabric */}
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">
+                            {lang === "bn" ? "ম্যাটেরিয়াল / ফেব্রিক (Material)" : "Material / Fabric"}
+                          </label>
+                          <input
+                            type="text"
+                            value={prodMaterial}
+                            onChange={(e) => setProdMaterial(e.target.value)}
+                            placeholder={
+                              lang === "bn"
+                                ? "যেমন: 100% Cotton, Sherpa Fleece, ABS"
+                                : "e.g. 100% Cotton, Sherpa Fleece, Leather"
+                            }
+                            className="input text-xs"
+                          />
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {["100% Cotton", "Sherpa Fleece", "Plush Velvet", "Denim", "ABS Plastic"].map(
+                              (mat) => (
+                                <button
+                                  key={mat}
+                                  type="button"
+                                  onClick={() => setProdMaterial(mat)}
+                                  className="rounded bg-slate-100 hover:bg-brand-50 hover:text-[#0B5336] px-1.5 py-0.5 text-[10px] font-medium text-slate-600 transition-colors"
+                                >
+                                  {mat}
+                                </button>
+                              )
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Custom Filter Tags (Comma-separated) */}
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">
+                            {lang === "bn"
+                              ? "কাস্টম ফিল্টার ও সার্চ ট্যাগ (কমা দিয়ে আলাদা করুন)"
+                              : "Custom Filter & Search Tags (Comma-separated)"}
+                          </label>
+                          <input
+                            type="text"
+                            value={prodTags}
+                            onChange={(e) => setProdTags(e.target.value)}
+                            placeholder={
+                              lang === "bn"
+                                ? "যেমন: Hoodie, Winter Wear, Baby Blanket, Gift"
+                                : "e.g. Hoodie, Winter Wear, Baby Blanket, Educational"
+                            }
+                            className="input text-xs"
+                          />
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {[
+                              "Winter Wear",
+                              "Hoodie",
+                              "Baby Blanket",
+                              "Overcoat",
+                              "Gift Idea",
+                              "Bestseller",
+                            ].map((tagPreset) => {
+                              const currentList = parseProductTags(prodTags);
+                              const hasTag = currentList.some(
+                                (tItem) => tItem.toLowerCase() === tagPreset.toLowerCase()
+                              );
+                              return (
+                                <button
+                                  key={tagPreset}
+                                  type="button"
+                                  onClick={() => {
+                                    const nextList = hasTag
+                                      ? currentList.filter(
+                                          (tItem) =>
+                                            tItem.toLowerCase() !== tagPreset.toLowerCase()
+                                        )
+                                      : [...currentList, tagPreset];
+                                    setProdTags(nextList.join(", "));
+                                  }}
+                                  className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+                                    hasTag
+                                      ? "bg-[#0B5336] text-white"
+                                      : "bg-slate-100 text-slate-600 hover:bg-brand-50 hover:text-[#0B5336]"
+                                  }`}
+                                >
+                                  + {tagPreset}
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
                       </div>
 
@@ -5295,6 +5598,23 @@ export function MartAdminClient() {
                                     {lblNames.join(" · ")}
                                   </div>
                                 )}
+                                {(() => {
+                                  const pAttrs = parseProductAttributes(p.attributesJson);
+                                  const pTags = parseProductTags(p.tags);
+                                  const metaParts = [
+                                    pAttrs.gender,
+                                    pAttrs.ageGroup,
+                                    pAttrs.material,
+                                    pAttrs.brand,
+                                    ...pTags.slice(0, 3),
+                                  ].filter(Boolean);
+                                  if (metaParts.length === 0) return null;
+                                  return (
+                                    <div className="text-[10px] text-slate-400 mt-0.5 truncate">
+                                      {metaParts.join(" · ")}
+                                    </div>
+                                  );
+                                })()}
                               </td>
                               <td className="px-4 py-3">
                                 <div className="font-semibold text-slate-800">

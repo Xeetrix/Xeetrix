@@ -609,11 +609,21 @@ export function runMartSmartSearch(params: {
       .join(" ");
     const sizeTexts = parseProductSizes(product.sizesList).join(" ");
     const varTexts = `${product.variantsEn || ""} ${product.variantsBn || ""}`;
+    const tagTexts = parseProductTags(product.tags).join(" ");
+    const parsedAttrs = parseProductAttributes(product.attributesJson);
+    const attrTexts = [
+      parsedAttrs.gender,
+      parsedAttrs.ageGroup,
+      parsedAttrs.material,
+      parsedAttrs.brand,
+    ]
+      .filter(Boolean)
+      .join(" ");
 
     const titleNorm = normalizeSearchText(`${product.nameEn} ${product.nameBn}`);
     const skuNorm = normalizeSearchText(product.sku);
-    const catNorm = normalizeSearchText(catTexts);
-    const labelNorm = normalizeSearchText(labelTexts);
+    const catNorm = normalizeSearchText(`${catTexts} ${tagTexts}`);
+    const labelNorm = normalizeSearchText(`${labelTexts} ${attrTexts}`);
     const variantNorm = normalizeSearchText(`${colorTexts} ${sizeTexts} ${varTexts}`);
     const descNorm = normalizeSearchText(`${product.descriptionEn} ${product.descriptionBn}`);
 
@@ -630,6 +640,12 @@ export function runMartSmartSearch(params: {
     if (localizedName) {
       vocabularyMap.set(normalizeSearchText(localizedName), localizedName);
     }
+    parseProductTags(product.tags).forEach((tag) => {
+      const normTag = normalizeSearchText(tag);
+      if (normTag.length >= 2 && !vocabularyMap.has(normTag)) {
+        vocabularyMap.set(normTag, tag);
+      }
+    });
     tokens.forEach((tok) => {
       if (tok.length >= 3 && !vocabularyMap.has(tok)) {
         vocabularyMap.set(tok, tok);

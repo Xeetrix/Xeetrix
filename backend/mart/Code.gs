@@ -29,6 +29,8 @@ var MART_SCHEMA = {
     "nameBn",
     "categories",
     "labels",
+    "tags",
+    "attributesJson",
     "price",
     "comparePrice",
     "costPrice",
