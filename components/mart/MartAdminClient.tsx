@@ -229,6 +229,7 @@ export function MartAdminClient() {
 
   // Product Form (Add or Edit — Bilingual + Multi-Category + Labels + Variations + Gallery + Wholesale + Hybrid Sourcing)
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
+  const [productStudioOpen, setProductStudioOpen] = useState(false);
   const [prodSku, setProdSku] = useState("");
   const [prodNameEn, setProdNameEn] = useState("");
   const [prodNameBn, setProdNameBn] = useState("");
@@ -484,6 +485,7 @@ export function MartAdminClient() {
     setProdDescBn(p.descriptionBn || "");
     setProdFeatured(Boolean(p.featured));
     setProdActive(Boolean(p.active));
+    setProductStudioOpen(true);
     setActiveSection("products");
     scrollWorkspaceToTop();
   }
@@ -908,6 +910,7 @@ export function MartAdminClient() {
         showNotice("success", `${t.admin.products.msgCreated} (${res.id})`);
       }
       resetProductForm();
+      setProductStudioOpen(false);
     } catch (err) {
       const apiErr = err as MartApiError;
       showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
@@ -2087,9 +2090,9 @@ export function MartAdminClient() {
   );
 
   return (
-    <div className="min-h-screen lg:h-screen lg:overflow-hidden bg-slate-50 text-slate-900 flex flex-col lg:flex-row">
+    <div className="min-h-screen bg-slate-50 text-slate-900">
       {/* Stationary Fixed Full-Height Desktop Sidebar (264px) */}
-      <aside className="hidden lg:flex lg:w-[264px] shrink-0 lg:h-screen lg:flex-col bg-slate-900 text-slate-200 border-r border-slate-800">
+      <aside className="hidden lg:flex lg:fixed lg:inset-y-0 lg:left-0 lg:z-40 lg:w-[264px] lg:h-dvh lg:flex-col bg-slate-900 text-slate-200 border-r border-slate-800 select-none">
         <div className="px-5 py-4 border-b border-slate-800 shrink-0">
           <Link href="/mart" className="inline-block">
             <MartLogo inverted />
@@ -2214,10 +2217,10 @@ export function MartAdminClient() {
         </div>
       )}
 
-      {/* Main Content Workspace (Scrolls independently on Desktop) */}
+      {/* Main Content Workspace (Single natural window scroll offset by fixed sidebar) */}
       <div
         ref={mainScrollRef}
-        className="flex-1 min-w-0 flex flex-col lg:h-screen lg:overflow-y-auto"
+        className="lg:pl-[264px] min-h-screen flex flex-col min-w-0"
       >
         <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 sm:px-6 py-3 sm:py-3.5 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
@@ -3368,1182 +3371,48 @@ export function MartAdminClient() {
             </div>
           )}
 
-          {/* 3. PRODUCTS & INVENTORY MANAGEMENT (BILINGUAL + MULTI-CATEGORY + LABELS) */}
+          {/* 3. PRODUCTS & INVENTORY MANAGEMENT (MINIMALIST 2-COLUMN STUDIO + CATALOG) */}
           {activeSection === "products" && (
-            <div className="space-y-8">
-              <div
-                className={`rounded-2xl border p-4 sm:p-6 space-y-5 transition-colors ${
-                  editingProductId
-                    ? "border-[#0B5336] ring-2 ring-[#0B5336]/15 bg-brand-50/20"
-                    : "border-slate-200 bg-white"
-                }`}
-              >
-                <div className="flex flex-wrap items-center justify-between gap-4">
-                  <h2 className="font-display text-lg font-bold text-slate-900 flex items-center gap-2">
-                    {editingProductId ? (
-                      <Pencil className="h-4 w-4 text-[#0B5336]" />
-                    ) : (
-                      <Plus className="h-4 w-4 text-[#0B5336]" />
-                    )}
-                    <span>
-                      {editingProductId
-                        ? `${t.admin.products.editTitle} (${editingProductId})`
-                        : t.admin.products.addTitle}
+            <div className="space-y-6">
+              {/* Top Products & Sourcing Command Bar */}
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 shadow-2xs">
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <h2 className="font-display text-base sm:text-lg font-bold text-slate-900">
+                      {t.admin.products.catalogTableTitle}
+                    </h2>
+                    <span className="rounded-lg bg-slate-100 px-2.5 py-0.5 text-xs font-mono font-bold text-slate-700 tabular-nums">
+                      {toLocalizedDigits(products.length, lang)}
                     </span>
-                  </h2>
-                  {editingProductId && (
-                    <button
-                      type="button"
-                      onClick={resetProductForm}
-                      className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 whitespace-nowrap"
-                    >
-                      {t.admin.products.cancelEdit}
-                    </button>
-                  )}
+                    <span className="hidden sm:inline-flex items-center gap-1 rounded-lg bg-brand-50 px-2.5 py-0.5 text-[11px] font-semibold text-[#0B5336]">
+                      <span>{tsrc.ownStockMode}:</span>
+                      <span className="font-mono font-bold tabular-nums">
+                        {toLocalizedDigits(
+                          products.filter((p) => p.fulfillmentType !== "dropship").length,
+                          lang
+                        )}
+                      </span>
+                    </span>
+                    <span className="hidden sm:inline-flex items-center gap-1 rounded-lg bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800">
+                      <span>{tsrc.dropshipMode}:</span>
+                      <span className="font-mono font-bold tabular-nums">
+                        {toLocalizedDigits(
+                          products.filter((p) => p.fulfillmentType === "dropship").length,
+                          lang
+                        )}
+                      </span>
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    {editingProductId
+                      ? t.admin.products.editingBannerHint
+                      : lang === "bn"
+                      ? "নতুন পণ্য যোগ করুন, ভ্যারিয়েশন ও ড্রপশিপিং সোর্সিং নিয়ন্ত্রণ করুন।"
+                      : "Manage catalog inventory, bilingual descriptions, variations, and supplier sourcing."}
+                  </p>
                 </div>
 
-                {editingProductId && (
-                  <div className="rounded-xl border border-brand-200 bg-brand-50 px-4 py-2.5 text-xs font-medium text-[#0B5336]">
-                    {t.admin.products.editingBannerHint}
-                  </div>
-                )}
-
-                <form onSubmit={handleSaveProduct} className="space-y-5">
-                  {/* Dual EN + BN Names + SKU + Stock / Sourcing */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                        {t.admin.products.nameEnLabel}
-                      </label>
-                      <input
-                        type="text"
-                        value={prodNameEn}
-                        onChange={(e) => setProdNameEn(e.target.value)}
-                        placeholder={t.admin.products.nameEnPlaceholder}
-                        className="input"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                        {t.admin.products.nameBnLabel}
-                      </label>
-                      <input
-                        type="text"
-                        value={prodNameBn}
-                        onChange={(e) => setProdNameBn(e.target.value)}
-                        placeholder={t.admin.products.nameBnPlaceholder}
-                        className="input"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                        {t.admin.products.skuLabel}
-                      </label>
-                      <input
-                        type="text"
-                        value={prodSku}
-                        onChange={(e) => setProdSku(e.target.value.toUpperCase())}
-                        placeholder={t.admin.products.skuPlaceholder}
-                        className="input font-mono uppercase"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                        {t.admin.products.stockLabel}
-                      </label>
-                      {prodFulfillmentType === "dropship" ? (
-                        <div className="input flex items-center text-xs font-semibold text-[#0B5336] bg-brand-50">
-                          {tsrc.unlimitedLabel}
-                        </div>
-                      ) : variationMode === "matrix" && prodMatrix.length > 0 ? (
-                        <div>
-                          <div className="input flex items-center justify-between text-xs font-mono font-bold text-[#0B5336] bg-brand-50/70 tabular-nums">
-                            <span>
-                              {toLocalizedDigits(
-                                prodMatrix
-                                  .filter((v) => v.active)
-                                  .reduce((s, v) => s + Math.max(0, Number(v.stock) || 0), 0),
-                                lang
-                              )}
-                            </span>
-                            <span className="font-sans font-medium text-[11px] text-slate-600">
-                              Matrix
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-slate-500 mt-1">
-                            {t.admin.products.variantStockLockedNote}
-                          </p>
-                        </div>
-                      ) : (
-                        <input
-                          type="number"
-                          min={0}
-                          required
-                          value={prodStock}
-                          onChange={(e) => setProdStock(e.target.value)}
-                          className="input font-mono"
-                        />
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Balanced Selling & Regular Prices Row */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                        {t.admin.products.priceLabel}
-                      </label>
-                      <input
-                        type="number"
-                        min={0}
-                        required
-                        value={prodPrice}
-                        onChange={(e) => setProdPrice(e.target.value)}
-                        placeholder="1250"
-                        className="input font-mono"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                        {t.admin.products.comparePriceLabel}
-                      </label>
-                      <input
-                        type="number"
-                        min={0}
-                        value={prodComparePrice}
-                        onChange={(e) => setProdComparePrice(e.target.value)}
-                        placeholder="1550"
-                        className="input font-mono"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Sourcing Mode, Cost Price, Supplier & Billing Control */}
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-xs font-bold text-slate-900">
-                        {tsrc.sectionTitle}
-                      </span>
-                      {prodPrice && (
-                        <span
-                          className={`text-xs font-mono font-bold tabular-nums ${
-                            prodUnitProfit >= 0 ? "text-[#0B5336]" : "text-red-600"
-                          }`}
-                        >
-                          {tsrc.unitProfitLabel}: {formatMartPrice(prodUnitProfit, lang)} (
-                          {toLocalizedDigits(prodMarginPct, lang)}% · {tsrc.marginPreviewLabel})
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          {tsrc.fulfillmentModeLabel}
-                        </label>
-                        <select
-                          value={prodFulfillmentType}
-                          onChange={(e) =>
-                            setProdFulfillmentType(e.target.value as MartFulfillmentType)
-                          }
-                          className="input text-xs"
-                        >
-                          <option value="own_stock">{tsrc.ownStockMode}</option>
-                          <option value="dropship">{tsrc.dropshipMode}</option>
-                        </select>
-                        <p className="text-[11px] text-slate-500 mt-1">
-                          {prodFulfillmentType === "dropship"
-                            ? tsrc.dropshipHint
-                            : tsrc.ownStockHint}
-                        </p>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          {tsrc.costPriceLabel}
-                        </label>
-                        <input
-                          type="number"
-                          min={0}
-                          value={prodCostPrice}
-                          onChange={(e) => setProdCostPrice(e.target.value)}
-                          placeholder="850"
-                          className="input font-mono"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          {tsrc.supplierLabel}
-                        </label>
-                        <select
-                          value={prodSupplierId}
-                          onChange={(e) => {
-                            const id = e.target.value;
-                            setProdSupplierId(id);
-                            const sup = suppliers.find((s) => s.id === id);
-                            if (sup) {
-                              setProdCollectionMode(
-                                sup.payoutMode === "supplier_pays_us"
-                                  ? "supplier_collects"
-                                  : "store_collects"
-                              );
-                            }
-                          }}
-                          className="input text-xs"
-                        >
-                          <option value="">{tsrc.noSupplierOption}</option>
-                          {suppliers.map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          {tsrc.sourceNameLabel}
-                        </label>
-                        <input
-                          type="text"
-                          value={prodSourceName}
-                          onChange={(e) => setProdSourceName(e.target.value)}
-                          placeholder={tsrc.sourceNamePlaceholder}
-                          className="input text-xs"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          {tsrc.collectionModeLabel}
-                        </label>
-                        <select
-                          value={prodCollectionMode}
-                          onChange={(e) =>
-                            setProdCollectionMode(e.target.value as MartCollectionMode)
-                          }
-                          className="input text-xs"
-                        >
-                          <option value="store_collects">{tsrc.storeCollectsOption}</option>
-                          <option value="supplier_collects">{tsrc.supplierCollectsOption}</option>
-                        </select>
-                      </div>
-
-                      {prodFulfillmentType === "own_stock" ? (
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 mb-1">
-                            {tsrc.lowStockThresholdLabel}
-                          </label>
-                          <input
-                            type="number"
-                            min={0}
-                            value={prodLowStockThreshold}
-                            onChange={(e) => setProdLowStockThreshold(e.target.value)}
-                            className="input font-mono"
-                          />
-                        </div>
-                      ) : (
-                        <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-800 cursor-pointer pb-2">
-                          <input
-                            type="checkbox"
-                            checked={prodSupplierAvailable}
-                            onChange={(e) => setProdSupplierAvailable(e.target.checked)}
-                            className="h-4 w-4 rounded border-slate-300 text-[#0B5336]"
-                          />
-                          <span>{tsrc.supplierAvailableCheckbox}</span>
-                        </label>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Multi-Category & Multi-Label Matrix */}
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 pt-1">
-                    {/* Categories Multi-Select */}
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-2.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <div>
-                          <div className="text-xs font-bold text-slate-800">
-                            {t.admin.products.categoriesLabel}
-                          </div>
-                          <div className="text-[11px] text-slate-500">
-                            {t.admin.products.categoriesHint}
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setActiveSection("taxonomy")}
-                          className="text-[11px] font-semibold text-[#0B5336] hover:underline whitespace-nowrap shrink-0"
-                        >
-                          {t.admin.products.goToTaxonomyBtn}
-                        </button>
-                      </div>
-
-                      {categories.length === 0 ? (
-                        <p className="text-xs text-slate-500 py-2">
-                          {t.admin.products.noCategoriesHint}
-                        </p>
-                      ) : (
-                        <div className="flex flex-wrap gap-2">
-                          {categories.map((cat) => {
-                            const checked = prodCategories.includes(cat.slug);
-                            const catLabel = pickLocalized(cat.nameEn, cat.nameBn, lang, cat.slug);
-                            const parent = cat.parentSlug
-                              ? categoryMap.get(cat.parentSlug)
-                              : null;
-                            return (
-                              <label
-                                key={cat.id}
-                                className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium cursor-pointer transition-colors ${
-                                  checked
-                                    ? "border-[#0B5336] bg-[#0B5336] text-white"
-                                    : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-                                }`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={() => toggleProdCategorySlug(cat.slug)}
-                                  className="sr-only"
-                                />
-                                <span>
-                                  {parent
-                                    ? `${pickLocalized(parent.nameEn, parent.nameBn, lang)} › ${catLabel}`
-                                    : catLabel}
-                                </span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Labels / Collections Multi-Select */}
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-2.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <div>
-                          <div className="text-xs font-bold text-slate-800">
-                            {t.admin.products.labelsLabel}
-                          </div>
-                          <div className="text-[11px] text-slate-500">
-                            {t.admin.products.labelsHint}
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setActiveSection("taxonomy")}
-                          className="text-[11px] font-semibold text-[#0B5336] hover:underline whitespace-nowrap shrink-0"
-                        >
-                          {t.admin.products.goToTaxonomyBtn}
-                        </button>
-                      </div>
-
-                      {labels.length === 0 ? (
-                        <p className="text-xs text-slate-500 py-2">
-                          {t.admin.products.noLabelsHint}
-                        </p>
-                      ) : (
-                        <div className="flex flex-wrap gap-2">
-                          {labels.map((lbl) => {
-                            const checked = prodLabels.includes(lbl.slug);
-                            const lblText = pickLocalized(lbl.nameEn, lbl.nameBn, lang, lbl.slug);
-                            return (
-                              <label
-                                key={lbl.id}
-                                className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium cursor-pointer transition-colors ${
-                                  checked
-                                    ? "border-gold-500 bg-gold-500 text-slate-950 font-semibold"
-                                    : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-                                }`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={() => toggleProdLabelSlug(lbl.slug)}
-                                  className="sr-only"
-                                />
-                                <span>{lblText}</span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Product Primary Image & Multi-Angle Gallery Pool */}
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-4">
-                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-200">
-                      <div>
-                        <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                          <ImagePlus className="h-3.5 w-3.5 text-[#0B5336]" />
-                          <span>{tvar.mediaGallerySectionTitle}</span>
-                        </div>
-                        <div className="text-[11px] text-slate-600 mt-0.5">
-                          <span className="font-semibold text-[#0B5336]">{tvar.sizeGuideTitle}</span>
-                          {" · "}
-                          <span>{tvar.sizeGuideHint}</span>
-                        </div>
-                      </div>
-
-                      <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold text-slate-700 cursor-pointer shrink-0 hover:border-[#0B5336]">
-                        <input
-                          type="checkbox"
-                          checked={autoSquarePad}
-                          onChange={(e) => setAutoSquarePad(e.target.checked)}
-                          className="h-3.5 w-3.5 rounded accent-[#0B5336]"
-                        />
-                        <span>{tvar.autoSquarePadLabel}</span>
-                      </label>
-                    </div>
-                    {!autoSquarePad && (
-                      <div className="text-[11px] text-slate-500">
-                        {tvar.autoSquarePadOffHint}
-                      </div>
-                    )}
-
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
-                      <div className="lg:col-span-2 flex items-center gap-3">
-                        <div className="h-20 w-20 rounded-xl border border-slate-200 bg-white p-1 overflow-hidden shrink-0 flex items-center justify-center">
-                          {prodImageUrl.trim() ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={normalizeMartImageUrl(prodImageUrl)}
-                              alt={tvar.primaryPreviewLabel}
-                              referrerPolicy="no-referrer"
-                              className="h-full w-full object-contain"
-                            />
-                          ) : (
-                            <span className="text-[10px] text-slate-400 text-center px-1">
-                              {tvar.noPrimaryImageHint}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="lg:col-span-6">
-                        <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                          {t.admin.products.imageUrlLabel}
-                        </label>
-                        <input
-                          type="text"
-                          value={prodImageUrl}
-                          onChange={(e) => setProdImageUrl(e.target.value)}
-                          placeholder="https://lh3.googleusercontent.com/d/..."
-                          className="input bg-white font-mono text-xs"
-                        />
-                      </div>
-
-                      <div className="lg:col-span-4 lg:self-end">
-                        <label className="btn-outline bg-white w-full px-4 py-2.5 text-xs gap-2 cursor-pointer">
-                          <Upload className="h-3.5 w-3.5 text-[#0B5336]" />
-                          <span>
-                            {uploadingProdImg
-                              ? t.admin.products.uploading
-                              : t.admin.products.uploadToDrive}
-                          </span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            disabled={uploadingProdImg}
-                            onChange={handleProductImageUpload}
-                            className="sr-only"
-                          />
-                        </label>
-                      </div>
-                    </div>
-
-                    <div className="pt-3 border-t border-slate-200 space-y-2.5">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div>
-                          <div className="text-xs font-bold text-slate-800">
-                            {tvar.galleryTitle}
-                          </div>
-                          <div className="text-[11px] text-slate-500">{tvar.galleryHint}</div>
-                        </div>
-                        <label className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
-                          <ImagePlus className="h-3.5 w-3.5 text-[#0B5336]" />
-                          <span>
-                            {uploadingGalleryImg
-                              ? t.admin.products.uploading
-                              : tvar.uploadGalleryBtn}
-                          </span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            disabled={uploadingGalleryImg}
-                            onChange={handleGalleryImageUpload}
-                            className="sr-only"
-                          />
-                        </label>
-                      </div>
-
-                      <div className="flex flex-col sm:flex-row gap-2">
-                        <input
-                          type="text"
-                          value={extraImgInput}
-                          onChange={(e) => setExtraImgInput(e.target.value)}
-                          placeholder={tvar.addImageUrlPlaceholder}
-                          className="input text-xs font-mono flex-1 bg-white"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleAddExtraGalleryUrl}
-                          className="btn-outline bg-white px-4 py-2 text-xs whitespace-nowrap"
-                        >
-                          {tvar.addImageBtn}
-                        </button>
-                      </div>
-
-                      {prodGalleryUrls.length > 0 && (
-                        <div className="flex flex-wrap gap-3 pt-1">
-                          {prodGalleryUrls.map((url, idx) => (
-                            <div
-                              key={`${url}-${idx}`}
-                              className="group relative flex flex-col items-center gap-1 rounded-xl border border-slate-200 bg-white p-1.5"
-                            >
-                              <div className="relative h-16 w-16 rounded-lg overflow-hidden bg-white p-1 border border-slate-100">
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img
-                                  src={normalizeMartImageUrl(url)}
-                                  alt={tvar.galleryTitle}
-                                  referrerPolicy="no-referrer"
-                                  className="h-full w-full object-contain"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setProdGalleryUrls((prev) =>
-                                      prev.filter((_, i) => i !== idx)
-                                    )
-                                  }
-                                  aria-label={t.common.delete}
-                                  className="absolute top-0.5 right-0.5 rounded bg-slate-900/80 p-0.5 text-white hover:bg-red-600"
-                                >
-                                  <X className="h-3 w-3" />
-                                </button>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => handleSetPrimaryFromGallery(url)}
-                                className="w-full rounded px-1.5 py-0.5 text-[10px] font-semibold text-[#0B5336] bg-brand-50 hover:bg-[#0B5336] hover:text-white transition-colors whitespace-nowrap"
-                              >
-                                {tvar.setAsPrimaryBtn}
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Unified 3-Mode Variation Studio + Wholesale Bulk Tier Pricing */}
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-4">
-                    <div className="space-y-2.5">
-                      <div>
-                        <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                          <Layers className="h-3.5 w-3.5 text-[#0B5336]" />
-                          <span>{tvar.modeLabel}</span>
-                        </div>
-                        <p className="text-[11px] text-slate-500 mt-0.5">{tvar.sectionSubtitle}</p>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
-                        {(
-                          [
-                            { id: "none", title: tvar.modeNone, hint: tvar.modeNoneHint },
-                            { id: "simple", title: tvar.modeSimple, hint: tvar.modeSimpleHint },
-                            { id: "matrix", title: tvar.modeMatrix, hint: tvar.modeMatrixHint },
-                          ] as const
-                        ).map((modeOpt) => {
-                          const active = variationMode === modeOpt.id;
-                          return (
-                            <button
-                              key={modeOpt.id}
-                              type="button"
-                              onClick={() => {
-                                setVariationMode(modeOpt.id);
-                                setColorGalleryPickerIdx(null);
-                              }}
-                              className={`rounded-xl border p-3 text-left transition-colors ${
-                                active
-                                  ? "border-[#0B5336] bg-white ring-2 ring-[#0B5336]/15"
-                                  : "border-slate-200 bg-white/70 hover:border-slate-300"
-                              }`}
-                            >
-                              <div className="flex items-center justify-between gap-2">
-                                <span
-                                  className={`text-xs font-bold ${
-                                    active ? "text-[#0B5336]" : "text-slate-800"
-                                  }`}
-                                >
-                                  {modeOpt.title}
-                                </span>
-                                {active && (
-                                  <CheckCircle2 className="h-3.5 w-3.5 text-[#0B5336] shrink-0" />
-                                )}
-                              </div>
-                              <p className="text-[11px] text-slate-500 mt-1 leading-snug">
-                                {modeOpt.hint}
-                              </p>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Mode: Simple Option List */}
-                    {variationMode === "simple" && (
-                      <div className="pt-3 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                            {t.admin.products.variantsEnLabel}
-                          </label>
-                          <input
-                            type="text"
-                            value={prodVariantsEn}
-                            onChange={(e) => setProdVariantsEn(e.target.value)}
-                            placeholder={t.admin.products.variantsEnPlaceholder}
-                            className="input bg-white"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                            {t.admin.products.variantsBnLabel}
-                          </label>
-                          <input
-                            type="text"
-                            value={prodVariantsBn}
-                            onChange={(e) => setProdVariantsBn(e.target.value)}
-                            placeholder={t.admin.products.variantsBnPlaceholder}
-                            className="input bg-white"
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Mode: Structured Color Swatches + Sizes + Price/Stock Matrix */}
-                    {variationMode === "matrix" && (
-                      <div className="space-y-4 pt-3 border-t border-slate-200">
-                        {/* Color Swatches Builder with Drive Upload & Gallery Picker */}
-                        <div className="space-y-2.5">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-xs font-bold text-slate-800">
-                              {tvar.colorsTitle}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={handleAddColorRow}
-                              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-[#0B5336] hover:bg-brand-50 whitespace-nowrap"
-                            >
-                              {tvar.addColorBtn}
-                            </button>
-                          </div>
-
-                          {prodColors.length > 0 && (
-                            <div className="space-y-2.5">
-                              {prodColors.map((clr, idx) => {
-                                const isUploadingColor = uploadingColorRowId === clr.id;
-                                const pickerOpen = colorGalleryPickerIdx === idx;
-                                return (
-                                  <div
-                                    key={clr.id}
-                                    className="rounded-xl border border-slate-200 bg-white p-3 space-y-2.5"
-                                  >
-                                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center">
-                                      {/* Live Color Image / Hex Swatch Preview */}
-                                      <div className="sm:col-span-1 flex items-center gap-2">
-                                        <div className="h-10 w-10 rounded-lg border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center bg-white p-0.5">
-                                          {clr.imageUrl ? (
-                                            // eslint-disable-next-line @next/next/no-img-element
-                                            <img
-                                              src={normalizeMartImageUrl(clr.imageUrl)}
-                                              alt={clr.nameEn || clr.nameBn || "Color"}
-                                              referrerPolicy="no-referrer"
-                                              className="h-full w-full object-contain"
-                                            />
-                                          ) : (
-                                            <span
-                                              className="h-5 w-5 rounded-full border border-slate-300"
-                                              style={{ backgroundColor: clr.hex || "#0B5336" }}
-                                            />
-                                          )}
-                                        </div>
-                                      </div>
-
-                                      <div className="sm:col-span-4">
-                                        <input
-                                          type="text"
-                                          value={clr.nameEn}
-                                          onChange={(e) =>
-                                            handleColorNameEnChange(idx, e.target.value)
-                                          }
-                                          placeholder={tvar.colorNameEnPlaceholder}
-                                          aria-label={tvar.colorNameEnLabel}
-                                          className="input min-h-[38px] py-1.5 text-xs"
-                                        />
-                                      </div>
-
-                                      <div className="sm:col-span-4">
-                                        <input
-                                          type="text"
-                                          value={clr.nameBn}
-                                          onChange={(e) =>
-                                            setProdColors((prev) =>
-                                              prev.map((item, i) =>
-                                                i === idx ? { ...item, nameBn: e.target.value } : item
-                                              )
-                                            )
-                                          }
-                                          placeholder={tvar.colorNameBnPlaceholder}
-                                          aria-label={tvar.colorNameBnLabel}
-                                          className="input min-h-[38px] py-1.5 text-xs"
-                                        />
-                                      </div>
-
-                                      <div className="sm:col-span-2 flex items-center gap-2">
-                                        <input
-                                          type="color"
-                                          value={clr.hex || "#0B5336"}
-                                          onChange={(e) =>
-                                            setProdColors((prev) =>
-                                              prev.map((item, i) =>
-                                                i === idx ? { ...item, hex: e.target.value } : item
-                                              )
-                                            )
-                                          }
-                                          aria-label={tvar.colorHexLabel}
-                                          className="h-9 w-12 rounded-lg border border-slate-200 cursor-pointer shrink-0"
-                                        />
-                                        <span className="font-mono text-[11px] text-slate-400">
-                                          {clr.hex || "#0B5336"}
-                                        </span>
-                                      </div>
-
-                                      <div className="sm:col-span-1 text-right">
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setProdColors((prev) =>
-                                              prev.filter((_, i) => i !== idx)
-                                            );
-                                            if (colorGalleryPickerIdx === idx) {
-                                              setColorGalleryPickerIdx(null);
-                                            }
-                                          }}
-                                          aria-label={t.common.delete}
-                                          className="text-red-600 hover:text-red-800 p-1.5 rounded-lg hover:bg-red-50"
-                                        >
-                                          <Trash2 className="h-4 w-4" />
-                                        </button>
-                                      </div>
-                                    </div>
-
-                                    {/* Per-Color Dedicated Drive Upload, Gallery Picker & URL Input */}
-                                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-2 border-t border-slate-100">
-                                      <input
-                                        type="text"
-                                        value={clr.imageUrl || ""}
-                                        onChange={(e) =>
-                                          setProdColors((prev) =>
-                                            prev.map((item, i) =>
-                                              i === idx
-                                                ? { ...item, imageUrl: e.target.value }
-                                                : item
-                                            )
-                                          )
-                                        }
-                                        placeholder={tvar.colorImageLabel}
-                                        className="input min-h-[36px] py-1 text-xs font-mono flex-1"
-                                      />
-
-                                      <div className="flex flex-wrap items-center gap-1.5 shrink-0">
-                                        <label className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] cursor-pointer inline-flex items-center gap-1.5 min-h-[36px] whitespace-nowrap">
-                                          <Upload className="h-3.5 w-3.5 text-[#0B5336]" />
-                                          <span>
-                                            {isUploadingColor
-                                              ? t.admin.products.uploading
-                                              : tvar.uploadColorImgBtn}
-                                          </span>
-                                          <input
-                                            type="file"
-                                            accept="image/*"
-                                            disabled={isUploadingColor}
-                                            onChange={(e) =>
-                                              handleColorRowImageUpload(clr.id, idx, e)
-                                            }
-                                            className="sr-only"
-                                          />
-                                        </label>
-
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            setColorGalleryPickerIdx((prev) =>
-                                              prev === idx ? null : idx
-                                            )
-                                          }
-                                          className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold min-h-[36px] whitespace-nowrap transition-colors ${
-                                            pickerOpen
-                                              ? "border-[#0B5336] bg-[#0B5336] text-white"
-                                              : "border-slate-300 bg-white text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336]"
-                                          }`}
-                                        >
-                                          {tvar.pickFromGalleryBtn}
-                                        </button>
-
-                                        {clr.imageUrl && (
-                                          <button
-                                            type="button"
-                                            onClick={() =>
-                                              setProdColors((prev) =>
-                                                prev.map((item, i) =>
-                                                  i === idx ? { ...item, imageUrl: "" } : item
-                                                )
-                                              )
-                                            }
-                                            className="rounded-lg border border-slate-200 px-2 py-1.5 text-[11px] font-semibold text-slate-500 hover:text-red-600 min-h-[36px]"
-                                            title={tvar.clearColorImgBtn}
-                                          >
-                                            <X className="h-3.5 w-3.5" />
-                                          </button>
-                                        )}
-                                      </div>
-                                    </div>
-
-                                    {pickerOpen && (
-                                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 space-y-2">
-                                        {availableGalleryPool.length === 0 ? (
-                                          <p className="text-[11px] text-slate-500">
-                                            {tvar.noGalleryPhotosHint}
-                                          </p>
-                                        ) : (
-                                          <div className="flex flex-wrap gap-2">
-                                            {availableGalleryPool.map((poolUrl, pIdx) => {
-                                              const selected = clr.imageUrl === poolUrl;
-                                              return (
-                                                <button
-                                                  key={`${poolUrl}-${pIdx}`}
-                                                  type="button"
-                                                  onClick={() => {
-                                                    setProdColors((prev) =>
-                                                      prev.map((item, i) =>
-                                                        i === idx
-                                                          ? { ...item, imageUrl: poolUrl }
-                                                          : item
-                                                      )
-                                                    );
-                                                    setColorGalleryPickerIdx(null);
-                                                  }}
-                                                  className={`h-14 w-14 rounded-lg bg-white p-1 overflow-hidden border-2 transition-all ${
-                                                    selected
-                                                      ? "border-[#0B5336] ring-2 ring-[#0B5336]/25"
-                                                      : "border-slate-200 hover:border-[#0B5336]"
-                                                  }`}
-                                                >
-                                                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                  <img
-                                                    src={normalizeMartImageUrl(poolUrl)}
-                                                    alt={tvar.galleryTitle}
-                                                    referrerPolicy="no-referrer"
-                                                    className="h-full w-full object-contain"
-                                                  />
-                                                </button>
-                                              );
-                                            })}
-                                          </div>
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Sizes Input + Matrix Generator */}
-                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-end pt-3 border-t border-slate-200">
-                          <div className="lg:col-span-7">
-                            <label className="block text-xs font-semibold text-slate-700 mb-1">
-                              {tvar.sizesLabel}
-                            </label>
-                            <input
-                              type="text"
-                              value={prodSizesInput}
-                              onChange={(e) => setProdSizesInput(e.target.value)}
-                              placeholder={tvar.sizesPlaceholder}
-                              className="input bg-white text-xs"
-                            />
-                          </div>
-                          <div className="lg:col-span-5 flex flex-wrap gap-2">
-                            <button
-                              type="button"
-                              onClick={handleBuildVariationMatrix}
-                              className="btn-outline bg-white px-3.5 py-2 text-xs whitespace-nowrap"
-                            >
-                              {tvar.syncMatrixBtn}
-                            </button>
-                            {prodMatrix.length > 0 && (
-                              <button
-                                type="button"
-                                onClick={() => setProdMatrix([])}
-                                className="rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 whitespace-nowrap"
-                              >
-                                {tvar.clearMatrixBtn}
-                              </button>
-                            )}
-                          </div>
-                        </div>
-
-                        {matrixNeedsSync && (
-                          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-900">
-                            <div className="flex items-center gap-2">
-                              <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
-                              <span>{tvar.matrixSyncNeededHint}</span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={handleBuildVariationMatrix}
-                              className="rounded-lg bg-amber-600 px-3 py-1 text-[11px] font-semibold text-white hover:bg-amber-700 whitespace-nowrap"
-                            >
-                              {tvar.syncMatrixBtn}
-                            </button>
-                          </div>
-                        )}
-
-                        {/* Optional Price/Cost/Stock Variation Matrix */}
-                        {prodMatrix.length > 0 && (
-                          <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-3">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <span className="text-xs font-bold text-slate-800">
-                                {tvar.matrixTitle} ({toLocalizedDigits(prodMatrix.length, lang)})
-                              </span>
-                              <span className="text-[11px] text-slate-500">{tvar.matrixHint}</span>
-                            </div>
-                            <div className="overflow-x-auto">
-                              <table className="w-full text-left text-xs">
-                                <thead className="border-b border-slate-200 text-slate-500">
-                                  <tr>
-                                    <th className="py-2 pr-2 font-semibold">{tvar.colCombination}</th>
-                                    <th className="py-2 pr-2 font-semibold">{tvar.colVariantSku}</th>
-                                    <th className="py-2 pr-2 font-semibold">{tvar.colPriceOverride}</th>
-                                    <th className="py-2 pr-2 font-semibold">{tvar.colCostOverride}</th>
-                                    <th className="py-2 pr-2 font-semibold">{tvar.colStock}</th>
-                                    <th className="py-2 font-semibold text-center">{tvar.colActive}</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                  {prodMatrix.map((row, idx) => (
-                                    <tr key={row.key}>
-                                      <td className="py-1.5 pr-2 font-semibold text-slate-800 whitespace-nowrap">
-                                        {[row.colorNameEn, row.size].filter(Boolean).join(" / ")}
-                                      </td>
-                                      <td className="py-1.5 pr-2">
-                                        <input
-                                          type="text"
-                                          value={row.sku}
-                                          onChange={(e) =>
-                                            setProdMatrix((prev) =>
-                                              prev.map((m, i) =>
-                                                i === idx ? { ...m, sku: e.target.value } : m
-                                              )
-                                            )
-                                          }
-                                          className="rounded border border-slate-200 px-2 py-1 text-xs font-mono w-28"
-                                        />
-                                      </td>
-                                      <td className="py-1.5 pr-2">
-                                        <input
-                                          type="number"
-                                          min={0}
-                                          value={row.priceOverride || ""}
-                                          onChange={(e) =>
-                                            setProdMatrix((prev) =>
-                                              prev.map((m, i) =>
-                                                i === idx
-                                                  ? { ...m, priceOverride: Math.max(0, Number(e.target.value) || 0) }
-                                                  : m
-                                              )
-                                            )
-                                          }
-                                          className="rounded border border-slate-200 px-2 py-1 text-xs font-mono w-20"
-                                        />
-                                      </td>
-                                      <td className="py-1.5 pr-2">
-                                        <input
-                                          type="number"
-                                          min={0}
-                                          value={row.costOverride || ""}
-                                          onChange={(e) =>
-                                            setProdMatrix((prev) =>
-                                              prev.map((m, i) =>
-                                                i === idx
-                                                  ? { ...m, costOverride: Math.max(0, Number(e.target.value) || 0) }
-                                                  : m
-                                              )
-                                            )
-                                          }
-                                          className="rounded border border-slate-200 px-2 py-1 text-xs font-mono w-20"
-                                        />
-                                      </td>
-                                      <td className="py-1.5 pr-2">
-                                        <input
-                                          type="number"
-                                          min={0}
-                                          value={row.stock}
-                                          onChange={(e) =>
-                                            setProdMatrix((prev) =>
-                                              prev.map((m, i) =>
-                                                i === idx
-                                                  ? { ...m, stock: Math.max(0, Number(e.target.value) || 0) }
-                                                  : m
-                                              )
-                                            )
-                                          }
-                                          className="rounded border border-slate-200 px-2 py-1 text-xs font-mono w-20"
-                                        />
-                                      </td>
-                                      <td className="py-1.5 text-center">
-                                        <input
-                                          type="checkbox"
-                                          checked={row.active}
-                                          onChange={(e) =>
-                                            setProdMatrix((prev) =>
-                                              prev.map((m, i) =>
-                                                i === idx ? { ...m, active: e.target.checked } : m
-                                              )
-                                            )
-                                          }
-                                          className="h-4 w-4 rounded border-slate-300 text-[#0B5336]"
-                                        />
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Wholesale / Bulk Tier Pricing (Applies across standard & variant products) */}
-                    <div className="pt-3 border-t border-slate-200 space-y-2">
-                      <div className="text-xs font-bold text-slate-800">
-                        {tvar.wholesaleTitle}
-                      </div>
-                      <p className="text-[11px] text-slate-500">{tvar.wholesaleHint}</p>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 mb-1">
-                            {tvar.wholesaleMinQtyLabel}
-                          </label>
-                          <input
-                            type="number"
-                            min={0}
-                            value={prodWholesaleMinQty}
-                            onChange={(e) => setProdWholesaleMinQty(e.target.value)}
-                            placeholder="10"
-                            className="input bg-white font-mono text-xs"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 mb-1">
-                            {tvar.wholesalePriceLabel}
-                          </label>
-                          <input
-                            type="number"
-                            min={0}
-                            value={prodWholesalePrice}
-                            onChange={(e) => setProdWholesalePrice(e.target.value)}
-                            placeholder="980"
-                            className="input bg-white font-mono text-xs"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Dual EN + BN Descriptions */}
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                        {t.admin.products.descEnLabel}
-                      </label>
-                      <textarea
-                        rows={2}
-                        value={prodDescEn}
-                        onChange={(e) => setProdDescEn(e.target.value)}
-                        placeholder={t.admin.products.descEnPlaceholder}
-                        className="input min-h-[76px] py-2"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                        {t.admin.products.descBnLabel}
-                      </label>
-                      <textarea
-                        rows={2}
-                        value={prodDescBn}
-                        onChange={(e) => setProdDescBn(e.target.value)}
-                        placeholder={t.admin.products.descBnPlaceholder}
-                        className="input min-h-[76px] py-2"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-center justify-between gap-4 pt-2">
-                    <div className="flex items-center gap-6 text-xs font-medium text-slate-700">
-                      <label className="inline-flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={prodActive}
-                          onChange={(e) => setProdActive(e.target.checked)}
-                          className="h-4 w-4 rounded border-slate-300 text-[#0B5336]"
-                        />
-                        <span>{t.admin.products.visibleCheckbox}</span>
-                      </label>
-
-                      <label className="inline-flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={prodFeatured}
-                          onChange={(e) => setProdFeatured(e.target.checked)}
-                          className="h-4 w-4 rounded border-slate-300 text-[#0B5336]"
-                        />
-                        <span>{t.admin.products.featuredCheckbox}</span>
-                      </label>
-                    </div>
-
-                    <button
-                      type="submit"
-                      disabled={savingProduct}
-                      className="btn-primary px-6 py-2.5 text-xs"
-                    >
-                      {savingProduct
-                        ? t.admin.products.savingProduct
-                        : editingProductId
-                        ? t.admin.products.saveChangesBtn
-                        : t.admin.products.publishProductBtn}
-                    </button>
-                  </div>
-                </form>
-              </div>
-
-              {/* Catalog */}
-              <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-                <div className="px-4 sm:px-6 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-4">
-                  <h3 className="font-display text-base font-bold text-slate-900">
-                    {t.admin.products.catalogTableTitle} (
-                    {toLocalizedDigits(filteredProducts.length, lang)})
-                  </h3>
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
                   <div className="relative w-full sm:w-64">
                     <Search className="h-3.5 w-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
@@ -4554,7 +3423,1290 @@ export function MartAdminClient() {
                       className="input min-h-[40px] py-1.5 pl-9 text-xs"
                     />
                   </div>
+
+                  {editingProductId || productStudioOpen ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        resetProductForm();
+                        setProductStudioOpen(false);
+                      }}
+                      className="min-h-[40px] inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 whitespace-nowrap"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      <span>
+                        {editingProductId
+                          ? t.admin.products.cancelEdit
+                          : lang === "bn"
+                          ? "ফর্ম বন্ধ করুন"
+                          : "Close Studio"}
+                      </span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        resetProductForm();
+                        setProductStudioOpen(true);
+                      }}
+                      className="btn-primary min-h-[40px] px-4 py-2 text-xs gap-1.5 whitespace-nowrap"
+                    >
+                      <Plus className="h-4 w-4" />
+                      <span>{t.admin.products.addTitle}</span>
+                    </button>
+                  )}
                 </div>
+              </div>
+
+              {/* Minimalist 2-Column Product Add / Edit Studio */}
+              {(productStudioOpen || Boolean(editingProductId)) && (
+                <form
+                  onSubmit={handleSaveProduct}
+                  className={`rounded-2xl border p-4 sm:p-6 space-y-5 transition-colors ${
+                    editingProductId
+                      ? "border-[#0B5336] ring-2 ring-[#0B5336]/15 bg-brand-50/15"
+                      : "border-slate-200 bg-slate-50/60"
+                  }`}
+                >
+                  {/* Studio Header Bar */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200">
+                    <div className="flex items-center gap-2.5">
+                      <div className="h-8 w-8 rounded-xl bg-[#0B5336]/10 text-[#0B5336] flex items-center justify-center shrink-0">
+                        {editingProductId ? (
+                          <Pencil className="h-4 w-4" />
+                        ) : (
+                          <Plus className="h-4 w-4" />
+                        )}
+                      </div>
+                      <div>
+                        <h3 className="font-display text-sm sm:text-base font-bold text-slate-900">
+                          {editingProductId
+                            ? `${t.admin.products.editTitle} (${editingProductId})`
+                            : t.admin.products.addTitle}
+                        </h3>
+                        {editingProductId && (
+                          <p className="text-[11px] font-medium text-[#0B5336]">
+                            {t.admin.products.editingBannerHint}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          resetProductForm();
+                          setProductStudioOpen(false);
+                        }}
+                        className="rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:text-slate-900 whitespace-nowrap"
+                      >
+                        {t.admin.products.cancelEdit}
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={savingProduct}
+                        className="btn-primary px-5 py-2 text-xs whitespace-nowrap"
+                      >
+                        {savingProduct
+                          ? t.admin.products.savingProduct
+                          : editingProductId
+                          ? t.admin.products.saveChangesBtn
+                          : t.admin.products.publishProductBtn}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 2-Column Studio Grid: Left 8 Cols (Content/Media/Variants) + Right 4 Cols (Pricing/Sourcing/Taxonomy) */}
+                  <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
+                    {/* LEFT COLUMN (8 Cols): Identity, Descriptions, Media Gallery & Variations */}
+                    <div className="xl:col-span-8 space-y-5">
+                      {/* Card 1: Product Identity & Bilingual Descriptions */}
+                      <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 space-y-4">
+                        <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-100">
+                          <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                            {lang === "bn"
+                              ? "১. পণ্যের নাম, SKU ও বিবরণ"
+                              : "1. Product Identity & Descriptions"}
+                          </span>
+                          <span className="text-[11px] text-slate-400">EN / বাংলা</span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3.5">
+                          <div className="sm:col-span-5">
+                            <label className="block text-xs font-semibold text-slate-700 mb-1">
+                              {t.admin.products.nameEnLabel}
+                            </label>
+                            <input
+                              type="text"
+                              value={prodNameEn}
+                              onChange={(e) => setProdNameEn(e.target.value)}
+                              placeholder={t.admin.products.nameEnPlaceholder}
+                              className="input"
+                            />
+                          </div>
+
+                          <div className="sm:col-span-4">
+                            <label className="block text-xs font-semibold text-slate-700 mb-1">
+                              {t.admin.products.nameBnLabel}
+                            </label>
+                            <input
+                              type="text"
+                              value={prodNameBn}
+                              onChange={(e) => setProdNameBn(e.target.value)}
+                              placeholder={t.admin.products.nameBnPlaceholder}
+                              className="input"
+                            />
+                          </div>
+
+                          <div className="sm:col-span-3">
+                            <label className="block text-xs font-semibold text-slate-700 mb-1">
+                              {t.admin.products.skuLabel}
+                            </label>
+                            <input
+                              type="text"
+                              value={prodSku}
+                              onChange={(e) => setProdSku(e.target.value.toUpperCase())}
+                              placeholder={t.admin.products.skuPlaceholder}
+                              className="input font-mono uppercase"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-700 mb-1">
+                              {t.admin.products.descEnLabel}
+                            </label>
+                            <textarea
+                              rows={3}
+                              value={prodDescEn}
+                              onChange={(e) => setProdDescEn(e.target.value)}
+                              placeholder={t.admin.products.descEnPlaceholder}
+                              className="input min-h-[84px] py-2 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-700 mb-1">
+                              {t.admin.products.descBnLabel}
+                            </label>
+                            <textarea
+                              rows={3}
+                              value={prodDescBn}
+                              onChange={(e) => setProdDescBn(e.target.value)}
+                              placeholder={t.admin.products.descBnPlaceholder}
+                              className="input min-h-[84px] py-2 text-xs"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Card 2: Product Images & Multi-Angle Gallery */}
+                      <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 space-y-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-slate-100">
+                          <div>
+                            <div className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                              <ImagePlus className="h-3.5 w-3.5 text-[#0B5336]" />
+                              <span>{tvar.mediaGallerySectionTitle}</span>
+                            </div>
+                            <p className="text-[11px] text-slate-500 mt-0.5">
+                              <span className="font-semibold text-[#0B5336]">
+                                {tvar.sizeGuideTitle}
+                              </span>
+                              {" · "}
+                              <span>{tvar.sizeGuideHint}</span>
+                            </p>
+                          </div>
+
+                          <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold text-slate-700 cursor-pointer shrink-0 hover:border-[#0B5336]">
+                            <input
+                              type="checkbox"
+                              checked={autoSquarePad}
+                              onChange={(e) => setAutoSquarePad(e.target.checked)}
+                              className="h-3.5 w-3.5 rounded accent-[#0B5336]"
+                            />
+                            <span>{tvar.autoSquarePadLabel}</span>
+                          </label>
+                        </div>
+
+                        {!autoSquarePad && (
+                          <div className="text-[11px] text-slate-500">
+                            {tvar.autoSquarePadOffHint}
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3.5 items-center">
+                          <div className="sm:col-span-2 flex items-center gap-3">
+                            <div className="h-20 w-20 rounded-xl border border-slate-200 bg-slate-50 p-1 overflow-hidden shrink-0 flex items-center justify-center">
+                              {prodImageUrl.trim() ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={normalizeMartImageUrl(prodImageUrl)}
+                                  alt={tvar.primaryPreviewLabel}
+                                  referrerPolicy="no-referrer"
+                                  className="h-full w-full object-contain"
+                                />
+                              ) : (
+                                <span className="text-[10px] text-slate-400 text-center px-1">
+                                  {tvar.noPrimaryImageHint}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="sm:col-span-6">
+                            <label className="block text-xs font-semibold text-slate-700 mb-1">
+                              {t.admin.products.imageUrlLabel}
+                            </label>
+                            <input
+                              type="text"
+                              value={prodImageUrl}
+                              onChange={(e) => setProdImageUrl(e.target.value)}
+                              placeholder="https://lh3.googleusercontent.com/d/..."
+                              className="input font-mono text-xs"
+                            />
+                          </div>
+
+                          <div className="sm:col-span-4 sm:self-end">
+                            <label className="btn-outline bg-white w-full px-3.5 py-2.5 text-xs gap-2 cursor-pointer">
+                              <Upload className="h-3.5 w-3.5 text-[#0B5336]" />
+                              <span>
+                                {uploadingProdImg
+                                  ? t.admin.products.uploading
+                                  : t.admin.products.uploadToDrive}
+                              </span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                disabled={uploadingProdImg}
+                                onChange={handleProductImageUpload}
+                                className="sr-only"
+                              />
+                            </label>
+                          </div>
+                        </div>
+
+                        <div className="pt-3 border-t border-slate-100 space-y-2.5">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <div className="text-xs font-bold text-slate-800">
+                                {tvar.galleryTitle}
+                              </div>
+                              <div className="text-[11px] text-slate-500">{tvar.galleryHint}</div>
+                            </div>
+                            <label className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
+                              <ImagePlus className="h-3.5 w-3.5 text-[#0B5336]" />
+                              <span>
+                                {uploadingGalleryImg
+                                  ? t.admin.products.uploading
+                                  : tvar.uploadGalleryBtn}
+                              </span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                disabled={uploadingGalleryImg}
+                                onChange={handleGalleryImageUpload}
+                                className="sr-only"
+                              />
+                            </label>
+                          </div>
+
+                          <div className="flex flex-col sm:flex-row gap-2">
+                            <input
+                              type="text"
+                              value={extraImgInput}
+                              onChange={(e) => setExtraImgInput(e.target.value)}
+                              placeholder={tvar.addImageUrlPlaceholder}
+                              className="input text-xs font-mono flex-1"
+                            />
+                            <button
+                              type="button"
+                              onClick={handleAddExtraGalleryUrl}
+                              className="btn-outline bg-white px-4 py-2 text-xs whitespace-nowrap"
+                            >
+                              {tvar.addImageBtn}
+                            </button>
+                          </div>
+
+                          {prodGalleryUrls.length > 0 && (
+                            <div className="flex flex-wrap gap-2.5 pt-1">
+                              {prodGalleryUrls.map((url, idx) => (
+                                <div
+                                  key={`${url}-${idx}`}
+                                  className="group relative flex flex-col items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1.5"
+                                >
+                                  <div className="relative h-14 w-14 rounded-lg overflow-hidden bg-white p-1 border border-slate-100">
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                      src={normalizeMartImageUrl(url)}
+                                      alt={tvar.galleryTitle}
+                                      referrerPolicy="no-referrer"
+                                      className="h-full w-full object-contain"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setProdGalleryUrls((prev) =>
+                                          prev.filter((_, i) => i !== idx)
+                                        )
+                                      }
+                                      aria-label={t.common.delete}
+                                      className="absolute top-0.5 right-0.5 rounded bg-slate-900/80 p-0.5 text-white hover:bg-red-600"
+                                    >
+                                      <X className="h-3 w-3" />
+                                    </button>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSetPrimaryFromGallery(url)}
+                                    className="w-full rounded px-1.5 py-0.5 text-[10px] font-semibold text-[#0B5336] bg-brand-50 hover:bg-[#0B5336] hover:text-white transition-colors whitespace-nowrap"
+                                  >
+                                    {tvar.setAsPrimaryBtn}
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Card 3: Unified 3-Mode Variation Studio */}
+                      <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 space-y-4">
+                        <div className="space-y-2.5">
+                          <div className="pb-2 border-b border-slate-100">
+                            <div className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                              <Layers className="h-3.5 w-3.5 text-[#0B5336]" />
+                              <span>{tvar.modeLabel}</span>
+                            </div>
+                            <p className="text-[11px] text-slate-500 mt-0.5">
+                              {tvar.sectionSubtitle}
+                            </p>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                            {(
+                              [
+                                { id: "none", title: tvar.modeNone, hint: tvar.modeNoneHint },
+                                { id: "simple", title: tvar.modeSimple, hint: tvar.modeSimpleHint },
+                                { id: "matrix", title: tvar.modeMatrix, hint: tvar.modeMatrixHint },
+                              ] as const
+                            ).map((modeOpt) => {
+                              const active = variationMode === modeOpt.id;
+                              return (
+                                <button
+                                  key={modeOpt.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setVariationMode(modeOpt.id);
+                                    setColorGalleryPickerIdx(null);
+                                  }}
+                                  className={`rounded-xl border p-3 text-left transition-colors ${
+                                    active
+                                      ? "border-[#0B5336] bg-brand-50/30 ring-2 ring-[#0B5336]/15"
+                                      : "border-slate-200 bg-slate-50/60 hover:border-slate-300"
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span
+                                      className={`text-xs font-bold ${
+                                        active ? "text-[#0B5336]" : "text-slate-800"
+                                      }`}
+                                    >
+                                      {modeOpt.title}
+                                    </span>
+                                    {active && (
+                                      <CheckCircle2 className="h-3.5 w-3.5 text-[#0B5336] shrink-0" />
+                                    )}
+                                  </div>
+                                  <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                                    {modeOpt.hint}
+                                  </p>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Mode: Simple Option List */}
+                        {variationMode === "simple" && (
+                          <div className="pt-3 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                {t.admin.products.variantsEnLabel}
+                              </label>
+                              <input
+                                type="text"
+                                value={prodVariantsEn}
+                                onChange={(e) => setProdVariantsEn(e.target.value)}
+                                placeholder={t.admin.products.variantsEnPlaceholder}
+                                className="input"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                {t.admin.products.variantsBnLabel}
+                              </label>
+                              <input
+                                type="text"
+                                value={prodVariantsBn}
+                                onChange={(e) => setProdVariantsBn(e.target.value)}
+                                placeholder={t.admin.products.variantsBnPlaceholder}
+                                className="input"
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Mode: Structured Color Swatches + Sizes + Price/Stock Matrix */}
+                        {variationMode === "matrix" && (
+                          <div className="space-y-4 pt-3 border-t border-slate-100">
+                            <div className="space-y-2.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-xs font-bold text-slate-800">
+                                  {tvar.colorsTitle}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={handleAddColorRow}
+                                  className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-[#0B5336] hover:bg-brand-50 whitespace-nowrap"
+                                >
+                                  {tvar.addColorBtn}
+                                </button>
+                              </div>
+
+                              {prodColors.length > 0 && (
+                                <div className="space-y-2.5">
+                                  {prodColors.map((clr, idx) => {
+                                    const isUploadingColor = uploadingColorRowId === clr.id;
+                                    const pickerOpen = colorGalleryPickerIdx === idx;
+                                    return (
+                                      <div
+                                        key={clr.id}
+                                        className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2.5"
+                                      >
+                                        <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center">
+                                          <div className="sm:col-span-1 flex items-center gap-2">
+                                            <div className="h-10 w-10 rounded-lg border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center bg-white p-0.5">
+                                              {clr.imageUrl ? (
+                                                // eslint-disable-next-line @next/next/no-img-element
+                                                <img
+                                                  src={normalizeMartImageUrl(clr.imageUrl)}
+                                                  alt={clr.nameEn || clr.nameBn || "Color"}
+                                                  referrerPolicy="no-referrer"
+                                                  className="h-full w-full object-contain"
+                                                />
+                                              ) : (
+                                                <span
+                                                  className="h-5 w-5 rounded-full border border-slate-300"
+                                                  style={{
+                                                    backgroundColor: clr.hex || "#0B5336",
+                                                  }}
+                                                />
+                                              )}
+                                            </div>
+                                          </div>
+
+                                          <div className="sm:col-span-4">
+                                            <input
+                                              type="text"
+                                              value={clr.nameEn}
+                                              onChange={(e) =>
+                                                handleColorNameEnChange(idx, e.target.value)
+                                              }
+                                              placeholder={tvar.colorNameEnPlaceholder}
+                                              aria-label={tvar.colorNameEnLabel}
+                                              className="input bg-white min-h-[38px] py-1.5 text-xs"
+                                            />
+                                          </div>
+
+                                          <div className="sm:col-span-4">
+                                            <input
+                                              type="text"
+                                              value={clr.nameBn}
+                                              onChange={(e) =>
+                                                setProdColors((prev) =>
+                                                  prev.map((item, i) =>
+                                                    i === idx
+                                                      ? { ...item, nameBn: e.target.value }
+                                                      : item
+                                                  )
+                                                )
+                                              }
+                                              placeholder={tvar.colorNameBnPlaceholder}
+                                              aria-label={tvar.colorNameBnLabel}
+                                              className="input bg-white min-h-[38px] py-1.5 text-xs"
+                                            />
+                                          </div>
+
+                                          <div className="sm:col-span-2 flex items-center gap-2">
+                                            <input
+                                              type="color"
+                                              value={clr.hex || "#0B5336"}
+                                              onChange={(e) =>
+                                                setProdColors((prev) =>
+                                                  prev.map((item, i) =>
+                                                    i === idx
+                                                      ? { ...item, hex: e.target.value }
+                                                      : item
+                                                  )
+                                                )
+                                              }
+                                              aria-label={tvar.colorHexLabel}
+                                              className="h-9 w-12 rounded-lg border border-slate-200 cursor-pointer shrink-0 bg-white"
+                                            />
+                                            <span className="font-mono text-[11px] text-slate-400">
+                                              {clr.hex || "#0B5336"}
+                                            </span>
+                                          </div>
+
+                                          <div className="sm:col-span-1 text-right">
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setProdColors((prev) =>
+                                                  prev.filter((_, i) => i !== idx)
+                                                );
+                                                if (colorGalleryPickerIdx === idx) {
+                                                  setColorGalleryPickerIdx(null);
+                                                }
+                                              }}
+                                              aria-label={t.common.delete}
+                                              className="text-red-600 hover:text-red-800 p-1.5 rounded-lg hover:bg-red-50"
+                                            >
+                                              <Trash2 className="h-4 w-4" />
+                                            </button>
+                                          </div>
+                                        </div>
+
+                                        <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-2 border-t border-slate-200/70">
+                                          <input
+                                            type="text"
+                                            value={clr.imageUrl || ""}
+                                            onChange={(e) =>
+                                              setProdColors((prev) =>
+                                                prev.map((item, i) =>
+                                                  i === idx
+                                                    ? { ...item, imageUrl: e.target.value }
+                                                    : item
+                                                )
+                                              )
+                                            }
+                                            placeholder={tvar.colorImageLabel}
+                                            className="input bg-white min-h-[36px] py-1 text-xs font-mono flex-1"
+                                          />
+
+                                          <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                                            <label className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] cursor-pointer inline-flex items-center gap-1.5 min-h-[36px] whitespace-nowrap">
+                                              <Upload className="h-3.5 w-3.5 text-[#0B5336]" />
+                                              <span>
+                                                {isUploadingColor
+                                                  ? t.admin.products.uploading
+                                                  : tvar.uploadColorImgBtn}
+                                              </span>
+                                              <input
+                                                type="file"
+                                                accept="image/*"
+                                                disabled={isUploadingColor}
+                                                onChange={(e) =>
+                                                  handleColorRowImageUpload(clr.id, idx, e)
+                                                }
+                                                className="sr-only"
+                                              />
+                                            </label>
+
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                setColorGalleryPickerIdx((prev) =>
+                                                  prev === idx ? null : idx
+                                                )
+                                              }
+                                              className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold min-h-[36px] whitespace-nowrap transition-colors ${
+                                                pickerOpen
+                                                  ? "border-[#0B5336] bg-[#0B5336] text-white"
+                                                  : "border-slate-300 bg-white text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336]"
+                                              }`}
+                                            >
+                                              {tvar.pickFromGalleryBtn}
+                                            </button>
+
+                                            {clr.imageUrl && (
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  setProdColors((prev) =>
+                                                    prev.map((item, i) =>
+                                                      i === idx ? { ...item, imageUrl: "" } : item
+                                                    )
+                                                  )
+                                                }
+                                                className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-semibold text-slate-500 hover:text-red-600 min-h-[36px]"
+                                                title={tvar.clearColorImgBtn}
+                                              >
+                                                <X className="h-3.5 w-3.5" />
+                                              </button>
+                                            )}
+                                          </div>
+                                        </div>
+
+                                        {pickerOpen && (
+                                          <div className="rounded-lg border border-slate-200 bg-white p-2.5 space-y-2">
+                                            {availableGalleryPool.length === 0 ? (
+                                              <p className="text-[11px] text-slate-500">
+                                                {tvar.noGalleryPhotosHint}
+                                              </p>
+                                            ) : (
+                                              <div className="flex flex-wrap gap-2">
+                                                {availableGalleryPool.map((poolUrl, pIdx) => {
+                                                  const selected = clr.imageUrl === poolUrl;
+                                                  return (
+                                                    <button
+                                                      key={`${poolUrl}-${pIdx}`}
+                                                      type="button"
+                                                      onClick={() => {
+                                                        setProdColors((prev) =>
+                                                          prev.map((item, i) =>
+                                                            i === idx
+                                                              ? { ...item, imageUrl: poolUrl }
+                                                              : item
+                                                          )
+                                                        );
+                                                        setColorGalleryPickerIdx(null);
+                                                      }}
+                                                      className={`h-14 w-14 rounded-lg bg-white p-1 overflow-hidden border-2 transition-all ${
+                                                        selected
+                                                          ? "border-[#0B5336] ring-2 ring-[#0B5336]/25"
+                                                          : "border-slate-200 hover:border-[#0B5336]"
+                                                      }`}
+                                                    >
+                                                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                      <img
+                                                        src={normalizeMartImageUrl(poolUrl)}
+                                                        alt={tvar.galleryTitle}
+                                                        referrerPolicy="no-referrer"
+                                                        className="h-full w-full object-contain"
+                                                      />
+                                                    </button>
+                                                  );
+                                                })}
+                                              </div>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Sizes Input + Matrix Generator */}
+                            <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-end pt-3 border-t border-slate-100">
+                              <div className="lg:col-span-7">
+                                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                  {tvar.sizesLabel}
+                                </label>
+                                <input
+                                  type="text"
+                                  value={prodSizesInput}
+                                  onChange={(e) => setProdSizesInput(e.target.value)}
+                                  placeholder={tvar.sizesPlaceholder}
+                                  className="input text-xs"
+                                />
+                              </div>
+                              <div className="lg:col-span-5 flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={handleBuildVariationMatrix}
+                                  className="btn-outline bg-white px-3.5 py-2 text-xs whitespace-nowrap"
+                                >
+                                  {tvar.syncMatrixBtn}
+                                </button>
+                                {prodMatrix.length > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setProdMatrix([])}
+                                    className="rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 whitespace-nowrap"
+                                  >
+                                    {tvar.clearMatrixBtn}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            {matrixNeedsSync && (
+                              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-900">
+                                <div className="flex items-center gap-2">
+                                  <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                                  <span>{tvar.matrixSyncNeededHint}</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={handleBuildVariationMatrix}
+                                  className="rounded-lg bg-amber-600 px-3 py-1 text-[11px] font-semibold text-white hover:bg-amber-700 whitespace-nowrap"
+                                >
+                                  {tvar.syncMatrixBtn}
+                                </button>
+                              </div>
+                            )}
+
+                            {prodMatrix.length > 0 && (
+                              <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <span className="text-xs font-bold text-slate-800">
+                                    {tvar.matrixTitle} ({toLocalizedDigits(prodMatrix.length, lang)})
+                                  </span>
+                                  <span className="text-[11px] text-slate-500">{tvar.matrixHint}</span>
+                                </div>
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-left text-xs">
+                                    <thead className="border-b border-slate-200 text-slate-500">
+                                      <tr>
+                                        <th className="py-2 pr-2 font-semibold">{tvar.colCombination}</th>
+                                        <th className="py-2 pr-2 font-semibold">{tvar.colVariantSku}</th>
+                                        <th className="py-2 pr-2 font-semibold">{tvar.colPriceOverride}</th>
+                                        <th className="py-2 pr-2 font-semibold">{tvar.colCostOverride}</th>
+                                        <th className="py-2 pr-2 font-semibold">{tvar.colStock}</th>
+                                        <th className="py-2 font-semibold text-center">{tvar.colActive}</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                      {prodMatrix.map((row, idx) => (
+                                        <tr key={row.key}>
+                                          <td className="py-1.5 pr-2 font-semibold text-slate-800 whitespace-nowrap">
+                                            {[row.colorNameEn, row.size].filter(Boolean).join(" / ")}
+                                          </td>
+                                          <td className="py-1.5 pr-2">
+                                            <input
+                                              type="text"
+                                              value={row.sku}
+                                              onChange={(e) =>
+                                                setProdMatrix((prev) =>
+                                                  prev.map((m, i) =>
+                                                    i === idx ? { ...m, sku: e.target.value } : m
+                                                  )
+                                                )
+                                              }
+                                              className="rounded border border-slate-200 bg-white px-2 py-1 text-xs font-mono w-28"
+                                            />
+                                          </td>
+                                          <td className="py-1.5 pr-2">
+                                            <input
+                                              type="number"
+                                              min={0}
+                                              value={row.priceOverride || ""}
+                                              onChange={(e) =>
+                                                setProdMatrix((prev) =>
+                                                  prev.map((m, i) =>
+                                                    i === idx
+                                                      ? {
+                                                          ...m,
+                                                          priceOverride: Math.max(
+                                                            0,
+                                                            Number(e.target.value) || 0
+                                                          ),
+                                                        }
+                                                      : m
+                                                  )
+                                                )
+                                              }
+                                              className="rounded border border-slate-200 bg-white px-2 py-1 text-xs font-mono w-20"
+                                            />
+                                          </td>
+                                          <td className="py-1.5 pr-2">
+                                            <input
+                                              type="number"
+                                              min={0}
+                                              value={row.costOverride || ""}
+                                              onChange={(e) =>
+                                                setProdMatrix((prev) =>
+                                                  prev.map((m, i) =>
+                                                    i === idx
+                                                      ? {
+                                                          ...m,
+                                                          costOverride: Math.max(
+                                                            0,
+                                                            Number(e.target.value) || 0
+                                                          ),
+                                                        }
+                                                      : m
+                                                  )
+                                                )
+                                              }
+                                              className="rounded border border-slate-200 bg-white px-2 py-1 text-xs font-mono w-20"
+                                            />
+                                          </td>
+                                          <td className="py-1.5 pr-2">
+                                            <input
+                                              type="number"
+                                              min={0}
+                                              value={row.stock}
+                                              onChange={(e) =>
+                                                setProdMatrix((prev) =>
+                                                  prev.map((m, i) =>
+                                                    i === idx
+                                                      ? {
+                                                          ...m,
+                                                          stock: Math.max(
+                                                            0,
+                                                            Number(e.target.value) || 0
+                                                          ),
+                                                        }
+                                                      : m
+                                                  )
+                                                )
+                                              }
+                                              className="rounded border border-slate-200 bg-white px-2 py-1 text-xs font-mono w-20"
+                                            />
+                                          </td>
+                                          <td className="py-1.5 text-center">
+                                            <input
+                                              type="checkbox"
+                                              checked={row.active}
+                                              onChange={(e) =>
+                                                setProdMatrix((prev) =>
+                                                  prev.map((m, i) =>
+                                                    i === idx ? { ...m, active: e.target.checked } : m
+                                                  )
+                                                )
+                                              }
+                                              className="h-4 w-4 rounded border-slate-300 text-[#0B5336]"
+                                            />
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* RIGHT COLUMN (4 Cols): Pricing, Wholesale, Sourcing/Inventory, Taxonomy & Publish */}
+                    <div className="xl:col-span-4 space-y-5">
+                      {/* Right Card 1: Pricing, Cost & Wholesale Tier */}
+                      <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 space-y-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-100">
+                          <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                            {lang === "bn" ? "২. মূল্য ও পাইকারি রেট" : "2. Pricing & Wholesale"}
+                          </span>
+                          {prodPrice && (
+                            <span
+                              className={`rounded-md px-2 py-0.5 text-[11px] font-mono font-bold tabular-nums ${
+                                prodUnitProfit >= 0
+                                  ? "bg-brand-50 text-[#0B5336]"
+                                  : "bg-red-50 text-red-600"
+                              }`}
+                            >
+                              {formatMartPrice(prodUnitProfit, lang)} (
+                              {toLocalizedDigits(prodMarginPct, lang)}%)
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-700 mb-1">
+                              {t.admin.products.priceLabel}
+                            </label>
+                            <input
+                              type="number"
+                              min={0}
+                              required
+                              value={prodPrice}
+                              onChange={(e) => setProdPrice(e.target.value)}
+                              placeholder="1250"
+                              className="input font-mono"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-700 mb-1">
+                              {t.admin.products.comparePriceLabel}
+                            </label>
+                            <input
+                              type="number"
+                              min={0}
+                              value={prodComparePrice}
+                              onChange={(e) => setProdComparePrice(e.target.value)}
+                              placeholder="1550"
+                              className="input font-mono"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">
+                            {tsrc.costPriceLabel}
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={prodCostPrice}
+                            onChange={(e) => setProdCostPrice(e.target.value)}
+                            placeholder="850"
+                            className="input font-mono"
+                          />
+                        </div>
+
+                        {/* Wholesale Tier */}
+                        <div className="pt-3 border-t border-slate-100 space-y-2.5">
+                          <div>
+                            <div className="text-xs font-bold text-slate-800">
+                              {tvar.wholesaleTitle}
+                            </div>
+                            <p className="text-[11px] text-slate-500">{tvar.wholesaleHint}</p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                                {tvar.wholesaleMinQtyLabel}
+                              </label>
+                              <input
+                                type="number"
+                                min={0}
+                                value={prodWholesaleMinQty}
+                                onChange={(e) => setProdWholesaleMinQty(e.target.value)}
+                                placeholder="10"
+                                className="input font-mono text-xs"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                                {tvar.wholesalePriceLabel}
+                              </label>
+                              <input
+                                type="number"
+                                min={0}
+                                value={prodWholesalePrice}
+                                onChange={(e) => setProdWholesalePrice(e.target.value)}
+                                placeholder="980"
+                                className="input font-mono text-xs"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right Card 2: Sourcing, Stock & Supplier Control */}
+                      <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 space-y-3.5">
+                        <div className="pb-2 border-b border-slate-100">
+                          <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                            {tsrc.sectionTitle}
+                          </span>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">
+                            {tsrc.fulfillmentModeLabel}
+                          </label>
+                          <select
+                            value={prodFulfillmentType}
+                            onChange={(e) =>
+                              setProdFulfillmentType(e.target.value as MartFulfillmentType)
+                            }
+                            className="input text-xs"
+                          >
+                            <option value="own_stock">{tsrc.ownStockMode}</option>
+                            <option value="dropship">{tsrc.dropshipMode}</option>
+                          </select>
+                          <p className="text-[11px] text-slate-500 mt-1">
+                            {prodFulfillmentType === "dropship"
+                              ? tsrc.dropshipHint
+                              : tsrc.ownStockHint}
+                          </p>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-semibold text-slate-700 mb-1">
+                              {t.admin.products.stockLabel}
+                            </label>
+                            {prodFulfillmentType === "dropship" ? (
+                              <div className="input flex items-center text-xs font-semibold text-[#0B5336] bg-brand-50">
+                                {tsrc.unlimitedLabel}
+                              </div>
+                            ) : variationMode === "matrix" && prodMatrix.length > 0 ? (
+                              <div>
+                                <div className="input flex items-center justify-between text-xs font-mono font-bold text-[#0B5336] bg-brand-50/70 tabular-nums">
+                                  <span>
+                                    {toLocalizedDigits(
+                                      prodMatrix
+                                        .filter((v) => v.active)
+                                        .reduce(
+                                          (s, v) => s + Math.max(0, Number(v.stock) || 0),
+                                          0
+                                        ),
+                                      lang
+                                    )}
+                                  </span>
+                                  <span className="font-sans font-medium text-[11px] text-slate-600">
+                                    Matrix
+                                  </span>
+                                </div>
+                              </div>
+                            ) : (
+                              <input
+                                type="number"
+                                min={0}
+                                required
+                                value={prodStock}
+                                onChange={(e) => setProdStock(e.target.value)}
+                                className="input font-mono"
+                              />
+                            )}
+                          </div>
+
+                          {prodFulfillmentType === "own_stock" ? (
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                {tsrc.lowStockThresholdLabel}
+                              </label>
+                              <input
+                                type="number"
+                                min={0}
+                                value={prodLowStockThreshold}
+                                onChange={(e) => setProdLowStockThreshold(e.target.value)}
+                                className="input font-mono"
+                              />
+                            </div>
+                          ) : (
+                            <div className="flex items-end pb-2">
+                              <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-800 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={prodSupplierAvailable}
+                                  onChange={(e) => setProdSupplierAvailable(e.target.checked)}
+                                  className="h-4 w-4 rounded border-slate-300 text-[#0B5336]"
+                                />
+                                <span>{tsrc.supplierAvailableCheckbox}</span>
+                              </label>
+                            </div>
+                          )}
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">
+                            {tsrc.supplierLabel}
+                          </label>
+                          <select
+                            value={prodSupplierId}
+                            onChange={(e) => {
+                              const id = e.target.value;
+                              setProdSupplierId(id);
+                              const sup = suppliers.find((s) => s.id === id);
+                              if (sup) {
+                                setProdCollectionMode(
+                                  sup.payoutMode === "supplier_pays_us"
+                                    ? "supplier_collects"
+                                    : "store_collects"
+                                );
+                              }
+                            }}
+                            className="input text-xs"
+                          >
+                            <option value="">{tsrc.noSupplierOption}</option>
+                            {suppliers.map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {s.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">
+                            {tsrc.sourceNameLabel}
+                          </label>
+                          <input
+                            type="text"
+                            value={prodSourceName}
+                            onChange={(e) => setProdSourceName(e.target.value)}
+                            placeholder={tsrc.sourceNamePlaceholder}
+                            className="input text-xs"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">
+                            {tsrc.collectionModeLabel}
+                          </label>
+                          <select
+                            value={prodCollectionMode}
+                            onChange={(e) =>
+                              setProdCollectionMode(e.target.value as MartCollectionMode)
+                            }
+                            className="input text-xs"
+                          >
+                            <option value="store_collects">{tsrc.storeCollectsOption}</option>
+                            <option value="supplier_collects">
+                              {tsrc.supplierCollectsOption}
+                            </option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Right Card 3: Categories & Labels Multi-Select */}
+                      <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 space-y-4">
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <div>
+                              <div className="text-xs font-bold text-slate-800">
+                                {t.admin.products.categoriesLabel}
+                              </div>
+                              <div className="text-[11px] text-slate-500">
+                                {t.admin.products.categoriesHint}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setActiveSection("taxonomy")}
+                              className="text-[11px] font-semibold text-[#0B5336] hover:underline whitespace-nowrap shrink-0"
+                            >
+                              {t.admin.products.goToTaxonomyBtn}
+                            </button>
+                          </div>
+
+                          {categories.length === 0 ? (
+                            <p className="text-xs text-slate-500 py-1">
+                              {t.admin.products.noCategoriesHint}
+                            </p>
+                          ) : (
+                            <div className="flex flex-wrap gap-1.5 max-h-44 overflow-y-auto pr-1">
+                              {categories.map((cat) => {
+                                const checked = prodCategories.includes(cat.slug);
+                                const catLabel = pickLocalized(
+                                  cat.nameEn,
+                                  cat.nameBn,
+                                  lang,
+                                  cat.slug
+                                );
+                                const parent = cat.parentSlug
+                                  ? categoryMap.get(cat.parentSlug)
+                                  : null;
+                                return (
+                                  <label
+                                    key={cat.id}
+                                    className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-medium cursor-pointer transition-colors ${
+                                      checked
+                                        ? "border-[#0B5336] bg-[#0B5336] text-white"
+                                        : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300"
+                                    }`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={() => toggleProdCategorySlug(cat.slug)}
+                                      className="sr-only"
+                                    />
+                                    <span>
+                                      {parent
+                                        ? `${pickLocalized(parent.nameEn, parent.nameBn, lang)} › ${catLabel}`
+                                        : catLabel}
+                                    </span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="pt-3 border-t border-slate-100 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <div>
+                              <div className="text-xs font-bold text-slate-800">
+                                {t.admin.products.labelsLabel}
+                              </div>
+                              <div className="text-[11px] text-slate-500">
+                                {t.admin.products.labelsHint}
+                              </div>
+                            </div>
+                          </div>
+
+                          {labels.length === 0 ? (
+                            <p className="text-xs text-slate-500 py-1">
+                              {t.admin.products.noLabelsHint}
+                            </p>
+                          ) : (
+                            <div className="flex flex-wrap gap-1.5">
+                              {labels.map((lbl) => {
+                                const checked = prodLabels.includes(lbl.slug);
+                                const lblText = pickLocalized(
+                                  lbl.nameEn,
+                                  lbl.nameBn,
+                                  lang,
+                                  lbl.slug
+                                );
+                                return (
+                                  <label
+                                    key={lbl.id}
+                                    className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-medium cursor-pointer transition-colors ${
+                                      checked
+                                        ? "border-gold-500 bg-gold-500 text-slate-950 font-semibold"
+                                        : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300"
+                                    }`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={() => toggleProdLabelSlug(lbl.slug)}
+                                      className="sr-only"
+                                    />
+                                    <span>{lblText}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Right Card 4: Storefront Visibility & Publish Action */}
+                      <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 space-y-4">
+                        <div className="flex flex-col gap-2.5 text-xs font-medium text-slate-700">
+                          <label className="inline-flex items-center gap-2.5 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={prodActive}
+                              onChange={(e) => setProdActive(e.target.checked)}
+                              className="h-4 w-4 rounded border-slate-300 text-[#0B5336]"
+                            />
+                            <span>{t.admin.products.visibleCheckbox}</span>
+                          </label>
+
+                          <label className="inline-flex items-center gap-2.5 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={prodFeatured}
+                              onChange={(e) => setProdFeatured(e.target.checked)}
+                              className="h-4 w-4 rounded border-slate-300 text-[#0B5336]"
+                            />
+                            <span>{t.admin.products.featuredCheckbox}</span>
+                          </label>
+                        </div>
+
+                        <button
+                          type="submit"
+                          disabled={savingProduct}
+                          className="btn-primary w-full py-2.5 text-xs justify-center"
+                        >
+                          {savingProduct
+                            ? t.admin.products.savingProduct
+                            : editingProductId
+                            ? t.admin.products.saveChangesBtn
+                            : t.admin.products.publishProductBtn}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </form>
+              )}
+
+              {/* Catalog Table Container */}
+              <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
 
                 {/* Mobile Product Cards */}
                 <div className="md:hidden divide-y divide-slate-100">

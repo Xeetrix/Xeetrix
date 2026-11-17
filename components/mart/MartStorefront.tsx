@@ -33,6 +33,9 @@ import {
   Layers,
   Link2,
   ExternalLink,
+  SlidersHorizontal,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { MartHeader } from "./MartHeader";
 import { MartFooter } from "./MartFooter";
@@ -231,6 +234,8 @@ export function MartStorefront({
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<SortOption>("featured");
+  const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
+  const categoryRailRef = useRef<HTMLDivElement>(null);
   const [cardSelectedColorByProdId, setCardSelectedColorByProdId] = useState<
     Record<string, MartProductColor>
   >({});
@@ -554,6 +559,25 @@ export function MartStorefront({
     });
     return thumbs;
   }, [visibleCategories, categoryDescendantsMap, products]);
+
+  // Prioritize categories that have active products so the single-row strip leads with populated items
+  const sortedVisibleCategories = useMemo(() => {
+    return [...visibleCategories].sort((a, b) => {
+      const countA = categoryCountsMap[a.slug] ?? 0;
+      const countB = categoryCountsMap[b.slug] ?? 0;
+      const hasA = countA > 0 ? 1 : 0;
+      const hasB = countB > 0 ? 1 : 0;
+      if (hasA !== hasB) return hasB - hasA;
+      if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+      return countB - countA;
+    });
+  }, [visibleCategories, categoryCountsMap]);
+
+  function scrollCategoryRail(dir: "left" | "right") {
+    if (!categoryRailRef.current) return;
+    const offset = dir === "left" ? -320 : 320;
+    categoryRailRef.current.scrollBy({ left: offset, behavior: "smooth" });
+  }
 
   const activeCategoryObj = useMemo(() => {
     if (selectedCategories.length !== 1) return null;
@@ -1438,8 +1462,8 @@ export function MartStorefront({
             />
           </div>
 
-          <div className="p-3 sm:p-5 lg:p-6 space-y-1.5 sm:space-y-2.5">
-            <div className="flex items-center justify-between gap-1.5 text-[10px] sm:text-xs text-slate-500">
+          <div className="p-3 sm:p-4 space-y-1.5 sm:space-y-2">
+            <div className="flex items-center justify-between gap-1.5 text-[10px] sm:text-[11px] text-slate-500">
               <span className="font-semibold text-[#0B5336] truncate">
                 {kickerParts.join(" · ")}
               </span>
@@ -1452,7 +1476,7 @@ export function MartStorefront({
               </span>
             </div>
 
-            <h2 className="font-display text-sm sm:text-lg font-semibold text-slate-900 group-hover:text-[#0B5336] transition-colors leading-snug line-clamp-2">
+            <h2 className="font-display text-xs sm:text-base font-semibold text-slate-900 group-hover:text-[#0B5336] transition-colors leading-snug line-clamp-2 min-h-[2.5em]">
               {prodName}
             </h2>
 
@@ -1474,14 +1498,14 @@ export function MartStorefront({
                           [product.id]: clr,
                         }));
                       }}
-                      className={`inline-flex h-6 w-6 items-center justify-center rounded-full transition-all ${
+                      className={`inline-flex h-5 w-5 sm:h-6 sm:w-6 items-center justify-center rounded-full transition-all ${
                         isChosen
                           ? "ring-2 ring-[#0B5336] bg-brand-50"
                           : "hover:bg-slate-100"
                       }`}
                     >
                       <span
-                        className="h-3.5 w-3.5 rounded-full border border-slate-300 shrink-0"
+                        className="h-3 w-3 sm:h-3.5 sm:w-3.5 rounded-full border border-slate-300 shrink-0"
                         style={{ backgroundColor: clr.hex || "#0B5336" }}
                       />
                     </button>
@@ -1493,7 +1517,7 @@ export function MartStorefront({
                   </span>
                 )}
                 {activeCardColor && (
-                  <span className="text-[11px] font-medium text-[#0B5336] truncate max-w-[110px]">
+                  <span className="text-[10px] sm:text-[11px] font-medium text-[#0B5336] truncate max-w-[90px]">
                     {pickLocalized(
                       activeCardColor.nameEn,
                       activeCardColor.nameBn,
@@ -1510,15 +1534,9 @@ export function MartStorefront({
             )}
 
             {colors.length === 0 && variants.length > 0 && (
-              <div className="text-[11px] sm:text-xs text-slate-500 truncate">
+              <div className="text-[11px] text-slate-500 truncate">
                 {t.catalog.optionsPrefix}: {variants.join(" · ")}
               </div>
-            )}
-
-            {prodDesc && (
-              <p className="hidden sm:line-clamp-2 text-sm text-slate-600 leading-relaxed">
-                {prodDesc}
-              </p>
             )}
 
             {hasWholesale && (
@@ -1531,26 +1549,26 @@ export function MartStorefront({
           </div>
         </div>
 
-        <div className="px-3 pb-3 pt-2.5 sm:px-5 sm:pb-5 lg:px-6 lg:pb-6 sm:pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3">
-          <div>
-            <div className="flex flex-wrap items-baseline gap-1.5 sm:gap-2">
-              <span className="font-mono text-base sm:text-xl font-bold text-slate-900 tabular-nums">
+        <div className="px-3 pb-3 pt-2.5 sm:px-4 sm:pb-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-baseline gap-1.5">
+              <span className="font-mono text-sm sm:text-lg font-bold text-slate-900 tabular-nums">
                 {formatMartPrice(product.price, lang)}
               </span>
               {hasDiscount && (
-                <span className="font-mono text-[11px] sm:text-xs text-slate-400 line-through tabular-nums">
+                <span className="font-mono text-[10px] sm:text-xs text-slate-400 line-through tabular-nums">
                   {formatMartPrice(product.comparePrice, lang)}
                 </span>
               )}
             </div>
             {product.sku && (
-              <div className="hidden sm:block font-mono text-[11px] text-slate-400">
+              <div className="hidden sm:block font-mono text-[10px] text-slate-400 truncate">
                 {t.common.sku}: {product.sku}
               </div>
             )}
           </div>
 
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
               type="button"
               onClick={(e) => {
@@ -1558,9 +1576,9 @@ export function MartStorefront({
                 openQuickView(product, activeCardColor);
               }}
               aria-label={`${t.catalog.quickViewAria} ${prodName}`}
-              className="inline-flex items-center justify-center rounded-xl border border-slate-200 p-2 text-slate-600 hover:border-[#0B5336] hover:text-[#0B5336] transition-colors min-h-[40px] min-w-[40px] sm:min-h-[44px] sm:min-w-[44px]"
+              className="inline-flex items-center justify-center rounded-xl border border-slate-200 p-1.5 sm:p-2 text-slate-600 hover:border-[#0B5336] hover:text-[#0B5336] transition-colors min-h-[36px] min-w-[36px] sm:min-h-[40px] sm:min-w-[40px]"
             >
-              <Eye className="h-4 w-4" />
+              <Eye className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             </button>
 
             <button
@@ -1578,7 +1596,7 @@ export function MartStorefront({
                     product.imageUrl,
                 });
               }}
-              className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#0B5336] px-2.5 sm:px-4 py-2 text-[11px] sm:text-xs font-semibold text-white hover:bg-[#08412A] disabled:opacity-50 transition-colors min-h-[40px] sm:min-h-[44px] whitespace-nowrap"
+              className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1 rounded-xl bg-[#0B5336] px-2.5 sm:px-3 py-1.5 sm:py-2 text-[11px] sm:text-xs font-semibold text-white hover:bg-[#08412A] disabled:opacity-50 transition-colors min-h-[36px] sm:min-h-[40px] whitespace-nowrap"
             >
               <ShoppingCart className="h-3.5 w-3.5 shrink-0" />
               <span className="truncate">
@@ -1595,9 +1613,9 @@ export function MartStorefront({
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
       {/* Slim Top Promo Bar */}
       {activePromoText && (
-        <div className="bg-slate-900 text-white text-xs py-2 px-4 text-center font-medium">
-          <div className="mx-auto max-w-7xl flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
-            <span>{activePromoText}</span>
+        <div className="bg-slate-900 text-white text-[11px] py-1.5 px-3 sm:px-4 text-center font-medium border-b border-slate-800/80">
+          <div className="mx-auto max-w-7xl flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5">
+            <span className="truncate max-w-full">{activePromoText}</span>
             <span aria-hidden="true" className="text-slate-500 hidden sm:inline">
               ·
             </span>
@@ -1617,7 +1635,7 @@ export function MartStorefront({
         onSearchChange={(val) => {
           setSearchQuery(val);
         }}
-        categories={visibleCategories}
+        categories={sortedVisibleCategories}
         selectedCategories={selectedCategories}
         onToggleCategory={toggleCategoryFilter}
         onClearCategories={() => {
@@ -2299,31 +2317,31 @@ export function MartStorefront({
           </section>
         ) : (
           <>
-        {/* Compact Promotional Hero Section */}
+        {/* Compact Above-the-Fold Hero Banner + Integrated Trust Strip */}
         <section className="bg-slate-900 text-white border-b border-slate-800">
-          <div className="mx-auto max-w-7xl px-3 sm:px-6 lg:px-8 py-6 sm:py-10 lg:py-14">
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-8 items-center">
-              <div className="lg:col-span-8 space-y-3 sm:space-y-4">
-                <div className="text-[11px] sm:text-xs font-semibold tracking-wide text-gold-400">
-                  {t.hero.kicker}
+          <div className="mx-auto max-w-7xl px-3 sm:px-6 lg:px-8 py-4 sm:py-5 lg:py-6">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6 items-center">
+              <div className="lg:col-span-8 space-y-2 sm:space-y-2.5">
+                <div className="inline-flex items-center gap-2 text-[11px] font-semibold tracking-wide text-gold-400">
+                  <span>{t.hero.kicker}</span>
                 </div>
                 <h1
-                  className="font-display text-2xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-white leading-[1.16]"
+                  className="font-display text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight text-white leading-tight"
                   style={{ textWrap: "balance" }}
                 >
                   {activeHeroTitle}
                 </h1>
-                <p className="text-sm sm:text-base text-slate-300 max-w-2xl leading-relaxed line-clamp-2 sm:line-clamp-none">
+                <p className="text-xs sm:text-sm text-slate-300 max-w-2xl leading-relaxed line-clamp-2">
                   {activeHeroSubtitle}
                 </p>
 
-                <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 pt-1">
+                <div className="flex flex-wrap items-center gap-2 pt-1">
                   <a
                     href="#mart-catalog"
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#0B5336] px-5 sm:px-6 py-2.5 sm:py-3 text-xs sm:text-sm font-semibold text-white hover:bg-[#08412A] transition-colors whitespace-nowrap shrink-0 min-h-[44px]"
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#0B5336] px-4 sm:px-5 py-2 text-xs font-semibold text-white hover:bg-[#08412A] transition-colors whitespace-nowrap shrink-0 min-h-[38px] sm:min-h-[40px]"
                   >
                     <span>{activeHeroCta}</span>
-                    <ArrowRight className="h-4 w-4" />
+                    <ArrowRight className="h-3.5 w-3.5" />
                   </a>
                   <button
                     type="button"
@@ -2331,102 +2349,101 @@ export function MartStorefront({
                       setTrackOpen(true);
                       setTrackingError(null);
                     }}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-800/70 px-4 sm:px-5 py-2.5 sm:py-3 text-xs sm:text-sm font-semibold text-white hover:bg-slate-800 transition-colors whitespace-nowrap shrink-0 min-h-[44px]"
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/70 px-3.5 sm:px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 transition-colors whitespace-nowrap shrink-0 min-h-[38px] sm:min-h-[40px]"
                   >
-                    <PackageSearch className="h-4 w-4 text-gold-400" />
+                    <PackageSearch className="h-3.5 w-3.5 text-gold-400" />
                     <span>{t.hero.trackExistingOrder}</span>
                   </button>
                 </div>
               </div>
 
-              {/* Delivery Charge Transparent Summary Box (Compact 2-Col Strip on Mobile) */}
-              <div className="lg:col-span-4 rounded-2xl border border-slate-800 bg-slate-800/60 p-4 sm:p-5 lg:p-6 space-y-3">
-                <div className="text-[11px] sm:text-xs font-semibold tracking-wide text-gold-400">
-                  {t.hero.deliveryCardTitle}
-                </div>
-                <div className="grid grid-cols-2 lg:grid-cols-1 gap-3 text-xs sm:text-sm">
-                  <div className="flex flex-col lg:flex-row lg:items-center justify-between lg:pb-3 lg:border-b border-slate-700 rounded-xl lg:rounded-none bg-slate-900/40 lg:bg-transparent p-2.5 lg:p-0">
-                    <span className="text-slate-300 text-[11px] sm:text-sm">{t.hero.insideDhakaLabel}</span>
-                    <span className="font-mono font-bold text-white tabular-nums text-sm sm:text-base lg:text-sm mt-0.5 lg:mt-0">
-                      {formatMartPrice(insideDhakaFee, lang)}
-                    </span>
-                  </div>
-                  <div className="flex flex-col lg:flex-row lg:items-center justify-between lg:pb-3 lg:border-b border-slate-700 rounded-xl lg:rounded-none bg-slate-900/40 lg:bg-transparent p-2.5 lg:p-0">
-                    <span className="text-slate-300 text-[11px] sm:text-sm">{t.hero.outsideDhakaLabel}</span>
-                    <span className="font-mono font-bold text-white tabular-nums text-sm sm:text-base lg:text-sm mt-0.5 lg:mt-0">
-                      {formatMartPrice(outsideDhakaFee, lang)}
-                    </span>
-                  </div>
-                </div>
-                <div className="hidden lg:flex items-center justify-between text-xs text-slate-400 pt-1">
-                  <span>{t.hero.directHelplineLabel}</span>
+              {/* Compact Delivery Charge Summary Card */}
+              <div className="lg:col-span-4 rounded-xl border border-slate-800 bg-slate-800/60 p-3 sm:p-4 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-semibold tracking-wide text-gold-400">
+                    {t.hero.deliveryCardTitle}
+                  </span>
                   <a
                     href={MART_CONTACT_TEL}
-                    className="font-mono font-semibold text-emerald-300 hover:text-white tabular-nums"
+                    className="font-mono text-[11px] font-semibold text-emerald-300 hover:text-white tabular-nums"
                   >
                     {MART_CONTACT_PHONE}
                   </a>
                 </div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="flex items-center justify-between rounded-lg bg-slate-900/60 border border-slate-700/70 px-2.5 py-2">
+                    <span className="text-slate-300 text-[11px] truncate pr-1">
+                      {t.hero.insideDhakaLabel}
+                    </span>
+                    <span className="font-mono font-bold text-white tabular-nums text-xs sm:text-sm shrink-0">
+                      {formatMartPrice(insideDhakaFee, lang)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-lg bg-slate-900/60 border border-slate-700/70 px-2.5 py-2">
+                    <span className="text-slate-300 text-[11px] truncate pr-1">
+                      {t.hero.outsideDhakaLabel}
+                    </span>
+                    <span className="font-mono font-bold text-white tabular-nums text-xs sm:text-sm shrink-0">
+                      {formatMartPrice(outsideDhakaFee, lang)}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        </section>
 
-        {/* Trust Badges Strip (Compact 2x2 on Mobile) */}
-        <section className="bg-white border-b border-slate-200">
-          <div className="mx-auto max-w-7xl px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
-              <div className="flex items-start gap-2.5 sm:gap-3">
-                <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-xl bg-slate-100 text-[#0B5336] shrink-0">
-                  <Truck className="h-4 w-4 sm:h-5 sm:w-5" />
-                </div>
+            {/* Integrated 4-Pillar Trust Strip (Saves Vertical Fold Space) */}
+            <div className="mt-3.5 pt-3 border-t border-slate-800/80 grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-800 text-emerald-400 shrink-0">
+                  <Truck className="h-3.5 w-3.5" />
+                </span>
                 <div className="min-w-0">
-                  <div className="text-xs sm:text-sm font-semibold text-slate-900 leading-tight">
+                  <div className="text-[11px] sm:text-xs font-semibold text-white truncate">
                     {t.trust.fastDeliveryTitle}
                   </div>
-                  <div className="text-[11px] sm:text-xs text-slate-500 mt-0.5 line-clamp-2">
+                  <div className="text-[10px] text-slate-400 truncate hidden sm:block">
                     {t.trust.fastDeliveryDesc}
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-start gap-2.5 sm:gap-3">
-                <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-xl bg-slate-100 text-[#0B5336] shrink-0">
-                  <Banknote className="h-4 w-4 sm:h-5 sm:w-5" />
-                </div>
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-800 text-emerald-400 shrink-0">
+                  <Banknote className="h-3.5 w-3.5" />
+                </span>
                 <div className="min-w-0">
-                  <div className="text-xs sm:text-sm font-semibold text-slate-900 leading-tight">
+                  <div className="text-[11px] sm:text-xs font-semibold text-white truncate">
                     {t.trust.codTitle}
                   </div>
-                  <div className="text-[11px] sm:text-xs text-slate-500 mt-0.5 line-clamp-2">
+                  <div className="text-[10px] text-slate-400 truncate hidden sm:block">
                     {t.trust.codDesc}
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-start gap-2.5 sm:gap-3">
-                <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-xl bg-slate-100 text-[#0B5336] shrink-0">
-                  <ShieldCheck className="h-4 w-4 sm:h-5 sm:w-5" />
-                </div>
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-800 text-emerald-400 shrink-0">
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                </span>
                 <div className="min-w-0">
-                  <div className="text-xs sm:text-sm font-semibold text-slate-900 leading-tight">
+                  <div className="text-[11px] sm:text-xs font-semibold text-white truncate">
                     {t.trust.authenticTitle}
                   </div>
-                  <div className="text-[11px] sm:text-xs text-slate-500 mt-0.5 line-clamp-2">
+                  <div className="text-[10px] text-slate-400 truncate hidden sm:block">
                     {t.trust.authenticDesc}
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-start gap-2.5 sm:gap-3">
-                <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-xl bg-slate-100 text-[#0B5336] shrink-0">
-                  <RotateCcw className="h-4 w-4 sm:h-5 sm:w-5" />
-                </div>
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-800 text-emerald-400 shrink-0">
+                  <RotateCcw className="h-3.5 w-3.5" />
+                </span>
                 <div className="min-w-0">
-                  <div className="text-xs sm:text-sm font-semibold text-slate-900 leading-tight">
+                  <div className="text-[11px] sm:text-xs font-semibold text-white truncate">
                     {t.trust.easyReturnTitle}
                   </div>
-                  <div className="text-[11px] sm:text-xs text-slate-500 mt-0.5 line-clamp-2">
+                  <div className="text-[10px] text-slate-400 truncate hidden sm:block">
                     {t.trust.easyReturnDesc}
                   </div>
                 </div>
@@ -2435,123 +2452,139 @@ export function MartStorefront({
           </div>
         </section>
 
-        {/* Main Store Catalog Section */}
-        <section id="mart-catalog" className="py-6 sm:py-10 lg:py-14">
-          <div className="mx-auto max-w-7xl px-3 sm:px-6 lg:px-8 space-y-5 sm:space-y-8">
-            {/* Combined Horizontal Sliding Category & Label Filter Toolbar */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-3.5 sm:p-5 space-y-3.5">
-              {/* Row 1: Sliding Categories + Sort + Count */}
-              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3.5">
-                <div className="space-y-2 flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-semibold text-slate-500">
-                      {t.catalog.categoriesTitle}
-                    </span>
-                    <span className="lg:hidden text-[11px] text-slate-500 font-mono tabular-nums whitespace-nowrap">
-                      {toLocalizedDigits(filteredProducts.length, lang)}{" "}
-                      {filteredProducts.length === 1
-                        ? t.catalog.productSingular
-                        : t.catalog.productPlural}
-                    </span>
-                  </div>
-                  <div className="flex lg:flex-wrap items-center gap-2.5 overflow-x-auto snap-x scrollbar-none pb-1 lg:pb-0">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedCategories([])}
-                      className={`inline-flex items-center gap-2.5 pl-1.5 pr-3.5 py-1.5 rounded-xl text-xs font-semibold transition-colors whitespace-nowrap shrink-0 snap-start min-h-[48px] border ${
+        {/* Main Store Catalog Section (Immediately Above the Fold) */}
+        <section id="mart-catalog" className="py-4 sm:py-6 lg:py-8">
+          <div className="mx-auto max-w-7xl px-3 sm:px-6 lg:px-8 space-y-4 sm:space-y-5">
+            {/* Sleek Single-Bar Category Ribbon & Filter Command Toolbar */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-2.5 sm:p-3.5 shadow-xs space-y-2.5">
+              {/* Row 1: Single-Row Horizontal Category Scroller (Never wraps into tall multi-row blocks) */}
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => scrollCategoryRail("left")}
+                  aria-label="Scroll categories left"
+                  className="hidden lg:inline-flex h-9 w-8 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-600 hover:border-[#0B5336] hover:text-[#0B5336] shrink-0 transition-colors"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+
+                <div
+                  ref={categoryRailRef}
+                  className="flex-1 flex items-center gap-2 overflow-x-auto snap-x scrollbar-none py-0.5"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCategories([])}
+                    className={`inline-flex items-center gap-2 pl-1.5 pr-3 py-1 rounded-xl text-xs font-semibold transition-colors whitespace-nowrap shrink-0 snap-start min-h-[38px] border ${
+                      selectedCategories.length === 0
+                        ? "bg-[#0B5336] border-[#0B5336] text-white"
+                        : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
+                    }`}
+                  >
+                    <span
+                      className={`flex h-7 w-7 items-center justify-center rounded-lg shrink-0 ${
                         selectedCategories.length === 0
-                          ? "bg-[#0B5336] border-[#0B5336] text-white"
-                          : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
+                          ? "bg-white/15 text-white"
+                          : "bg-white text-[#0B5336] border border-slate-200"
                       }`}
                     >
-                      <span
-                        className={`flex h-9 w-9 items-center justify-center rounded-lg shrink-0 ${
-                          selectedCategories.length === 0
-                            ? "bg-white/15 text-white"
-                            : "bg-white text-[#0B5336] border border-slate-200"
+                      <Layers className="h-3.5 w-3.5" />
+                    </span>
+                    <span>{t.catalog.allCategories}</span>
+                    <span
+                      className={`font-mono text-[11px] tabular-nums ${
+                        selectedCategories.length === 0 ? "text-emerald-100" : "text-slate-400"
+                      }`}
+                    >
+                      {toLocalizedDigits(products.length, lang)}
+                    </span>
+                  </button>
+
+                  {sortedVisibleCategories.map((cat) => {
+                    const active = selectedCategories.includes(cat.slug);
+                    const catTitle = pickLocalized(cat.nameEn, cat.nameBn, lang, cat.slug);
+                    const catThumb = categoryThumbMap[cat.slug] || "";
+                    const catCount = categoryCountsMap[cat.slug] ?? 0;
+                    return (
+                      <button
+                        key={cat.slug}
+                        type="button"
+                        onClick={() => toggleCategoryFilter(cat.slug)}
+                        className={`inline-flex items-center gap-2 pl-1.5 pr-3 py-1 rounded-xl text-xs font-semibold transition-colors whitespace-nowrap shrink-0 snap-start min-h-[38px] border ${
+                          active
+                            ? "bg-[#0B5336] border-[#0B5336] text-white"
+                            : catCount > 0
+                            ? "bg-white border-slate-200 text-slate-800 hover:border-[#0B5336] hover:text-[#0B5336]"
+                            : "bg-slate-50/70 border-slate-200/80 text-slate-500 hover:border-slate-300 hover:text-slate-700"
                         }`}
                       >
-                        <Layers className="h-4 w-4" />
-                      </span>
-                      <span>{t.catalog.allCategories}</span>
-                      <span
-                        className={`font-mono text-[11px] tabular-nums ${
-                          selectedCategories.length === 0 ? "text-emerald-100" : "text-slate-400"
-                        }`}
-                      >
-                        {toLocalizedDigits(products.length, lang)}
-                      </span>
-                    </button>
-                    {visibleCategories.map((cat) => {
-                      const active = selectedCategories.includes(cat.slug);
-                      const catTitle = pickLocalized(cat.nameEn, cat.nameBn, lang, cat.slug);
-                      const catThumb = categoryThumbMap[cat.slug] || "";
-                      const catCount = categoryCountsMap[cat.slug] ?? 0;
-                      return (
-                        <button
-                          key={cat.slug}
-                          type="button"
-                          onClick={() => toggleCategoryFilter(cat.slug)}
-                          className={`inline-flex items-center gap-2.5 pl-1.5 pr-3.5 py-1.5 rounded-xl text-xs font-semibold transition-colors whitespace-nowrap shrink-0 snap-start min-h-[48px] border ${
+                        <CategoryMedia
+                          src={catThumb}
+                          alt={catTitle}
+                          active={active}
+                          sizeClass="h-7 w-7"
+                          iconClass="h-3.5 w-3.5"
+                        />
+                        <span>{catTitle}</span>
+                        <span
+                          className={`font-mono text-[11px] tabular-nums ${
                             active
-                              ? "bg-[#0B5336] border-[#0B5336] text-white"
-                              : "bg-white border-slate-200 text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336]"
+                              ? "text-emerald-100"
+                              : catCount > 0
+                              ? "text-[#0B5336] font-bold"
+                              : "text-slate-400"
                           }`}
                         >
-                          <CategoryMedia
-                            src={catThumb}
-                            alt={catTitle}
-                            active={active}
-                            sizeClass="h-9 w-9"
-                            iconClass="h-4 w-4"
-                          />
-                          <span>{catTitle}</span>
-                          <span
-                            className={`font-mono text-[11px] tabular-nums ${
-                              active ? "text-emerald-100" : "text-slate-400"
-                            }`}
-                          >
-                            {toLocalizedDigits(catCount, lang)}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                          {toLocalizedDigits(catCount, lang)}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
 
-                <div className="flex items-center justify-between lg:justify-end gap-3 shrink-0 lg:self-end">
-                  <span className="hidden lg:inline text-xs text-slate-500 font-mono tabular-nums whitespace-nowrap">
-                    {toLocalizedDigits(filteredProducts.length, lang)}{" "}
-                    {filteredProducts.length === 1
-                      ? t.catalog.productSingular
-                      : t.catalog.productPlural}
-                  </span>
-                  <select
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value as SortOption)}
-                    aria-label={t.catalog.sortAria}
-                    className="w-full sm:w-auto rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 outline-none focus:border-[#0B5336] min-h-[42px]"
-                  >
-                    <option value="featured">{t.catalog.sortFeatured}</option>
-                    <option value="price_asc">{t.catalog.sortPriceAsc}</option>
-                    <option value="price_desc">{t.catalog.sortPriceDesc}</option>
-                    <option value="newest">{t.catalog.sortNewest}</option>
-                  </select>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => scrollCategoryRail("right")}
+                  aria-label="Scroll categories right"
+                  className="hidden lg:inline-flex h-9 w-8 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-600 hover:border-[#0B5336] hover:text-[#0B5336] shrink-0 transition-colors"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
               </div>
 
-              {/* Row 2: Collections & Labels Sliding Rail */}
-              {visibleLabels.length > 0 && (
-                <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="space-y-2 flex-1 min-w-0">
-                    <div className="text-xs font-semibold text-slate-500">
-                      {t.catalog.labelsTitle}
-                    </div>
-                    <div className="flex lg:flex-wrap items-center gap-2 overflow-x-auto snap-x scrollbar-none pb-1 lg:pb-0">
+              {/* Row 2: Compact Collections Scroller + Filter Drawer Toggle + Sort Bar */}
+              <div className="pt-2 border-t border-slate-100 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-x-auto scrollbar-none py-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setFilterDrawerOpen((prev) => !prev)}
+                    className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 min-h-[34px] ${
+                      filterDrawerOpen || selectedCategories.length > 0 || selectedLabels.length > 0
+                        ? "border-[#0B5336] bg-brand-50 text-[#0B5336]"
+                        : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
+                    }`}
+                  >
+                    <SlidersHorizontal className="h-3.5 w-3.5" />
+                    <span>{lang === "bn" ? "সব ফিল্টার" : "All Filters"}</span>
+                    {(selectedCategories.length + selectedLabels.length > 0) && (
+                      <span className="font-mono text-[10px] font-bold rounded bg-[#0B5336] text-white px-1.5 py-0.2 tabular-nums">
+                        {toLocalizedDigits(
+                          selectedCategories.length + selectedLabels.length,
+                          lang
+                        )}
+                      </span>
+                    )}
+                  </button>
+
+                  {visibleLabels.length > 0 && (
+                    <>
+                      <span aria-hidden="true" className="text-slate-300 px-0.5">
+                        |
+                      </span>
                       <button
                         type="button"
                         onClick={() => setSelectedLabels([])}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 snap-start min-h-[38px] border ${
+                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 min-h-[34px] border ${
                           selectedLabels.length === 0
                             ? "bg-slate-900 border-slate-900 text-white"
                             : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
@@ -2572,7 +2605,7 @@ export function MartStorefront({
                             key={lbl.slug}
                             type="button"
                             onClick={() => toggleLabelFilter(lbl.slug)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 snap-start min-h-[38px] border ${
+                            className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 min-h-[34px] border ${
                               active
                                 ? activeClass
                                 : "bg-white border-slate-200 text-slate-700 hover:border-slate-400"
@@ -2582,32 +2615,120 @@ export function MartStorefront({
                           </button>
                         );
                       })}
-                    </div>
-                  </div>
+                    </>
+                  )}
+                </div>
 
+                <div className="flex items-center justify-end gap-2 shrink-0 w-full sm:w-auto pt-1 sm:pt-0 border-t sm:border-t-0 border-slate-100">
                   {hasActiveFilters && (
                     <button
                       type="button"
                       onClick={resetAllFilters}
-                      className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 whitespace-nowrap shrink-0 self-start sm:self-end min-h-[38px]"
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 whitespace-nowrap min-h-[34px]"
                     >
-                      <RotateCw className="h-3.5 w-3.5" />
+                      <RotateCw className="h-3 w-3" />
                       <span>{t.catalog.clearFilters}</span>
                     </button>
                   )}
-                </div>
-              )}
 
-              {visibleLabels.length === 0 && hasActiveFilters && (
-                <div className="pt-2 border-t border-slate-100 flex justify-end">
-                  <button
-                    type="button"
-                    onClick={resetAllFilters}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 whitespace-nowrap min-h-[38px]"
+                  <span className="text-[11px] sm:text-xs text-slate-500 font-mono tabular-nums whitespace-nowrap">
+                    {toLocalizedDigits(filteredProducts.length, lang)}{" "}
+                    {filteredProducts.length === 1
+                      ? t.catalog.productSingular
+                      : t.catalog.productPlural}
+                  </span>
+
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as SortOption)}
+                    aria-label={t.catalog.sortAria}
+                    className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 outline-none focus:border-[#0B5336] min-h-[34px]"
                   >
-                    <RotateCw className="h-3.5 w-3.5" />
-                    <span>{t.catalog.clearFilters}</span>
-                  </button>
+                    <option value="featured">{t.catalog.sortFeatured}</option>
+                    <option value="price_asc">{t.catalog.sortPriceAsc}</option>
+                    <option value="price_desc">{t.catalog.sortPriceDesc}</option>
+                    <option value="newest">{t.catalog.sortNewest}</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Expandable Full Filter & Collections Drawer Panel */}
+              {filterDrawerOpen && (
+                <div className="pt-3 border-t border-slate-200 space-y-3 bg-slate-50/70 -mx-2.5 sm:-mx-3.5 -mb-2.5 sm:-mb-3.5 p-3 sm:p-4 rounded-b-2xl">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-slate-900">
+                      {t.catalog.categoriesTitle} & {t.catalog.labelsTitle}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setFilterDrawerOpen(false)}
+                      className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-slate-900"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      <span>{t.common.close}</span>
+                    </button>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="text-[11px] font-semibold text-slate-500">
+                      {t.catalog.categoriesTitle}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {sortedVisibleCategories.map((cat) => {
+                        const active = selectedCategories.includes(cat.slug);
+                        const catTitle = pickLocalized(cat.nameEn, cat.nameBn, lang, cat.slug);
+                        const catCount = categoryCountsMap[cat.slug] ?? 0;
+                        return (
+                          <button
+                            key={cat.slug}
+                            type="button"
+                            onClick={() => toggleCategoryFilter(cat.slug)}
+                            className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold transition-colors ${
+                              active
+                                ? "border-[#0B5336] bg-[#0B5336] text-white"
+                                : "border-slate-200 bg-white text-slate-700 hover:border-[#0B5336]"
+                            }`}
+                          >
+                            <span>{catTitle}</span>
+                            <span
+                              className={`font-mono text-[10px] tabular-nums ${
+                                active ? "text-emerald-100" : "text-slate-400"
+                              }`}
+                            >
+                              ({toLocalizedDigits(catCount, lang)})
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {visibleLabels.length > 0 && (
+                    <div className="space-y-1.5">
+                      <div className="text-[11px] font-semibold text-slate-500">
+                        {t.catalog.labelsTitle}
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {visibleLabels.map((lbl) => {
+                          const active = selectedLabels.includes(lbl.slug);
+                          return (
+                            <button
+                              key={lbl.slug}
+                              type="button"
+                              onClick={() => toggleLabelFilter(lbl.slug)}
+                              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold transition-colors ${
+                                active
+                                  ? "border-slate-900 bg-slate-900 text-white"
+                                  : "border-slate-200 bg-white text-slate-700 hover:border-slate-400"
+                              }`}
+                            >
+                              <span>{pickLocalized(lbl.nameEn, lbl.nameBn, lang, lbl.slug)}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -2749,13 +2870,13 @@ export function MartStorefront({
               </div>
             )}
 
-            {/* Catalog Loading / Empty / 2-Column Mobile Product Grid */}
+            {/* Catalog Loading / Empty / 4-Column Desktop & 2-Column Mobile Product Grid */}
             {loading ? (
-              <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-5 lg:gap-6">
-                {[1, 2, 3, 4, 5, 6].map((idx) => (
+              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 lg:gap-5">
+                {[1, 2, 3, 4, 5, 6, 7, 8].map((idx) => (
                   <div
                     key={idx}
-                    className="h-[290px] sm:h-[400px] rounded-2xl border border-slate-200 bg-white animate-pulse"
+                    className="h-[280px] sm:h-[360px] rounded-2xl border border-slate-200 bg-white animate-pulse"
                   />
                 ))}
               </div>
@@ -2832,7 +2953,7 @@ export function MartStorefront({
                     <div className="text-xs sm:text-sm font-semibold text-slate-700">
                       {t.catalog.showingClosestMatchesBanner}
                     </div>
-                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-5 lg:gap-6">
+                    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 lg:gap-5">
                       {smartSearchBundle.fallbackProducts.map((product) =>
                         renderProductCard(product)
                       )}
@@ -2841,7 +2962,7 @@ export function MartStorefront({
                 )}
               </div>
             ) : (
-              <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-5 lg:gap-6">
+              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 lg:gap-5">
                 {filteredProducts.map((product) => renderProductCard(product))}
               </div>
             )}
