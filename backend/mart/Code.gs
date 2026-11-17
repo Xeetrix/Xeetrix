@@ -82,6 +82,16 @@ var MART_SCHEMA = {
     "active",
     "createdAt"
   ],
+  Mart_Attributes: [
+    "id",
+    "slug",
+    "nameEn",
+    "nameBn",
+    "optionsList",
+    "sortOrder",
+    "active",
+    "createdAt"
+  ],
   Mart_Suppliers: [
     "id",
     "name",
@@ -198,7 +208,8 @@ var MART_DEFAULT_SETTINGS = {
   bkashMerchantNumber: "",
   bkashQrUrl: "",
   banglaQrUrl: "",
-  banglaQrAccountInfo: ""
+  banglaQrAccountInfo: "",
+  attributes_catalog_json: ""
 };
 
 var DRIVE_ROOT_FOLDER_NAME = "Xeetrix_Mart_Storage";
@@ -211,7 +222,7 @@ var PROP_DRIVE_PRODUCTS_ID = "MART_DRIVE_PRODUCTS_ID";
 var PROP_DRIVE_CATEGORIES_ID = "MART_DRIVE_CATEGORIES_ID";
 var PROP_DRIVE_PAYMENT_ID = "MART_DRIVE_PAYMENT_ID";
 
-var CACHE_PUBLIC_KEY = "xeetrix_mart_public_v5";
+var CACHE_PUBLIC_KEY = "xeetrix_mart_public_v6";
 var CACHE_TTL_SECONDS = 600; // 10 minutes; automatically busted on every mutation
 
 function jsonOut(payload) {
@@ -431,6 +442,7 @@ function invalidateMartCache() {
   try {
     var cache = CacheService.getScriptCache();
     cache.remove(CACHE_PUBLIC_KEY);
+    cache.remove("xeetrix_mart_public_v5");
     cache.remove("xeetrix_mart_public_v4");
     cache.remove("xeetrix_mart_public_v3");
     cache.remove("xeetrix_mart_public_v2");
@@ -701,6 +713,15 @@ function readMartRows(sheet, sheetName) {
       }
     }
 
+    if (sheetName === "Mart_Attributes") {
+      if (!obj.slug) {
+        obj.slug = slugifyText(obj.nameEn || obj.nameBn || obj.id);
+      }
+      if (colMap["active"] === undefined || row[colMap["active"]] === "") {
+        obj.active = true;
+      }
+    }
+
     if (sheetName === "Mart_Suppliers") {
       if (!obj.companyType) obj.companyType = "dropship";
       if (!obj.payoutMode) obj.payoutMode = "we_pay_supplier";
@@ -792,6 +813,52 @@ function sanitizeVariationMatrixForPublic(matrixJsonStr) {
   }
 }
 
+function syncAttributesBackupToSettings(ss) {
+  try {
+    var attrSheet = ensureMartSheet(ss, "Mart_Attributes");
+    var attrs = sortTaxonomyByOrder(readMartRows(attrSheet, "Mart_Attributes"));
+    var settingsSheet = ensureMartSheet(ss, "Mart_Settings");
+    var jsonVal = JSON.stringify(attrs);
+    var nowIso = new Date().toISOString();
+    var sLastRow = settingsSheet.getLastRow();
+    var updated = false;
+    if (sLastRow > 1) {
+      var existingKeys = settingsSheet.getRange(2, 1, sLastRow - 1, 1).getValues();
+      for (var rowIdx = 0; rowIdx < existingKeys.length; rowIdx++) {
+        if (String(existingKeys[rowIdx][0]) === "attributes_catalog_json") {
+          settingsSheet.getRange(rowIdx + 2, 2, 1, 2).setValues([[jsonVal, nowIso]]);
+          updated = true;
+          break;
+        }
+      }
+    }
+    if (!updated) {
+      settingsSheet.appendRow(["attributes_catalog_json", jsonVal, nowIso]);
+    }
+  } catch (e) {
+    // Non-fatal backup sync guard
+  }
+}
+
+function readMartAttributesWithBackup(ss, settingsObj) {
+  var attrSheet = ensureMartSheet(ss, "Mart_Attributes");
+  var fromSheet = sortTaxonomyByOrder(readMartRows(attrSheet, "Mart_Attributes"));
+  if (fromSheet.length > 0) {
+    return fromSheet;
+  }
+  if (settingsObj && settingsObj.attributes_catalog_json) {
+    try {
+      var parsed = JSON.parse(String(settingsObj.attributes_catalog_json));
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return sortTaxonomyByOrder(parsed);
+      }
+    } catch (e) {
+      // Ignore parse error
+    }
+  }
+  return [];
+}
+
 function buildAndCachePublicBundle(ss) {
   var prodSheet = ensureMartSheet(ss, "Mart_Products");
   var catSheet = ensureMartSheet(ss, "Mart_Categories");
@@ -864,11 +931,15 @@ function buildAndCachePublicBundle(ss) {
     })
   );
   var settings = mergeSettings(readSettingsMap(setSheet));
+  var activeAttributes = readMartAttributesWithBackup(ss, settings).filter(function (a) {
+    return a.active !== false;
+  });
 
   var payload = {
     products: activeProducts,
     categories: activeCategories,
     labels: activeLabels,
+    attributes: activeAttributes,
     settings: settings
   };
 
@@ -889,6 +960,7 @@ function generateMartId(sheetName) {
     Mart_Products: "PRD",
     Mart_Categories: "CAT",
     Mart_Labels: "LBL",
+    Mart_Attributes: "ATR",
     Mart_Suppliers: "SUP",
     Mart_Coupons: "CPN",
     Mart_Orders: "XM",
@@ -1711,6 +1783,7 @@ function doGet(e) {
       var crmProfSheet = ensureMartSheet(ss, "Mart_CRM_Profiles");
       var crmLogSheet = ensureMartSheet(ss, "Mart_CRM_Logs");
       var setSheet = ensureMartSheet(ss, "Mart_Settings");
+      var mergedSettings = mergeSettings(readSettingsMap(setSheet));
 
       return jsonOut({
         ok: true,
@@ -1718,13 +1791,14 @@ function doGet(e) {
           products: readMartRows(prodSheet, "Mart_Products"),
           categories: sortTaxonomyByOrder(readMartRows(catSheet, "Mart_Categories")),
           labels: sortTaxonomyByOrder(readMartRows(labelSheet, "Mart_Labels")),
+          attributes: readMartAttributesWithBackup(ss, mergedSettings),
           suppliers: readMartRows(supSheet, "Mart_Suppliers"),
           coupons: readMartRows(couponSheet, "Mart_Coupons"),
           orders: readMartRows(ordAdminSheet, "Mart_Orders"),
           transactions: readMartRows(txnSheet, "Mart_Transactions"),
           crmProfiles: readMartRows(crmProfSheet, "Mart_CRM_Profiles"),
           crmLogs: readMartRows(crmLogSheet, "Mart_CRM_Logs"),
-          settings: mergeSettings(readSettingsMap(setSheet))
+          settings: mergedSettings
         }
       });
     }
@@ -1915,6 +1989,8 @@ function doPost(e) {
         if (record.discountCode) {
           incrementCouponUsage(ss, String(record.discountCode));
         }
+      } else if (sheetName === "Mart_Attributes") {
+        syncAttributesBackupToSettings(ss);
       }
 
       invalidateMartCache();
@@ -1948,6 +2024,10 @@ function doPost(e) {
             itemData.slug = slugifyText(itemData.nameEn || itemData.nameBn || "cat-" + bi);
           }
           itemData.skuCode = resolveCategorySkuCodeServer(itemData);
+        } else if (batchSheetName === "Mart_Attributes") {
+          if (!itemData.slug) {
+            itemData.slug = slugifyText(itemData.nameEn || itemData.nameBn || "attr-" + bi);
+          }
         }
         var bId = itemData.id ? String(itemData.id) : generateMartId(batchSheetName) + "-" + bi;
         var bRec = {};
@@ -1982,6 +2062,10 @@ function doPost(e) {
         batchSheet
           .getRange(appendStartRow, 1, rowsMatrix.length, bActualHeaders.length)
           .setValues(rowsMatrix);
+      }
+
+      if (batchSheetName === "Mart_Attributes") {
+        syncAttributesBackupToSettings(ss);
       }
 
       invalidateMartCache();
@@ -2112,6 +2196,10 @@ function doPost(e) {
         );
       }
 
+      if (updSheetName === "Mart_Attributes") {
+        syncAttributesBackupToSettings(ss);
+      }
+
       invalidateMartCache();
       return jsonOut({ ok: true, id: targetId, updated: true, stockAdjusted: stockAdjusted });
     }
@@ -2162,6 +2250,8 @@ function doPost(e) {
             );
           } else if (delSheetName === "Mart_Labels" && deletedRowObj.slug) {
             cascadeTaxonomySlugChange(ss, "Mart_Labels", deletedRowObj.slug, "");
+          } else if (delSheetName === "Mart_Attributes") {
+            syncAttributesBackupToSettings(ss);
           }
           invalidateMartCache();
           return jsonOut({ ok: true, id: delId, deleted: true, stockRestored: delStockRestored });

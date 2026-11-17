@@ -24,6 +24,7 @@ const ALLOWED_MUTATION_SHEETS = new Set([
   "Mart_Products",
   "Mart_Categories",
   "Mart_Labels",
+  "Mart_Attributes",
   "Mart_Suppliers",
   "Mart_Coupons",
   "Mart_Orders",
@@ -75,6 +76,7 @@ export async function GET(req: NextRequest) {
           products: [],
           categories: [],
           labels: [],
+          attributes: [],
           suppliers: [],
           coupons: [],
           orders: [],
@@ -112,6 +114,7 @@ export async function GET(req: NextRequest) {
         products?: unknown[];
         categories?: unknown[];
         labels?: unknown[];
+        attributes?: unknown[];
         suppliers?: unknown[];
         coupons?: unknown[];
         orders?: unknown[];
@@ -134,6 +137,7 @@ export async function GET(req: NextRequest) {
           products: Array.isArray(json.data.products) ? json.data.products : [],
           categories: Array.isArray(json.data.categories) ? json.data.categories : [],
           labels: Array.isArray(json.data.labels) ? json.data.labels : [],
+          attributes: Array.isArray(json.data.attributes) ? json.data.attributes : [],
           suppliers: Array.isArray(json.data.suppliers) ? json.data.suppliers : [],
           coupons: Array.isArray(json.data.coupons) ? json.data.coupons : [],
           orders: Array.isArray(json.data.orders) ? json.data.orders : [],

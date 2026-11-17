@@ -13,6 +13,7 @@ export type MartSheetName =
   | "Mart_Products"
   | "Mart_Categories"
   | "Mart_Labels"
+  | "Mart_Attributes"
   | "Mart_Suppliers"
   | "Mart_Coupons"
   | "Mart_Orders"
@@ -107,6 +108,18 @@ export interface MartProductAttributes {
   ageGroup: string;
   material: string;
   brand: string;
+  custom?: Record<string, string>;
+}
+
+export interface MartAttribute {
+  id: string;
+  slug: string;
+  nameEn: string;
+  nameBn: string;
+  optionsList: string; // Comma-separated selectable values (e.g., "100% Cotton, Silk, Denim")
+  sortOrder: number;
+  active: boolean;
+  createdAt: string;
 }
 
 export interface MartProduct {
@@ -323,6 +336,7 @@ export interface MartSettings {
   bkashQrUrl: string;
   banglaQrUrl: string;
   banglaQrAccountInfo: string;
+  attributes_catalog_json?: string;
   // Legacy single-language read fallback keys
   heroTitle?: string;
   heroSubtitle?: string;
@@ -348,6 +362,7 @@ export const DEFAULT_MART_SETTINGS: MartSettings = {
   bkashQrUrl: "",
   banglaQrUrl: "",
   banglaQrAccountInfo: "",
+  attributes_catalog_json: "",
 };
 
 function mergeMartSettings(partial?: Partial<MartSettings>): MartSettings {
@@ -369,6 +384,8 @@ function mergeMartSettings(partial?: Partial<MartSettings>): MartSettings {
     bkashQrUrl: partial?.bkashQrUrl ?? DEFAULT_MART_SETTINGS.bkashQrUrl,
     banglaQrUrl: partial?.banglaQrUrl ?? DEFAULT_MART_SETTINGS.banglaQrUrl,
     banglaQrAccountInfo: partial?.banglaQrAccountInfo ?? DEFAULT_MART_SETTINGS.banglaQrAccountInfo,
+    attributes_catalog_json:
+      partial?.attributes_catalog_json ?? DEFAULT_MART_SETTINGS.attributes_catalog_json,
   };
 }
 
@@ -434,6 +451,7 @@ export function parseProductAttributes(attributesJson?: string): MartProductAttr
     ageGroup: "",
     material: "",
     brand: "",
+    custom: {},
   };
   if (!attributesJson) return empty;
   try {
@@ -448,11 +466,35 @@ export function parseProductAttributes(attributesJson?: string): MartProductAttr
       rawGender === "Women"
         ? rawGender
         : "";
+    const customMap: Record<string, string> = {};
+    if (parsed.custom && typeof parsed.custom === "object") {
+      Object.entries(parsed.custom as Record<string, unknown>).forEach(([k, v]) => {
+        const cleanKey = String(k || "").trim();
+        const cleanVal = String(v || "").trim();
+        if (cleanKey && cleanVal) {
+          customMap[cleanKey] = cleanVal;
+        }
+      });
+    }
+    Object.entries(parsed as Record<string, unknown>).forEach(([k, v]) => {
+      if (
+        k !== "gender" &&
+        k !== "ageGroup" &&
+        k !== "material" &&
+        k !== "brand" &&
+        k !== "custom" &&
+        typeof v === "string" &&
+        v.trim()
+      ) {
+        customMap[k.trim()] = v.trim();
+      }
+    });
     return {
       gender: validGender,
       ageGroup: String(parsed.ageGroup || "").trim(),
       material: String(parsed.material || "").trim(),
       brand: String(parsed.brand || "").trim(),
+      custom: customMap,
     };
   } catch {
     return empty;
@@ -460,6 +502,16 @@ export function parseProductAttributes(attributesJson?: string): MartProductAttr
 }
 
 export function serializeProductAttributes(attrs: Partial<MartProductAttributes>): string {
+  const cleanCustom: Record<string, string> = {};
+  if (attrs.custom && typeof attrs.custom === "object") {
+    Object.entries(attrs.custom).forEach(([k, v]) => {
+      const cleanKey = String(k || "").trim();
+      const cleanVal = String(v || "").trim();
+      if (cleanKey && cleanVal) {
+        cleanCustom[cleanKey] = cleanVal;
+      }
+    });
+  }
   const clean: MartProductAttributes = {
     gender:
       attrs.gender === "Unisex" ||
@@ -472,12 +524,81 @@ export function serializeProductAttributes(attrs: Partial<MartProductAttributes>
     ageGroup: String(attrs.ageGroup || "").trim(),
     material: String(attrs.material || "").trim(),
     brand: String(attrs.brand || "").trim(),
+    ...(Object.keys(cleanCustom).length > 0 ? { custom: cleanCustom } : {}),
   };
-  if (!clean.gender && !clean.ageGroup && !clean.material && !clean.brand) {
+  if (
+    !clean.gender &&
+    !clean.ageGroup &&
+    !clean.material &&
+    !clean.brand &&
+    Object.keys(cleanCustom).length === 0
+  ) {
     return "";
   }
   return JSON.stringify(clean);
 }
+
+export function parseAttributeOptionsList(optionsList?: string): string[] {
+  if (!optionsList) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  optionsList
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean)
+    .forEach((opt) => {
+      const key = opt.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        out.push(opt);
+      }
+    });
+  return out;
+}
+
+export const STARTER_MART_ATTRIBUTES: Omit<MartAttribute, "id" | "createdAt">[] = [
+  {
+    slug: "gender",
+    nameEn: "Gender / Target Audience",
+    nameBn: "লিঙ্গ / কাদের জন্য (Gender)",
+    optionsList: "Unisex, Boys, Girls, Men, Women",
+    sortOrder: 10,
+    active: true,
+  },
+  {
+    slug: "ageGroup",
+    nameEn: "Age Group",
+    nameBn: "বয়স সীমা (Age Group)",
+    optionsList: "Newborn (0-12M), 1-3 Years, 3-7 Years, 8-14 Years, Adult, All Ages",
+    sortOrder: 20,
+    active: true,
+  },
+  {
+    slug: "material",
+    nameEn: "Material / Fabric",
+    nameBn: "ফেব্রিক / উপাদান (Material)",
+    optionsList:
+      "100% Cotton, Organic Cotton, Fleece, Denim, Silk, Linen, Georgette, Genuine Leather, Stainless Steel, ABS Plastic, Wood, Silicone",
+    sortOrder: 30,
+    active: true,
+  },
+  {
+    slug: "brand",
+    nameEn: "Brand",
+    nameBn: "ব্র্যান্ড (Brand)",
+    optionsList: "Xeetrix, Aarong Style, Joykiddy, Baseus, Anker, Havit, Haylou, Organic Mart",
+    sortOrder: 40,
+    active: true,
+  },
+  {
+    slug: "warranty",
+    nameEn: "Warranty / Guarantee",
+    nameBn: "ওয়ারেন্টি / গ্যারান্টি",
+    optionsList: "No Warranty, 7 Days Replacement, 6 Months Warranty, 1 Year Official Warranty",
+    sortOrder: 50,
+    active: true,
+  },
+];
 
 export function parseProductTags(tagsCsv?: string): string[] {
   if (!tagsCsv) return [];
@@ -644,15 +765,56 @@ export function normalizeCrmLogRecord(raw: Partial<MartCrmLog>): MartCrmLog {
   };
 }
 
+export function normalizeAttributeRecord(raw: Partial<MartAttribute>): MartAttribute {
+  const nameEn = String(raw.nameEn || "");
+  const nameBn = String(raw.nameBn || "");
+  return {
+    id: String(raw.id || ""),
+    slug: String(raw.slug || slugifyTaxonomy(nameEn || nameBn || raw.id || "")),
+    nameEn,
+    nameBn,
+    optionsList: String(raw.optionsList || ""),
+    sortOrder: Number(raw.sortOrder) || 0,
+    active: raw.active !== false,
+    createdAt: String(raw.createdAt || ""),
+  };
+}
+
+export function resolveAttributesFromBundle(
+  rawAttributes?: Partial<MartAttribute>[],
+  settings?: Partial<MartSettings>
+): MartAttribute[] {
+  if (Array.isArray(rawAttributes) && rawAttributes.length > 0) {
+    return rawAttributes
+      .map(normalizeAttributeRecord)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+  }
+  if (settings?.attributes_catalog_json) {
+    try {
+      const parsed = JSON.parse(settings.attributes_catalog_json);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed
+          .map(normalizeAttributeRecord)
+          .sort((a, b) => a.sortOrder - b.sortOrder);
+      }
+    } catch {
+      // Ignore parse error
+    }
+  }
+  return [];
+}
+
 export interface MartPublicBundle {
   products: MartProduct[];
   categories: MartCategory[];
   labels: MartLabel[];
+  attributes?: MartAttribute[];
   settings: MartSettings;
   isLiveBackend: boolean;
 }
 
 export interface MartAdminBundle extends MartPublicBundle {
+  attributes: MartAttribute[];
   suppliers: MartSupplier[];
   coupons: MartCoupon[];
   orders: MartOrder[];
@@ -1510,37 +1672,7 @@ export function resolvePrimaryCatSubSkuCodes(
     };
   }
 
-  let effectiveMeta = getCategoryHierarchyMeta(validSlugs[0], categories);
-
-  // If the primary selected category is Level 2, check if one of its Level 3 children is also selected
-  if (effectiveMeta.level === 2 && effectiveMeta.l2) {
-    const l2Slug = effectiveMeta.l2.slug;
-    const matchingL3Slug = validSlugs.find((s) => {
-      const m = getCategoryHierarchyMeta(s, categories);
-      return m.level === 3 && m.l2?.slug === l2Slug;
-    });
-    if (matchingL3Slug) {
-      effectiveMeta = getCategoryHierarchyMeta(matchingL3Slug, categories);
-    }
-  } else if (effectiveMeta.level === 1 && effectiveMeta.l1) {
-    // If the primary selected category is Level 1, check if a Level 3 or Level 2 descendant under it is also selected
-    const l1Slug = effectiveMeta.l1.slug;
-    const matchingL3Slug = validSlugs.find((s) => {
-      const m = getCategoryHierarchyMeta(s, categories);
-      return m.level === 3 && m.l1?.slug === l1Slug;
-    });
-    if (matchingL3Slug) {
-      effectiveMeta = getCategoryHierarchyMeta(matchingL3Slug, categories);
-    } else {
-      const matchingL2Slug = validSlugs.find((s) => {
-        const m = getCategoryHierarchyMeta(s, categories);
-        return m.level === 2 && m.l1?.slug === l1Slug;
-      });
-      if (matchingL2Slug) {
-        effectiveMeta = getCategoryHierarchyMeta(matchingL2Slug, categories);
-      }
-    }
-  }
+  const effectiveMeta = getCategoryHierarchyMeta(validSlugs[0], categories);
 
   const l1NameEn = effectiveMeta.l1
     ? effectiveMeta.l1.nameEn || effectiveMeta.l1.slug
@@ -1851,11 +1983,13 @@ export function getCachedMartPublicSnapshot(): MartPublicBundle | null {
     if (!parsed || !Array.isArray(parsed.products) || !Array.isArray(parsed.categories)) {
       return null;
     }
+    const settingsMerged = mergeMartSettings(parsed.settings);
     return {
       products: parsed.products.map(normalizeProductRecord),
       categories: parsed.categories.map(normalizeCategoryRecord),
       labels: Array.isArray(parsed.labels) ? parsed.labels.map(normalizeLabelRecord) : [],
-      settings: mergeMartSettings(parsed.settings),
+      attributes: resolveAttributesFromBundle(parsed.attributes, settingsMerged),
+      settings: settingsMerged,
       isLiveBackend: Boolean(parsed.isLiveBackend),
     };
   } catch {
@@ -2000,6 +2134,7 @@ export async function fetchMartPublicData(forceFresh = false): Promise<MartPubli
         products?: Partial<MartProduct>[];
         categories?: Partial<MartCategory>[];
         labels?: Partial<MartLabel>[];
+        attributes?: Partial<MartAttribute>[];
         settings?: Partial<MartSettings>;
       };
     };
@@ -2008,6 +2143,7 @@ export async function fetchMartPublicData(forceFresh = false): Promise<MartPubli
       throw new Error("Invalid store response");
     }
 
+    const settingsMerged = mergeMartSettings(json.data.settings);
     const bundle: MartPublicBundle = {
       products: Array.isArray(json.data.products)
         ? json.data.products.map(normalizeProductRecord)
@@ -2018,7 +2154,8 @@ export async function fetchMartPublicData(forceFresh = false): Promise<MartPubli
       labels: Array.isArray(json.data.labels)
         ? json.data.labels.map(normalizeLabelRecord)
         : [],
-      settings: mergeMartSettings(json.data.settings),
+      attributes: resolveAttributesFromBundle(json.data.attributes, settingsMerged),
+      settings: settingsMerged,
       isLiveBackend: Boolean(json.isLiveBackend),
     };
 
@@ -2032,6 +2169,7 @@ export async function fetchMartPublicData(forceFresh = false): Promise<MartPubli
       products: [],
       categories: [],
       labels: [],
+      attributes: [],
       settings: DEFAULT_MART_SETTINGS,
       isLiveBackend: false,
     };
@@ -2162,6 +2300,7 @@ export async function fetchMartAdminData(): Promise<MartAdminBundle> {
       products?: Partial<MartProduct>[];
       categories?: Partial<MartCategory>[];
       labels?: Partial<MartLabel>[];
+      attributes?: Partial<MartAttribute>[];
       suppliers?: Partial<MartSupplier>[];
       coupons?: Partial<MartCoupon>[];
       orders?: MartOrder[];
@@ -2183,6 +2322,7 @@ export async function fetchMartAdminData(): Promise<MartAdminBundle> {
     );
   }
 
+  const settingsMerged = mergeMartSettings(json.data.settings);
   return {
     products: Array.isArray(json.data.products)
       ? json.data.products.map(normalizeProductRecord)
@@ -2193,6 +2333,7 @@ export async function fetchMartAdminData(): Promise<MartAdminBundle> {
     labels: Array.isArray(json.data.labels)
       ? json.data.labels.map(normalizeLabelRecord)
       : [],
+    attributes: resolveAttributesFromBundle(json.data.attributes, settingsMerged),
     suppliers: Array.isArray(json.data.suppliers)
       ? json.data.suppliers.map(normalizeSupplierRecord)
       : [],
@@ -2209,7 +2350,7 @@ export async function fetchMartAdminData(): Promise<MartAdminBundle> {
     crmLogs: Array.isArray(json.data.crmLogs)
       ? json.data.crmLogs.map(normalizeCrmLogRecord)
       : [],
-    settings: mergeMartSettings(json.data.settings),
+    settings: settingsMerged,
     isLiveBackend: Boolean(json.isLiveBackend),
   };
 }

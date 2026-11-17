@@ -59,6 +59,16 @@ var SHEET_SCHEMA = {
     "active",
     "createdAt"
   ],
+  Mart_Attributes: [
+    "id",
+    "slug",
+    "nameEn",
+    "nameBn",
+    "optionsList",
+    "sortOrder",
+    "active",
+    "createdAt"
+  ],
   Mart_Orders: [
     "id",
     "itemsJson",

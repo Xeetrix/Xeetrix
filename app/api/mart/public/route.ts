@@ -18,6 +18,7 @@ export async function GET(req: NextRequest) {
           products: [],
           categories: [],
           labels: [],
+          attributes: [],
           settings: DEFAULT_MART_SETTINGS,
         },
       },
@@ -67,6 +68,7 @@ export async function GET(req: NextRequest) {
         products: sanitizedProducts,
         categories: Array.isArray(result.data.categories) ? result.data.categories : [],
         labels: Array.isArray(result.data.labels) ? result.data.labels : [],
+        attributes: Array.isArray(result.data.attributes) ? result.data.attributes : [],
         settings: {
           ...DEFAULT_MART_SETTINGS,
           ...(result.data.settings || {}),

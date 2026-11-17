@@ -69,6 +69,7 @@ import {
   MART_GENDER_OPTIONS,
   MartAdminBundle,
   MartApiError,
+  MartAttribute,
   MartCategory,
   MartCategoryHierarchyMeta,
   MartCollectionMode,
@@ -89,6 +90,7 @@ import {
   MartTransaction,
   MartVariationVariant,
   normalizeMartImageUrl,
+  parseAttributeOptionsList,
   parseGalleryUrls,
   parseOrderItems,
   parseProductAttributes,
@@ -102,6 +104,7 @@ import {
   sanitizeSkuCodeToken,
   serializeProductAttributes,
   slugifyCategory,
+  STARTER_MART_ATTRIBUTES,
   STARTER_THREE_LEVEL_CATEGORIES,
   updateMartRecord,
   updateMartStoreSettings,
@@ -251,12 +254,14 @@ export function MartAdminClient() {
   const [prodNameEn, setProdNameEn] = useState("");
   const [prodNameBn, setProdNameBn] = useState("");
   const [prodCategories, setProdCategories] = useState<string[]>([]);
+  const [relatableCategoriesEnabled, setRelatableCategoriesEnabled] = useState(false);
   const [prodLabels, setProdLabels] = useState<string[]>([]);
   const [prodTags, setProdTags] = useState("");
   const [prodGender, setProdGender] = useState<MartProductGender>("");
   const [prodAgeGroup, setProdAgeGroup] = useState("");
   const [prodMaterial, setProdMaterial] = useState("");
   const [prodBrand, setProdBrand] = useState("");
+  const [prodCustomAttrs, setProdCustomAttrs] = useState<Record<string, string>>({});
   const [prodPrice, setProdPrice] = useState("");
   const [prodComparePrice, setProdComparePrice] = useState("");
   const [prodCostPrice, setProdCostPrice] = useState("");
@@ -335,6 +340,17 @@ export function MartAdminClient() {
   const [lblDescEn, setLblDescEn] = useState("");
   const [lblDescBn, setLblDescBn] = useState("");
   const [savingLabel, setSavingLabel] = useState(false);
+
+  // Attribute Form (Mart_Attributes)
+  const [editingAttributeId, setEditingAttributeId] = useState<string | null>(null);
+  const [attrNameEn, setAttrNameEn] = useState("");
+  const [attrNameBn, setAttrNameBn] = useState("");
+  const [attrSlug, setAttrSlug] = useState("");
+  const [attrOptionsList, setAttrOptionsList] = useState("");
+  const [attrOptionDraft, setAttrOptionDraft] = useState("");
+  const [attrSortOrder, setAttrSortOrder] = useState("0");
+  const [savingAttribute, setSavingAttribute] = useState(false);
+  const [seedingStarterAttrs, setSeedingStarterAttrs] = useState(false);
 
   // Store Settings Form + QR Uploaders
   const [settingsForm, setSettingsForm] = useState<MartSettings>(DEFAULT_MART_SETTINGS);
@@ -439,12 +455,14 @@ export function MartAdminClient() {
     setProdNameEn("");
     setProdNameBn("");
     setProdCategories([]);
+    setRelatableCategoriesEnabled(false);
     setProdLabels([]);
     setProdTags("");
     setProdGender("");
     setProdAgeGroup("");
     setProdMaterial("");
     setProdBrand("");
+    setProdCustomAttrs({});
     setProdPrice("");
     setProdComparePrice("");
     setProdCostPrice("");
@@ -502,11 +520,13 @@ export function MartAdminClient() {
   function startEditProduct(p: MartProduct) {
     setEditingProductId(p.id);
     setProdSku(p.sku || "");
-    // Lock existing SKU in Edit Mode unless the admin explicitly clicks "Regenerate SKU"
+    // Lock existing SKU in Edit Mode unless the admin explicitly clicks "Regenerate SKU" or changes Primary Category dropdowns
     setSkuManuallyEdited(true);
     setProdNameEn(p.nameEn || "");
     setProdNameBn(p.nameBn || "");
-    setProdCategories(parseCsvSlugs(p.categories));
+    const parsedCatSlugs = parseCsvSlugs(p.categories);
+    setProdCategories(parsedCatSlugs);
+    setRelatableCategoriesEnabled(parsedCatSlugs.length > 1);
     setProdLabels(parseCsvSlugs(p.labels));
     setProdTags(p.tags || "");
     const parsedAttrs = parseProductAttributes(p.attributesJson);
@@ -514,6 +534,7 @@ export function MartAdminClient() {
     setProdAgeGroup(parsedAttrs.ageGroup);
     setProdMaterial(parsedAttrs.material);
     setProdBrand(parsedAttrs.brand);
+    setProdCustomAttrs(parsedAttrs.custom || {});
     setProdPrice(String(p.price));
     setProdComparePrice(p.comparePrice ? String(p.comparePrice) : "");
     setProdCostPrice(p.costPrice ? String(p.costPrice) : "");
@@ -583,55 +604,69 @@ export function MartAdminClient() {
     }
   }
 
-  function toggleProdCategorySlug(slug: string) {
-    const nextCategories = prodCategories.includes(slug)
-      ? prodCategories.filter((s) => s !== slug)
-      : [...prodCategories, slug];
-    setProdCategories(nextCategories);
-    // In Add Mode, auto-update SKU from the primary category/sub-category unless manually edited
-    if (!editingProductId && !skuManuallyEdited) {
-      const currentCats = data?.categories || [];
-      const currentProds = data?.products || [];
-      const nextSkuInfo = generateProductSkuFromCategories(
-        nextCategories,
-        currentCats,
-        currentProds,
-        null
-      );
-      setProdSku(nextSkuInfo.sku);
-      setProdMatrix((prev) =>
-        prev.length > 0
-          ? prev.map((row) => ({
-              ...row,
-              sku: generateVariantSubSku(nextSkuInfo.sku, row.colorNameEn, row.size),
-            }))
-          : prev
-      );
+  // Updates Primary Category (prodCategories[0]) via the 3-Step Cascading Dropdowns & auto-generates SKU (with GEN fallback)
+  function handlePrimaryCategorySelect(nextPrimarySlug: string) {
+    const cleanPrimary = nextPrimarySlug.trim();
+    const relatables = relatableCategoriesEnabled
+      ? prodCategories.slice(1).filter((s) => s && s !== cleanPrimary)
+      : [];
+    const nextCategories = cleanPrimary ? [cleanPrimary, ...relatables] : [];
+    if (!cleanPrimary) {
+      setRelatableCategoriesEnabled(false);
     }
+    setProdCategories(nextCategories);
+    const currentCats = data?.categories || [];
+    const currentProds = data?.products || [];
+    const nextSkuInfo = generateProductSkuFromCategories(
+      cleanPrimary ? [cleanPrimary] : [],
+      currentCats,
+      currentProds,
+      editingProductId
+    );
+    setProdSku(nextSkuInfo.sku);
+    setSkuManuallyEdited(false);
+    setProdMatrix((prev) =>
+      prev.length > 0
+        ? prev.map((row) => ({
+            ...row,
+            sku: generateVariantSubSku(nextSkuInfo.sku, row.colorNameEn, row.size),
+          }))
+        : prev
+    );
+  }
+
+  // Toggles a Relatable Category in prodCategories.slice(1) WITHOUT ever altering Primary Category or SKU
+  function toggleRelatableCategorySlug(slug: string) {
+    const primarySlug = prodCategories[0] || "";
+    if (!primarySlug || slug === primarySlug) return;
+    const currentRelatables = prodCategories.slice(1);
+    const nextRelatables = currentRelatables.includes(slug)
+      ? currentRelatables.filter((s) => s !== slug)
+      : [...currentRelatables, slug];
+    setProdCategories([primarySlug, ...nextRelatables]);
   }
 
   function handleSetPrimaryProdCategory(slug: string) {
     const nextCategories = promotePrimaryCategorySlug(prodCategories, slug);
     setProdCategories(nextCategories);
-    if (!editingProductId && !skuManuallyEdited) {
-      const currentCats = data?.categories || [];
-      const currentProds = data?.products || [];
-      const nextSkuInfo = generateProductSkuFromCategories(
-        nextCategories,
-        currentCats,
-        currentProds,
-        null
-      );
-      setProdSku(nextSkuInfo.sku);
-      setProdMatrix((prev) =>
-        prev.length > 0
-          ? prev.map((row) => ({
-              ...row,
-              sku: generateVariantSubSku(nextSkuInfo.sku, row.colorNameEn, row.size),
-            }))
-          : prev
-      );
-    }
+    const currentCats = data?.categories || [];
+    const currentProds = data?.products || [];
+    const nextSkuInfo = generateProductSkuFromCategories(
+      nextCategories,
+      currentCats,
+      currentProds,
+      editingProductId
+    );
+    setProdSku(nextSkuInfo.sku);
+    setSkuManuallyEdited(false);
+    setProdMatrix((prev) =>
+      prev.length > 0
+        ? prev.map((row) => ({
+            ...row,
+            sku: generateVariantSubSku(nextSkuInfo.sku, row.colorNameEn, row.size),
+          }))
+        : prev
+    );
   }
 
   function toggleProdLabelSlug(slug: string) {
@@ -1040,13 +1075,17 @@ export function MartAdminClient() {
       ageGroup: prodAgeGroup,
       material: prodMaterial,
       brand: prodBrand,
+      custom: prodCustomAttrs,
     });
+    const effectiveProductCategories = relatableCategoriesEnabled
+      ? prodCategories
+      : prodCategories.slice(0, 1);
 
     const payload = {
       sku: finalSku,
       nameEn: prodNameEn.trim() || prodNameBn.trim(),
       nameBn: prodNameBn.trim(),
-      categories: prodCategories.join(","),
+      categories: effectiveProductCategories.join(","),
       labels: prodLabels.join(","),
       tags: cleanTagsCsv,
       attributesJson: cleanAttributesJson,
@@ -1944,6 +1983,273 @@ export function MartAdminClient() {
     }
   }
 
+  function resetAttributeForm() {
+    setEditingAttributeId(null);
+    setAttrNameEn("");
+    setAttrNameBn("");
+    setAttrSlug("");
+    setAttrOptionsList("");
+    setAttrOptionDraft("");
+    setAttrSortOrder("0");
+  }
+
+  function startEditAttribute(attr: MartAttribute) {
+    setEditingAttributeId(attr.id);
+    setAttrNameEn(attr.nameEn || "");
+    setAttrNameBn(attr.nameBn || "");
+    setAttrSlug(attr.slug || "");
+    setAttrOptionsList(attr.optionsList || "");
+    setAttrOptionDraft("");
+    setAttrSortOrder(String(attr.sortOrder ?? 0));
+    setActiveSection("taxonomy");
+    scrollWorkspaceToTop();
+  }
+
+  function handleAddAttributeOptionDraft() {
+    const tokens = parseAttributeOptionsList(attrOptionDraft);
+    if (tokens.length === 0) return;
+    const current = parseAttributeOptionsList(attrOptionsList);
+    const merged = [...current];
+    tokens.forEach((tok) => {
+      if (!merged.some((existing) => existing.toLowerCase() === tok.toLowerCase())) {
+        merged.push(tok);
+      }
+    });
+    setAttrOptionsList(merged.join(", "));
+    setAttrOptionDraft("");
+  }
+
+  function handleRemoveAttributeOptionChip(optionToRemove: string) {
+    const current = parseAttributeOptionsList(attrOptionsList);
+    const next = current.filter(
+      (opt) => opt.toLowerCase() !== optionToRemove.toLowerCase()
+    );
+    setAttrOptionsList(next.join(", "));
+  }
+
+  async function persistAttributesBackupSetting(nextAttrs: MartAttribute[]) {
+    try {
+      const backupJson = JSON.stringify(nextAttrs);
+      const nextSettings = {
+        ...settingsForm,
+        attributesCatalogJson: backupJson,
+      };
+      setSettingsForm(nextSettings);
+      await updateMartStoreSettings(nextSettings);
+    } catch {
+      // Non-fatal fallback
+    }
+  }
+
+  async function handleSaveAttribute(e: React.FormEvent) {
+    e.preventDefault();
+    if (!data?.isLiveBackend) {
+      showNotice("error", t.admin.products.errConnectBackend);
+      return;
+    }
+    if (!attrNameEn.trim() && !attrNameBn.trim()) {
+      showNotice(
+        "error",
+        lang === "bn"
+          ? "অ্যাট্রিবিউট গ্রুপের নাম লিখুন (যেমন: Material / Fabric)।"
+          : "Attribute group name is required (e.g. Material / Fabric)."
+      );
+      return;
+    }
+
+    const baseEn = attrNameEn.trim() || attrNameBn.trim();
+    const editingTarget = editingAttributeId
+      ? attributes.find((a) => a.id === editingAttributeId)
+      : undefined;
+    const targetSlug =
+      slugifyCategory(attrSlug.trim() || baseEn) ||
+      editingTarget?.slug ||
+      slugifyCategory(baseEn);
+
+    if (attributes.some((a) => a.id !== editingAttributeId && a.slug === targetSlug)) {
+      showNotice("error", t.admin.taxonomy.errDuplicateSlug);
+      return;
+    }
+
+    // Merge any un-submitted draft chip text automatically
+    const mergedOpts = parseAttributeOptionsList(
+      [attrOptionsList, attrOptionDraft].filter(Boolean).join(", ")
+    );
+    if (mergedOpts.length === 0) {
+      showNotice(
+        "error",
+        lang === "bn"
+          ? "অন্তত ১টি অ্যাট্রিবিউট ভ্যালু যুক্ত করুন (যেমন: Cotton, Silk)।"
+          : "Please add at least one attribute option value (e.g. Cotton, Silk)."
+      );
+      return;
+    }
+
+    const payload = {
+      slug: targetSlug,
+      nameEn: baseEn,
+      nameBn: attrNameBn.trim() || baseEn,
+      optionsList: mergedOpts.join(", "),
+      sortOrder: Number(attrSortOrder) || 0,
+      active: editingTarget ? editingTarget.active : true,
+    };
+
+    setSavingAttribute(true);
+    try {
+      if (editingAttributeId && editingTarget) {
+        try {
+          await updateMartRecord("Mart_Attributes", editingAttributeId, payload);
+        } catch {
+          // If Google Sheet script has not been redeployed with Mart_Attributes yet, persist via Mart_Settings backup
+        }
+        const nextList = attributes
+          .map((a) => (a.id === editingAttributeId ? { ...a, ...payload } : a))
+          .sort((a, b) => a.sortOrder - b.sortOrder);
+        setData((prev) => (prev ? { ...prev, attributes: nextList } : prev));
+        await persistAttributesBackupSetting(nextList);
+        resetAttributeForm();
+        showNotice(
+          "success",
+          lang === "bn"
+            ? "অ্যাট্রিবিউট ও ভ্যালু লিস্ট সফলভাবে আপডেট হয়েছে!"
+            : "Attribute group & option values updated!"
+        );
+      } else {
+        let createdId = `ATTR-${targetSlug.toUpperCase().slice(0, 8)}-${Date.now().toString().slice(-4)}`;
+        try {
+          const res = await createMartRecord("Mart_Attributes", payload);
+          if (res?.id) createdId = res.id;
+        } catch {
+          // Fallback to settings backup if Mart_Attributes tab is not yet deployed on Apps Script
+        }
+        const newRecord: MartAttribute = {
+          id: createdId,
+          ...payload,
+          createdAt: new Date().toISOString(),
+        };
+        const nextList = [...attributes, newRecord].sort(
+          (a, b) => a.sortOrder - b.sortOrder
+        );
+        setData((prev) => (prev ? { ...prev, attributes: nextList } : prev));
+        await persistAttributesBackupSetting(nextList);
+        resetAttributeForm();
+        showNotice(
+          "success",
+          lang === "bn"
+            ? "নতুন অ্যাট্রিবিউট গ্রুপ ও ভ্যালু লিস্ট যুক্ত হয়েছে!"
+            : "New attribute group & option values created!"
+        );
+      }
+    } catch (err) {
+      const apiErr = err as MartApiError;
+      showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
+    } finally {
+      setSavingAttribute(false);
+    }
+  }
+
+  async function handleToggleAttribute(attr: MartAttribute) {
+    if (!data?.isLiveBackend) return;
+    const nextActive = !attr.active;
+    try {
+      try {
+        await updateMartRecord("Mart_Attributes", attr.id, { active: nextActive });
+      } catch {
+        // Fallback to settings backup
+      }
+      const nextList = attributes.map((a) =>
+        a.id === attr.id ? { ...a, active: nextActive } : a
+      );
+      setData((prev) => (prev ? { ...prev, attributes: nextList } : prev));
+      await persistAttributesBackupSetting(nextList);
+    } catch (err) {
+      const apiErr = err as MartApiError;
+      showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
+    }
+  }
+
+  async function handleDeleteAttribute(id: string) {
+    if (!data?.isLiveBackend) return;
+    try {
+      try {
+        await deleteMartRecord("Mart_Attributes", id);
+      } catch {
+        // Fallback to settings backup
+      }
+      const nextList = attributes.filter((a) => a.id !== id);
+      setData((prev) => (prev ? { ...prev, attributes: nextList } : prev));
+      await persistAttributesBackupSetting(nextList);
+      if (editingAttributeId === id) {
+        resetAttributeForm();
+      }
+      showNotice(
+        "success",
+        lang === "bn" ? "অ্যাট্রিবিউট মুছে ফেলা হয়েছে।" : "Attribute group deleted."
+      );
+    } catch (err) {
+      const apiErr = err as MartApiError;
+      showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
+    }
+  }
+
+  async function handleSeedStarterAttributes() {
+    if (!data?.isLiveBackend) {
+      showNotice("error", t.admin.products.errConnectBackend);
+      return;
+    }
+    const existingSlugs = new Set(attributes.map((a) => a.slug));
+    const missingItems = STARTER_MART_ATTRIBUTES.filter(
+      (item) => !existingSlugs.has(item.slug)
+    );
+    if (missingItems.length === 0) {
+      showNotice(
+        "success",
+        lang === "bn"
+          ? "স্ট্যান্ডার্ড অ্যাট্রিবিউটগুলো ইতিমধ্যে যুক্ত আছে।"
+          : "All starter attribute groups are already present."
+      );
+      return;
+    }
+
+    setSeedingStarterAttrs(true);
+    try {
+      const nowIso = new Date().toISOString();
+      const batchPayloads = missingItems.map((item, idx) => ({
+        id: `ATTR-SEED-${item.slug.toUpperCase()}-${idx + 1}`,
+        slug: item.slug,
+        nameEn: item.nameEn,
+        nameBn: item.nameBn,
+        optionsList: item.optionsList,
+        sortOrder: item.sortOrder,
+        active: true,
+        createdAt: nowIso,
+      }));
+
+      try {
+        await batchCreateMartRecords("Mart_Attributes", batchPayloads);
+      } catch {
+        // Fallback if Apps Script hasn't been redeployed with Mart_Attributes yet
+      }
+
+      const nextList = [...attributes, ...batchPayloads].sort(
+        (a, b) => a.sortOrder - b.sortOrder
+      );
+      setData((prev) => (prev ? { ...prev, attributes: nextList } : prev));
+      await persistAttributesBackupSetting(nextList);
+      showNotice(
+        "success",
+        lang === "bn"
+          ? `${toLocalizedDigits(batchPayloads.length, lang)}টি স্ট্যান্ডার্ড অ্যাট্রিবিউট গ্রুপ ও ভ্যালু লিস্ট যুক্ত হয়েছে!`
+          : `Added ${batchPayloads.length} starter attribute groups & option values!`
+      );
+    } catch (err) {
+      const apiErr = err as MartApiError;
+      showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
+    } finally {
+      setSeedingStarterAttrs(false);
+    }
+  }
+
   async function handleSaveSettings(e: React.FormEvent) {
     e.preventDefault();
     if (!data?.isLiveBackend) {
@@ -1967,6 +2273,7 @@ export function MartAdminClient() {
   const products = useMemo(() => data?.products || [], [data]);
   const categories = useMemo(() => data?.categories || [], [data]);
   const labels = useMemo(() => data?.labels || [], [data]);
+  const attributes = useMemo(() => data?.attributes || [], [data]);
   const coupons = useMemo(() => data?.coupons || [], [data]);
   const orders = useMemo(() => data?.orders || [], [data]);
   const suppliers = useMemo(() => data?.suppliers || [], [data]);
@@ -2292,6 +2599,109 @@ export function MartAdminClient() {
     () => findDuplicateProductSku(prodSku, products, editingProductId),
     [prodSku, products, editingProductId]
   );
+
+  // 3-Level Cascading Primary Category Dropdown Memos
+  const primaryCategoryMeta = useMemo(() => {
+    const primarySlug = prodCategories[0] || "";
+    if (!primarySlug) return null;
+    return categoryHierarchyMap.get(primarySlug) || null;
+  }, [prodCategories, categoryHierarchyMap]);
+
+  const selectedPrimaryL1Slug = primaryCategoryMeta?.chain[0]?.slug || "";
+  const selectedPrimaryL2Slug = primaryCategoryMeta?.chain[1]?.slug || "";
+  const selectedPrimaryL3Slug = primaryCategoryMeta?.chain[2]?.slug || "";
+
+  const primaryLevel1Options = useMemo(
+    () =>
+      categories
+        .filter((c) => (categoryHierarchyMap.get(c.slug)?.level || 1) === 1)
+        .sort((a, b) => a.sortOrder - b.sortOrder || a.nameEn.localeCompare(b.nameEn)),
+    [categories, categoryHierarchyMap]
+  );
+
+  const primaryLevel2Options = useMemo(
+    () =>
+      selectedPrimaryL1Slug
+        ? categories
+            .filter(
+              (c) =>
+                c.parentSlug === selectedPrimaryL1Slug &&
+                (categoryHierarchyMap.get(c.slug)?.level || 1) === 2
+            )
+            .sort((a, b) => a.sortOrder - b.sortOrder || a.nameEn.localeCompare(b.nameEn))
+        : [],
+    [categories, categoryHierarchyMap, selectedPrimaryL1Slug]
+  );
+
+  const primaryLevel3Options = useMemo(
+    () =>
+      selectedPrimaryL2Slug
+        ? categories
+            .filter(
+              (c) =>
+                c.parentSlug === selectedPrimaryL2Slug &&
+                (categoryHierarchyMap.get(c.slug)?.level || 1) === 3
+            )
+            .sort((a, b) => a.sortOrder - b.sortOrder || a.nameEn.localeCompare(b.nameEn))
+        : [],
+    [categories, categoryHierarchyMap, selectedPrimaryL2Slug]
+  );
+
+  // Dynamic Attribute Group Option Memos (from Mart_Attributes with starter fallback)
+  const ageGroupAttrOptions = useMemo(() => {
+    const found = attributes.find(
+      (a) => a.active && (a.slug === "age-group" || a.slug === "age_group")
+    );
+    const parsed = found ? parseAttributeOptionsList(found.optionsList) : [];
+    return parsed.length > 0
+      ? parsed
+      : [
+          "0-6 Months",
+          "6-12 Months",
+          "1-2 Years",
+          "3-5 Years",
+          "6-8 Years",
+          "9-12 Years",
+          "Teen (13-17)",
+          "Adult",
+        ];
+  }, [attributes]);
+
+  const materialAttrOptions = useMemo(() => {
+    const found = attributes.find((a) => a.active && a.slug === "material");
+    const parsed = found ? parseAttributeOptionsList(found.optionsList) : [];
+    return parsed.length > 0
+      ? parsed
+      : [
+          "100% Cotton",
+          "Organic Cotton",
+          "Silk",
+          "Katan",
+          "Georgette",
+          "Linen",
+          "Denim",
+          "Fleece / Sherpa",
+          "Wool",
+          "Leather",
+          "Stainless Steel",
+          "ABS Plastic",
+          "Silicone",
+          "Wooden",
+        ];
+  }, [attributes]);
+
+  const brandAttrOptions = useMemo(() => {
+    const found = attributes.find((a) => a.active && a.slug === "brand");
+    const parsed = found ? parseAttributeOptionsList(found.optionsList) : [];
+    return parsed.length > 0
+      ? parsed
+      : ["Xeetrix", "Joykiddy", "Aarong Style", "In-House / Own Brand", "Imported"];
+  }, [attributes]);
+
+  const customAttributeGroups = useMemo(() => {
+    const coreSlugs = new Set(["gender", "age-group", "age_group", "material", "brand"]);
+    return attributes.filter((a) => a.active && !coreSlugs.has(a.slug));
+  }, [attributes]);
 
   if (!authReady) {
     return (
@@ -4985,18 +5395,20 @@ export function MartAdminClient() {
                         </div>
                       </div>
 
-                      {/* Right Card 3: Categories & Labels Multi-Select + Primary SKU Control */}
+                      {/* Right Card 3: 3-Step Primary Category Dropdowns (Drives Auto-SKU) + Relatable Categories Switch */}
                       <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 space-y-4">
-                        <div className="space-y-2.5">
+                        <div className="space-y-3">
                           <div className="flex items-center justify-between gap-2">
                             <div>
                               <div className="text-xs font-bold text-slate-800">
-                                {t.admin.products.categoriesLabel}
+                                {lang === "bn"
+                                  ? "প্রাইমারি ৩-লেভেল ক্যাটাগরি ও অটো SKU"
+                                  : "Primary 3-Level Category & Auto-SKU"}
                               </div>
                               <div className="text-[11px] text-slate-500">
                                 {lang === "bn"
-                                  ? "একাধিক ক্যাটাগরি সিলেক্ট করা যাবে · প্রথমটি (★) দিয়ে SKU তৈরি হবে"
-                                  : "Multi-select supported · First selected (★) drives the SKU"}
+                                  ? "ড্রপডাউন থেকে মেইন > সাব > আইটেম সিলেক্ট করলে অটোমেটিক SKU জেনারেট হবে (কোনো ধাপ বাদ পড়লে GEN বসবে)"
+                                  : "Select Main > Sub > Item from dropdowns to auto-generate SKU (omitted levels use GEN)"}
                               </div>
                             </div>
                             <button
@@ -5008,157 +5420,372 @@ export function MartAdminClient() {
                             </button>
                           </div>
 
-                          {prodCategories.length > 0 && (
-                            <div className="rounded-lg border border-brand-200 bg-brand-50/60 px-2.5 py-1.5 flex flex-wrap items-center justify-between gap-1.5 text-[11px]">
-                              <div className="flex items-center gap-1.5 min-w-0">
-                                <Star className="h-3 w-3 text-gold-600 fill-gold-500 shrink-0" />
-                                <span className="font-semibold text-slate-800 truncate">
-                                  {lang === "bn" ? "Primary ৩-লেভেল SKU:" : "Primary 3-Level SKU:"}{" "}
-                                  <span className="text-[#0B5336]">
-                                    {lang === "bn"
-                                      ? liveSkuPreview.breadcrumbBn
-                                      : liveSkuPreview.breadcrumbEn}
-                                  </span>
-                                </span>
-                              </div>
-                              <span className="font-mono text-[10px] font-bold text-[#0B5336] bg-white border border-brand-200 rounded px-1.5 py-0.5 shrink-0">
-                                XM-{liveSkuPreview.l1Code}-{liveSkuPreview.l2Code}-
-                                {liveSkuPreview.l3Code}
-                              </span>
-                            </div>
-                          )}
-
                           {categories.length === 0 ? (
                             <p className="text-xs text-slate-500 py-1">
                               {t.admin.products.noCategoriesHint}
                             </p>
                           ) : (
-                            <div className="space-y-2">
-                              {categories.length > 8 && (
-                                <div className="relative">
-                                  <Search className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                                  <input
-                                    type="text"
-                                    value={prodCatSearchQuery}
-                                    onChange={(e) => setProdCatSearchQuery(e.target.value)}
-                                    placeholder={
-                                      lang === "bn"
-                                        ? "১৬৭টি ক্যাটাগরির নাম বা SKU কোড (যেমন: SHT, GRL, WNT) দিয়ে খুঁজুন..."
-                                        : "Search 3-level categories by name or 3-letter SKU code (e.g. SHT, GRL, WNT)..."
-                                    }
-                                    className="w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-7 py-1.5 text-xs text-slate-800 outline-none focus:border-[#0B5336] focus:bg-white"
-                                  />
-                                  {prodCatSearchQuery.trim() && (
-                                    <button
-                                      type="button"
-                                      onClick={() => setProdCatSearchQuery("")}
-                                      className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 hover:text-slate-700"
-                                    >
-                                      ✕
-                                    </button>
-                                  )}
+                            <>
+                              {/* 3 Cascading Dropdowns for Primary Category */}
+                              <div className="grid grid-cols-1 gap-2.5 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                                {/* Level 1: Main Category */}
+                                <div>
+                                  <label className="flex items-center justify-between text-[11px] font-semibold text-slate-700 mb-1">
+                                    <span>
+                                      {lang === "bn"
+                                        ? "১. মেইন ক্যাটাগরি (Level 1: Main Category)"
+                                        : "1. Level 1: Main Category"}
+                                    </span>
+                                    <span className="font-mono text-[10px] font-bold text-[#0B5336] bg-brand-50 border border-brand-200 rounded px-1.5 py-0.2">
+                                      L1: {liveSkuPreview.l1Code}
+                                    </span>
+                                  </label>
+                                  <select
+                                    value={selectedPrimaryL1Slug}
+                                    onChange={(e) => handlePrimaryCategorySelect(e.target.value)}
+                                    className="input text-xs bg-white"
+                                  >
+                                    <option value="">
+                                      {lang === "bn"
+                                        ? "-- GEN (মেইন ক্যাটাগরি নির্বাচন করুন) --"
+                                        : "-- GEN (Select Main Category) --"}
+                                    </option>
+                                    {primaryLevel1Options.map((c1) => {
+                                      const code = resolveCategorySkuCode(c1);
+                                      const label = pickLocalized(
+                                        c1.nameEn,
+                                        c1.nameBn,
+                                        lang,
+                                        c1.slug
+                                      );
+                                      return (
+                                        <option key={c1.id} value={c1.slug}>
+                                          [{code}] {label}
+                                        </option>
+                                      );
+                                    })}
+                                  </select>
                                 </div>
-                              )}
-                              <div className="flex flex-wrap gap-1.5 max-h-60 overflow-y-auto pr-1">
-                                {sortedCategoriesForTree
-                                  .filter((cat) => {
-                                    const q = prodCatSearchQuery.trim().toLowerCase();
-                                    if (!q) return true;
-                                    if (prodCategories.includes(cat.slug)) return true;
-                                    const meta = categoryHierarchyMap.get(cat.slug);
-                                    const code = resolveCategorySkuCode(cat).toLowerCase();
-                                    return (
-                                      (cat.nameEn || "").toLowerCase().includes(q) ||
-                                      (cat.nameBn || "").toLowerCase().includes(q) ||
-                                      (cat.slug || "").toLowerCase().includes(q) ||
-                                      code.includes(q) ||
-                                      (meta?.breadcrumbEn || "").toLowerCase().includes(q) ||
-                                      (meta?.breadcrumbBn || "").toLowerCase().includes(q)
-                                    );
-                                  })
-                                  .map((cat) => {
-                                    const checked = prodCategories.includes(cat.slug);
-                                    const isPrimarySelected = prodCategories[0] === cat.slug;
-                                    const meta = categoryHierarchyMap.get(cat.slug);
-                                    const lvl = meta?.level || 1;
-                                    const catCode = resolveCategorySkuCode(cat);
-                                    const fullBreadcrumb =
-                                      lang === "bn"
-                                        ? meta?.breadcrumbBn || cat.nameBn || cat.nameEn
-                                        : meta?.breadcrumbEn || cat.nameEn || cat.slug;
-                                    return (
-                                      <div
-                                        key={cat.id}
-                                        className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-medium transition-colors ${
-                                          checked
-                                            ? "border-[#0B5336] bg-[#0B5336] text-white"
-                                            : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300"
-                                        }`}
-                                      >
-                                        <label className="inline-flex items-center gap-1.5 cursor-pointer">
-                                          <input
-                                            type="checkbox"
-                                            checked={checked}
-                                            onChange={() => toggleProdCategorySlug(cat.slug)}
-                                            className="sr-only"
-                                          />
-                                          <span
-                                            className={`rounded px-1 py-0.2 font-mono text-[9px] font-bold ${
-                                              checked
-                                                ? "bg-white/20 text-white"
-                                                : lvl === 3
-                                                ? "bg-brand-50 text-[#0B5336] border border-brand-200"
-                                                : lvl === 2
-                                                ? "bg-amber-50 text-amber-800 border border-amber-200"
-                                                : "bg-slate-200 text-slate-700"
-                                            }`}
-                                          >
-                                            L{lvl}
-                                          </span>
-                                          <span>{fullBreadcrumb}</span>
-                                          <span
-                                            className={`rounded px-1 py-0.2 font-mono text-[9px] font-bold ${
-                                              checked
-                                                ? isPrimarySelected
-                                                  ? "bg-gold-400 text-slate-950"
-                                                  : "bg-white/20 text-white"
-                                                : "bg-slate-200/80 text-slate-600"
-                                            }`}
-                                          >
-                                            {catCode}
-                                          </span>
-                                        </label>
-                                        {checked &&
-                                          (isPrimarySelected ? (
-                                            <span
-                                              title={
-                                                lang === "bn"
-                                                  ? "Primary ক্যাটাগরি (SKU নির্ধারক)"
-                                                  : "Primary Category (drives SKU)"
-                                              }
-                                              className="ml-0.5 rounded bg-gold-400/90 px-1 py-0.2 text-[9px] font-bold text-slate-950 whitespace-nowrap"
-                                            >
-                                              ★ Primary
-                                            </span>
-                                          ) : (
-                                            <button
-                                              type="button"
-                                              onClick={() => handleSetPrimaryProdCategory(cat.slug)}
-                                              title={
-                                                lang === "bn"
-                                                  ? "এটিকে Primary SKU ক্যাটাগরি বানান"
-                                                  : "Set as Primary Category for SKU"
-                                              }
-                                              className="ml-0.5 rounded bg-white/15 hover:bg-gold-400 hover:text-slate-950 px-1 py-0.2 text-[9px] font-semibold text-emerald-100 transition-colors whitespace-nowrap"
-                                            >
-                                              ★ Set Primary
-                                            </button>
-                                          ))}
-                                      </div>
-                                    );
-                                  })}
+
+                                {/* Level 2: Sub-Category */}
+                                <div>
+                                  <label className="flex items-center justify-between text-[11px] font-semibold text-slate-700 mb-1">
+                                    <span>
+                                      {lang === "bn"
+                                        ? "২. সাব-ক্যাটাগরি (Level 2: Sub-Category)"
+                                        : "2. Level 2: Sub-Category"}
+                                    </span>
+                                    <span className="font-mono text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.2">
+                                      L2: {liveSkuPreview.l2Code}
+                                    </span>
+                                  </label>
+                                  <select
+                                    value={selectedPrimaryL2Slug}
+                                    disabled={!selectedPrimaryL1Slug}
+                                    onChange={(e) => {
+                                      const nextL2 = e.target.value;
+                                      handlePrimaryCategorySelect(
+                                        nextL2 || selectedPrimaryL1Slug
+                                      );
+                                    }}
+                                    className="input text-xs bg-white disabled:bg-slate-100 disabled:text-slate-400"
+                                  >
+                                    <option value="">
+                                      {!selectedPrimaryL1Slug
+                                        ? lang === "bn"
+                                          ? "-- আগে Level 1 সিলেক্ট করুন (GEN) --"
+                                          : "-- Select Level 1 first (GEN) --"
+                                        : primaryLevel2Options.length === 0
+                                        ? lang === "bn"
+                                          ? "-- এই ক্যাটাগরিতে কোনো সাব-ক্যাটাগরি নেই (GEN) --"
+                                          : "-- No Sub-Categories available (GEN) --"
+                                        : lang === "bn"
+                                        ? "-- GEN (সাব-ক্যাটাগরি ছাড়া / General) --"
+                                        : "-- GEN (Skip Sub-Category / General) --"}
+                                    </option>
+                                    {primaryLevel2Options.map((c2) => {
+                                      const code = resolveCategorySkuCode(c2);
+                                      const label = pickLocalized(
+                                        c2.nameEn,
+                                        c2.nameBn,
+                                        lang,
+                                        c2.slug
+                                      );
+                                      return (
+                                        <option key={c2.id} value={c2.slug}>
+                                          [{code}] {label}
+                                        </option>
+                                      );
+                                    })}
+                                  </select>
+                                </div>
+
+                                {/* Level 3: Child Category / Item */}
+                                <div>
+                                  <label className="flex items-center justify-between text-[11px] font-semibold text-slate-700 mb-1">
+                                    <span>
+                                      {lang === "bn"
+                                        ? "৩. ক্যাটাগরি লেভেল ৩ / আইটেম (Level 3: Item)"
+                                        : "3. Level 3: Child Category / Item"}
+                                    </span>
+                                    <span className="font-mono text-[10px] font-bold text-[#0B5336] bg-brand-50 border border-brand-200 rounded px-1.5 py-0.2">
+                                      L3: {liveSkuPreview.l3Code}
+                                    </span>
+                                  </label>
+                                  <select
+                                    value={selectedPrimaryL3Slug}
+                                    disabled={!selectedPrimaryL2Slug}
+                                    onChange={(e) => {
+                                      const nextL3 = e.target.value;
+                                      handlePrimaryCategorySelect(
+                                        nextL3 || selectedPrimaryL2Slug || selectedPrimaryL1Slug
+                                      );
+                                    }}
+                                    className="input text-xs bg-white disabled:bg-slate-100 disabled:text-slate-400"
+                                  >
+                                    <option value="">
+                                      {!selectedPrimaryL2Slug
+                                        ? lang === "bn"
+                                          ? "-- আগে Level 2 সিলেক্ট করুন (GEN) --"
+                                          : "-- Select Level 2 first (GEN) --"
+                                        : primaryLevel3Options.length === 0
+                                        ? lang === "bn"
+                                          ? "-- এই সাব-ক্যাটাগরিতে কোনো Level 3 আইটেম নেই (GEN) --"
+                                          : "-- No Level 3 Items available (GEN) --"
+                                        : lang === "bn"
+                                        ? "-- GEN (আইটেম ছাড়া / General) --"
+                                        : "-- GEN (Skip Level 3 Item / General) --"}
+                                    </option>
+                                    {primaryLevel3Options.map((c3) => {
+                                      const code = resolveCategorySkuCode(c3);
+                                      const label = pickLocalized(
+                                        c3.nameEn,
+                                        c3.nameBn,
+                                        lang,
+                                        c3.slug
+                                      );
+                                      return (
+                                        <option key={c3.id} value={c3.slug}>
+                                          [{code}] {label}
+                                        </option>
+                                      );
+                                    })}
+                                  </select>
+                                </div>
                               </div>
-                            </div>
+
+                              {/* Live Primary SKU Preview Bar */}
+                              <div className="rounded-lg border border-brand-200 bg-brand-50/60 px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <Star className="h-3.5 w-3.5 text-gold-600 fill-gold-500 shrink-0" />
+                                  <span className="font-semibold text-slate-800 truncate">
+                                    {lang === "bn" ? "Primary পাথ:" : "Primary Path:"}{" "}
+                                    <span className="text-[#0B5336]">
+                                      {prodCategories[0]
+                                        ? lang === "bn"
+                                          ? liveSkuPreview.breadcrumbBn
+                                          : liveSkuPreview.breadcrumbEn
+                                        : lang === "bn"
+                                        ? "GEN > GEN > GEN (নির্ধারিত নয়)"
+                                        : "GEN > GEN > GEN (Unassigned)"}
+                                    </span>
+                                  </span>
+                                </div>
+                                <span className="font-mono text-[11px] font-bold text-[#0B5336] bg-white border border-brand-200 rounded px-2 py-0.5 shrink-0">
+                                  {prodSku || liveSkuPreview.sku}
+                                </span>
+                              </div>
+
+                              {/* Relatable Categories Switch Box */}
+                              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2.5">
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-xs font-bold text-slate-800">
+                                        {lang === "bn"
+                                          ? "আরো কোনো ক্যাটাগরি রিলেটেবল?"
+                                          : "Any Relatable Categories?"}
+                                      </span>
+                                      {prodCategories.length > 1 && (
+                                        <span className="rounded bg-[#0B5336] px-1.5 py-0.2 text-[10px] font-bold text-white">
+                                          +{toLocalizedDigits(prodCategories.length - 1, lang)}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-[11px] text-slate-500">
+                                      {lang === "bn"
+                                        ? "সুইচ অন করে রিলেটেবল ক্যাটাগরি মার্ক করুন (এতে কখনোই SKU পরিবর্তন হবে না)"
+                                        : "Turn ON to mark extra relatable categories (never alters the SKU)"}
+                                    </p>
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    role="switch"
+                                    aria-checked={relatableCategoriesEnabled}
+                                    onClick={() => {
+                                      if (!prodCategories[0]) {
+                                        showNotice(
+                                          "error",
+                                          lang === "bn"
+                                            ? "রিলেটেবল ক্যাটাগরি দেওয়ার আগে উপরের ড্রপডাউন থেকে অন্তত মেইন ক্যাটাগরি সিলেক্ট করুন।"
+                                            : "Please select a Primary Category from the dropdowns above first."
+                                        );
+                                        return;
+                                      }
+                                      const nextState = !relatableCategoriesEnabled;
+                                      setRelatableCategoriesEnabled(nextState);
+                                      if (!nextState && prodCategories.length > 1) {
+                                        // Keep only the Primary Category (index 0); SKU remains unchanged
+                                        setProdCategories([prodCategories[0]]);
+                                      }
+                                    }}
+                                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                      relatableCategoriesEnabled
+                                        ? "bg-[#0B5336]"
+                                        : "bg-slate-300"
+                                    }`}
+                                  >
+                                    <span
+                                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                                        relatableCategoriesEnabled
+                                          ? "translate-x-5"
+                                          : "translate-x-0"
+                                      }`}
+                                    />
+                                  </button>
+                                </div>
+
+                                {relatableCategoriesEnabled && prodCategories[0] && (
+                                  <div className="pt-2 border-t border-slate-200/80 space-y-2">
+                                    {categories.length > 8 && (
+                                      <div className="relative">
+                                        <Search className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                        <input
+                                          type="text"
+                                          value={prodCatSearchQuery}
+                                          onChange={(e) => setProdCatSearchQuery(e.target.value)}
+                                          placeholder={
+                                            lang === "bn"
+                                              ? "রিলেটেবল ক্যাটাগরির নাম বা কোড (যেমন: SHT, GRL, WNT) দিয়ে খুঁজুন..."
+                                              : "Search relatable categories by name or SKU code..."
+                                          }
+                                          className="w-full rounded-lg border border-slate-200 bg-white pl-8 pr-7 py-1.5 text-xs text-slate-800 outline-none focus:border-[#0B5336]"
+                                        />
+                                        {prodCatSearchQuery.trim() && (
+                                          <button
+                                            type="button"
+                                            onClick={() => setProdCatSearchQuery("")}
+                                            className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 hover:text-slate-700"
+                                          >
+                                            ✕
+                                          </button>
+                                        )}
+                                      </div>
+                                    )}
+
+                                    <div className="flex flex-wrap gap-1.5 max-h-56 overflow-y-auto pr-1">
+                                      {sortedCategoriesForTree
+                                        .filter((cat) => {
+                                          const q = prodCatSearchQuery.trim().toLowerCase();
+                                          if (!q) return true;
+                                          if (prodCategories.includes(cat.slug)) return true;
+                                          const meta = categoryHierarchyMap.get(cat.slug);
+                                          const code = resolveCategorySkuCode(cat).toLowerCase();
+                                          return (
+                                            (cat.nameEn || "").toLowerCase().includes(q) ||
+                                            (cat.nameBn || "").toLowerCase().includes(q) ||
+                                            (cat.slug || "").toLowerCase().includes(q) ||
+                                            code.includes(q) ||
+                                            (meta?.breadcrumbEn || "")
+                                              .toLowerCase()
+                                              .includes(q) ||
+                                            (meta?.breadcrumbBn || "")
+                                              .toLowerCase()
+                                              .includes(q)
+                                          );
+                                        })
+                                        .map((cat) => {
+                                          const isPrimarySelected =
+                                            prodCategories[0] === cat.slug;
+                                          const isRelatableSelected =
+                                            !isPrimarySelected &&
+                                            prodCategories.slice(1).includes(cat.slug);
+                                          const checked =
+                                            isPrimarySelected || isRelatableSelected;
+                                          const meta = categoryHierarchyMap.get(cat.slug);
+                                          const lvl = meta?.level || 1;
+                                          const catCode = resolveCategorySkuCode(cat);
+                                          const fullBreadcrumb =
+                                            lang === "bn"
+                                              ? meta?.breadcrumbBn || cat.nameBn || cat.nameEn
+                                              : meta?.breadcrumbEn || cat.nameEn || cat.slug;
+                                          return (
+                                            <div
+                                              key={cat.id}
+                                              className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-medium transition-colors ${
+                                                isPrimarySelected
+                                                  ? "border-gold-500 bg-gold-50 text-slate-900"
+                                                  : isRelatableSelected
+                                                  ? "border-[#0B5336] bg-[#0B5336] text-white"
+                                                  : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                                              }`}
+                                            >
+                                              <label
+                                                className={`inline-flex items-center gap-1.5 ${
+                                                  isPrimarySelected
+                                                    ? "cursor-default"
+                                                    : "cursor-pointer"
+                                                }`}
+                                              >
+                                                <input
+                                                  type="checkbox"
+                                                  checked={checked}
+                                                  disabled={isPrimarySelected}
+                                                  onChange={() =>
+                                                    toggleRelatableCategorySlug(cat.slug)
+                                                  }
+                                                  className="sr-only"
+                                                />
+                                                <span
+                                                  className={`rounded px-1 py-0.2 font-mono text-[9px] font-bold ${
+                                                    isRelatableSelected
+                                                      ? "bg-white/20 text-white"
+                                                      : lvl === 3
+                                                      ? "bg-brand-50 text-[#0B5336] border border-brand-200"
+                                                      : lvl === 2
+                                                      ? "bg-amber-50 text-amber-800 border border-amber-200"
+                                                      : "bg-slate-200 text-slate-700"
+                                                  }`}
+                                                >
+                                                  L{lvl}
+                                                </span>
+                                                <span>{fullBreadcrumb}</span>
+                                                <span
+                                                  className={`rounded px-1 py-0.2 font-mono text-[9px] font-bold ${
+                                                    isPrimarySelected
+                                                      ? "bg-gold-400 text-slate-950"
+                                                      : isRelatableSelected
+                                                      ? "bg-white/20 text-white"
+                                                      : "bg-slate-200/80 text-slate-600"
+                                                  }`}
+                                                >
+                                                  {catCode}
+                                                </span>
+                                              </label>
+                                              {isPrimarySelected && (
+                                                <span className="ml-0.5 rounded bg-gold-400 px-1 py-0.2 text-[9px] font-bold text-slate-950 whitespace-nowrap">
+                                                  ★ Primary (SKU)
+                                                </span>
+                                              )}
+                                            </div>
+                                          );
+                                        })}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </>
                           )}
                         </div>
 
@@ -5212,19 +5839,28 @@ export function MartAdminClient() {
                         </div>
                       </div>
 
-                      {/* Right Card 3B: Smart Attributes & Filter Tags (Gender, Age, Material, Brand, Tags) */}
+                      {/* Right Card 3B: Smart Attributes & Filter Tags (Dynamic from Mart_Attributes) */}
                       <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 space-y-3.5">
-                        <div className="pb-2 border-b border-slate-100">
-                          <div className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                            {lang === "bn"
-                              ? "স্মার্ট ট্যাগ ও অ্যাট্রিবিউট ফিল্টার"
-                              : "Smart Attributes & Filter Tags"}
+                        <div className="pb-2 border-b border-slate-100 flex items-start justify-between gap-2">
+                          <div>
+                            <div className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                              {lang === "bn"
+                                ? "স্মার্ট ট্যাগ ও অ্যাট্রিবিউট ফিল্টার"
+                                : "Smart Attributes & Filter Tags"}
+                            </div>
+                            <p className="text-[11px] text-slate-500 mt-0.5">
+                              {lang === "bn"
+                                ? "অ্যাট্রিবিউট লিস্ট থেকে সিলেক্ট করুন অথবা নতুন ভ্যালু যোগ করতে Taxonomy-তে যান"
+                                : "Pick from managed attribute options or manage attribute groups in Taxonomy"}
+                            </p>
                           </div>
-                          <p className="text-[11px] text-slate-500 mt-0.5">
-                            {lang === "bn"
-                              ? "ক্যাটাগরি লিস্ট বড় না করে কাস্টমারদের দ্রুত ফিল্টারিংয়ের জন্য যুক্ত করুন"
-                              : "Enable customer filtering by Gender, Age, Material, Brand & Tags"}
-                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setActiveSection("taxonomy")}
+                            className="text-[11px] font-semibold text-[#0B5336] hover:underline whitespace-nowrap shrink-0"
+                          >
+                            {lang === "bn" ? "+ অ্যাট্রিবিউট এডিট" : "+ Manage Attributes"}
+                          </button>
                         </div>
 
                         {/* Gender Selector */}
@@ -5268,7 +5904,7 @@ export function MartAdminClient() {
                           </div>
                         </div>
 
-                        {/* Age Group & Brand */}
+                        {/* Age Group & Brand (Dynamically driven by Mart_Attributes) */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div>
                             <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -5280,18 +5916,26 @@ export function MartAdminClient() {
                               onChange={(e) => setProdAgeGroup(e.target.value)}
                               placeholder={
                                 lang === "bn"
-                                  ? "যেমন: 0-2 Years, 3-7 Years"
-                                  : "e.g. 0-2 Years, 3-7 Years, Adult"
+                                  ? "যেমন: 0-6 Months, 3-5 Years"
+                                  : "e.g. 0-6 Months, 3-5 Years, Adult"
                               }
                               className="input text-xs"
                             />
                             <div className="flex flex-wrap gap-1 mt-1">
-                              {["0-2 Years", "3-7 Years", "8-14 Years", "Adult"].map((preset) => (
+                              {ageGroupAttrOptions.map((preset) => (
                                 <button
                                   key={preset}
                                   type="button"
-                                  onClick={() => setProdAgeGroup(preset)}
-                                  className="rounded bg-slate-100 hover:bg-brand-50 hover:text-[#0B5336] px-1.5 py-0.5 text-[10px] font-medium text-slate-600 transition-colors"
+                                  onClick={() =>
+                                    setProdAgeGroup((prev) =>
+                                      prev === preset ? "" : preset
+                                    )
+                                  }
+                                  className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+                                    prodAgeGroup === preset
+                                      ? "bg-[#0B5336] text-white"
+                                      : "bg-slate-100 hover:bg-brand-50 hover:text-[#0B5336] text-slate-600"
+                                  }`}
                                 >
                                   {preset}
                                 </button>
@@ -5312,10 +5956,30 @@ export function MartAdminClient() {
                               }
                               className="input text-xs"
                             />
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {brandAttrOptions.map((bPreset) => (
+                                <button
+                                  key={bPreset}
+                                  type="button"
+                                  onClick={() =>
+                                    setProdBrand((prev) =>
+                                      prev === bPreset ? "" : bPreset
+                                    )
+                                  }
+                                  className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+                                    prodBrand === bPreset
+                                      ? "bg-[#0B5336] text-white"
+                                      : "bg-slate-100 hover:bg-brand-50 hover:text-[#0B5336] text-slate-600"
+                                  }`}
+                                >
+                                  {bPreset}
+                                </button>
+                              ))}
+                            </div>
                           </div>
                         </div>
 
-                        {/* Material / Fabric */}
+                        {/* Material / Fabric (Dynamically driven by Mart_Attributes) */}
                         <div>
                           <label className="block text-xs font-semibold text-slate-700 mb-1">
                             {lang === "bn" ? "ম্যাটেরিয়াল / ফেব্রিক (Material)" : "Material / Fabric"}
@@ -5326,26 +5990,94 @@ export function MartAdminClient() {
                             onChange={(e) => setProdMaterial(e.target.value)}
                             placeholder={
                               lang === "bn"
-                                ? "যেমন: 100% Cotton, Sherpa Fleece, ABS"
-                                : "e.g. 100% Cotton, Sherpa Fleece, Leather"
+                                ? "যেমন: 100% Cotton, Silk, Denim"
+                                : "e.g. 100% Cotton, Silk, Denim"
                             }
                             className="input text-xs"
                           />
                           <div className="flex flex-wrap gap-1 mt-1">
-                            {["100% Cotton", "Sherpa Fleece", "Plush Velvet", "Denim", "ABS Plastic"].map(
-                              (mat) => (
-                                <button
-                                  key={mat}
-                                  type="button"
-                                  onClick={() => setProdMaterial(mat)}
-                                  className="rounded bg-slate-100 hover:bg-brand-50 hover:text-[#0B5336] px-1.5 py-0.5 text-[10px] font-medium text-slate-600 transition-colors"
-                                >
-                                  {mat}
-                                </button>
-                              )
-                            )}
+                            {materialAttrOptions.map((mat) => (
+                              <button
+                                key={mat}
+                                type="button"
+                                onClick={() =>
+                                  setProdMaterial((prev) => (prev === mat ? "" : mat))
+                                }
+                                className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+                                  prodMaterial === mat
+                                    ? "bg-[#0B5336] text-white"
+                                    : "bg-slate-100 hover:bg-brand-50 hover:text-[#0B5336] text-slate-600"
+                                }`}
+                              >
+                                {mat}
+                              </button>
+                            ))}
                           </div>
                         </div>
+
+                        {/* Dynamic Custom Attribute Groups added by Admin in Mart_Attributes */}
+                        {customAttributeGroups.length > 0 && (
+                          <div className="pt-2 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {customAttributeGroups.map((cAttr) => {
+                              const opts = parseAttributeOptionsList(cAttr.optionsList);
+                              const currentVal = prodCustomAttrs[cAttr.slug] || "";
+                              const groupLabel = pickLocalized(
+                                cAttr.nameEn,
+                                cAttr.nameBn,
+                                lang,
+                                cAttr.slug
+                              );
+                              return (
+                                <div key={cAttr.id}>
+                                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                    {groupLabel}
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={currentVal}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setProdCustomAttrs((prev) => ({
+                                        ...prev,
+                                        [cAttr.slug]: val,
+                                      }));
+                                    }}
+                                    placeholder={
+                                      opts.length > 0
+                                        ? `${opts.slice(0, 2).join(", ")}...`
+                                        : groupLabel
+                                    }
+                                    className="input text-xs"
+                                  />
+                                  {opts.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mt-1">
+                                      {opts.map((optVal) => (
+                                        <button
+                                          key={optVal}
+                                          type="button"
+                                          onClick={() =>
+                                            setProdCustomAttrs((prev) => ({
+                                              ...prev,
+                                              [cAttr.slug]:
+                                                prev[cAttr.slug] === optVal ? "" : optVal,
+                                            }))
+                                          }
+                                          className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+                                            currentVal === optVal
+                                              ? "bg-[#0B5336] text-white"
+                                              : "bg-slate-100 hover:bg-brand-50 hover:text-[#0B5336] text-slate-600"
+                                          }`}
+                                        >
+                                          {optVal}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
 
                         {/* Custom Filter Tags (Comma-separated) */}
                         <div>
@@ -6821,6 +7553,329 @@ export function MartAdminClient() {
                           </div>
                         </div>
                       ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Smart Attributes & Option Values Manager (Mart_Attributes) */}
+                <div
+                  className={`rounded-2xl border p-6 space-y-4 transition-colors ${
+                    editingAttributeId
+                      ? "border-[#0B5336] ring-2 ring-[#0B5336]/15 bg-brand-50/20"
+                      : "border-slate-200 bg-white"
+                  }`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h2 className="font-display text-lg font-bold text-slate-900">
+                        {editingAttributeId
+                          ? lang === "bn"
+                            ? `অ্যাট্রিবিউট ও ভ্যালু এডিট করুন (${editingAttributeId})`
+                            : `Edit Attribute Group (${editingAttributeId})`
+                          : lang === "bn"
+                          ? "নতুন অ্যাট্রিবিউট ও মাল্টিপল ভ্যালু যুক্ত করুন"
+                          : "Add Attribute Group & Option Values"}
+                      </h2>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {lang === "bn"
+                          ? "যেমন: Material (Cotton, Silk, Denim), Age Group, Brand বা কাস্টম অ্যাট্রিবিউট"
+                          : "e.g. Material (Cotton, Silk, Denim), Age Group, Brand, or any custom attribute"}
+                      </p>
+                    </div>
+                    {editingAttributeId && (
+                      <button
+                        type="button"
+                        onClick={resetAttributeForm}
+                        className="text-xs font-semibold text-slate-600 hover:text-slate-900 underline"
+                      >
+                        {t.admin.products.cancelEdit}
+                      </button>
+                    )}
+                  </div>
+
+                  <form onSubmit={handleSaveAttribute} className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          {lang === "bn"
+                            ? "অ্যাট্রিবিউট গ্রুপ নাম (English) *"
+                            : "Attribute Group Name (English) *"}
+                        </label>
+                        <input
+                          type="text"
+                          value={attrNameEn}
+                          onChange={(e) => setAttrNameEn(e.target.value)}
+                          placeholder={
+                            lang === "bn"
+                              ? "e.g. Material / Fabric, Warranty"
+                              : "e.g. Material / Fabric, Warranty"
+                          }
+                          className="input"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          {lang === "bn"
+                            ? "অ্যাট্রিবিউট গ্রুপ নাম (বাংলা)"
+                            : "Attribute Group Name (বাংলা)"}
+                        </label>
+                        <input
+                          type="text"
+                          value={attrNameBn}
+                          onChange={(e) => setAttrNameBn(e.target.value)}
+                          placeholder={
+                            lang === "bn"
+                              ? "যেমন: ম্যাটেরিয়াল / ফেব্রিক, ওয়ারেন্টি"
+                              : "e.g. ম্যাটেরিয়াল / ফেব্রিক, ওয়ারেন্টি"
+                          }
+                          className="input"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          {lang === "bn" ? "স্লাগ / আইডি (Slug)" : "Attribute Slug"}
+                        </label>
+                        <input
+                          type="text"
+                          value={attrSlug}
+                          onChange={(e) => setAttrSlug(e.target.value)}
+                          placeholder={
+                            slugifyCategory(attrNameEn || attrNameBn) || "material"
+                          }
+                          className="input font-mono text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          {t.admin.taxonomy.lblSortOrderLabel}
+                        </label>
+                        <input
+                          type="number"
+                          value={attrSortOrder}
+                          onChange={(e) => setAttrSortOrder(e.target.value)}
+                          className="input font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Multi-Value Chip Builder + Comma List */}
+                    <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                      <label className="block text-xs font-semibold text-slate-700">
+                        {lang === "bn"
+                          ? "মাল্টিপল ভ্যালু / অপশন লিস্ট (কমা দিয়ে বা + বাটনে যোগ করুন) *"
+                          : "Multiple Option Values (Add via button or comma-separated) *"}
+                      </label>
+
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={attrOptionDraft}
+                          onChange={(e) => setAttrOptionDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              handleAddAttributeOptionDraft();
+                            }
+                          }}
+                          placeholder={
+                            lang === "bn"
+                              ? "নতুন ভ্যালু লিখুন (যেমন: 100% Cotton, Silk)..."
+                              : "Type option value(s) (e.g. 100% Cotton, Silk)..."
+                          }
+                          className="input text-xs bg-white flex-1"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddAttributeOptionDraft}
+                          className="btn-outline px-3 py-1.5 text-xs font-semibold whitespace-nowrap bg-white"
+                        >
+                          <Plus className="h-3.5 w-3.5 text-[#0B5336]" />
+                          <span>{lang === "bn" ? "ভ্যালু যোগ" : "Add Value"}</span>
+                        </button>
+                      </div>
+
+                      <input
+                        type="text"
+                        value={attrOptionsList}
+                        onChange={(e) => setAttrOptionsList(e.target.value)}
+                        placeholder={
+                          lang === "bn"
+                            ? "কমা দিয়ে আলাদা করা সব ভ্যালু: 100% Cotton, Silk, Denim, Linen"
+                            : "Comma-separated values: 100% Cotton, Silk, Denim, Linen"
+                        }
+                        className="input text-xs bg-white font-mono"
+                      />
+
+                      {parseAttributeOptionsList(attrOptionsList).length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          {parseAttributeOptionsList(attrOptionsList).map((opt) => (
+                            <span
+                              key={opt}
+                              className="inline-flex items-center gap-1 rounded-lg border border-brand-200 bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-[#0B5336]"
+                            >
+                              <span>{opt}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveAttributeOptionChip(opt)}
+                                className="text-slate-400 hover:text-red-600 font-bold ml-0.5"
+                                title={lang === "bn" ? "ভ্যালু মুছুন" : "Remove value"}
+                              >
+                                ×
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={savingAttribute}
+                      className="btn-primary w-full py-2.5 text-xs"
+                    >
+                      {savingAttribute
+                        ? lang === "bn"
+                          ? "সংরক্ষণ হচ্ছে..."
+                          : "Saving Attribute..."
+                        : editingAttributeId
+                        ? lang === "bn"
+                          ? "অ্যাট্রিবিউট ও ভ্যালু আপডেট করুন"
+                          : "Update Attribute & Values"
+                        : lang === "bn"
+                        ? "অ্যাট্রিবিউট ও ভ্যালু তৈরি করুন"
+                        : "Create Attribute & Values"}
+                    </button>
+                  </form>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+                  <div className="px-4 sm:px-6 py-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h3 className="font-display text-sm font-bold text-slate-900">
+                        {lang === "bn"
+                          ? `অ্যাট্রিবিউট ও ভ্যালু লিস্ট (${toLocalizedDigits(
+                              attributes.length,
+                              lang
+                            )})`
+                          : `Attribute Groups & Values (${attributes.length})`}
+                      </h3>
+                      <p className="text-[11px] text-slate-500">
+                        {lang === "bn"
+                          ? "প্রোডাক্ট ফর্ম এবং স্টোরফ্রন্ট ফিল্টারে স্বয়ংক্রিয়ভাবে যুক্ত হবে"
+                          : "Synced with Product Studio & Storefront Smart Filters"}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={seedingStarterAttrs}
+                      onClick={handleSeedStarterAttributes}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-brand-200 bg-brand-50 px-3 py-1.5 text-xs font-semibold text-[#0B5336] hover:bg-[#0B5336] hover:text-white transition-colors disabled:opacity-50"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      <span>
+                        {seedingStarterAttrs
+                          ? lang === "bn"
+                            ? "লোড হচ্ছে..."
+                            : "Seeding..."
+                          : lang === "bn"
+                          ? "ডিফল্ট অ্যাট্রিবিউট লোড করুন"
+                          : "Load Starter Attributes"}
+                      </span>
+                    </button>
+                  </div>
+
+                  <div className="divide-y divide-slate-100">
+                    {attributes.length === 0 ? (
+                      <div className="p-6 text-center space-y-3">
+                        <p className="text-xs text-slate-500">
+                          {lang === "bn"
+                            ? "এখনো কোনো অ্যাট্রিবিউট যুক্ত করা হয়নি।"
+                            : "No attribute groups added yet."}
+                        </p>
+                        <button
+                          type="button"
+                          disabled={seedingStarterAttrs}
+                          onClick={handleSeedStarterAttributes}
+                          className="btn-primary px-4 py-2 text-xs gap-1.5"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          <span>
+                            {lang === "bn"
+                              ? "১-ক্লিকে স্ট্যান্ডার্ড অ্যাট্রিবিউট যুক্ত করুন"
+                              : "1-Click Seed Starter Attributes"}
+                          </span>
+                        </button>
+                      </div>
+                    ) : (
+                      attributes.map((attr) => {
+                        const opts = parseAttributeOptionsList(attr.optionsList);
+                        return (
+                          <div
+                            key={attr.id}
+                            className="px-4 sm:px-6 py-3.5 flex flex-col gap-2 text-xs"
+                          >
+                            <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="font-semibold text-slate-900 truncate">
+                                  {attr.nameEn}
+                                  {attr.nameBn ? ` · ${attr.nameBn}` : ""}
+                                </div>
+                                <div className="font-mono text-[11px] text-slate-400 truncate tabular-nums">
+                                  #{attr.slug} · {toLocalizedDigits(opts.length, lang)}{" "}
+                                  {lang === "bn" ? "টি ভ্যালু" : "values"}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleAttribute(attr)}
+                                  className={`rounded-lg px-2 py-1 text-[11px] font-semibold border whitespace-nowrap ${
+                                    attr.active
+                                      ? "border-brand-200 bg-brand-50 text-[#0B5336]"
+                                      : "border-slate-200 bg-slate-100 text-slate-500"
+                                  }`}
+                                >
+                                  {attr.active
+                                    ? t.admin.taxonomy.catVisible
+                                    : t.admin.taxonomy.catHidden}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => startEditAttribute(attr)}
+                                  aria-label={`${t.common.edit} ${attr.slug}`}
+                                  className="rounded-lg border border-slate-200 p-1 text-slate-600 hover:border-[#0B5336] hover:text-[#0B5336]"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteAttribute(attr.id)}
+                                  aria-label={attr.slug}
+                                  className="text-red-600 hover:text-red-800 p-1"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {opts.length > 0 && (
+                              <div className="flex flex-wrap gap-1">
+                                {opts.map((opt) => (
+                                  <span
+                                    key={opt}
+                                    className="rounded bg-slate-100 border border-slate-200 px-2 py-0.5 text-[10px] font-medium text-slate-700"
+                                  >
+                                    {opt}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })
                     )}
                   </div>
                 </div>
