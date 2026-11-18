@@ -54,7 +54,15 @@ var MART_SCHEMA = {
     "descriptionBn",
     "featured",
     "active",
-    "createdAt"
+    "createdAt",
+    "level1Cat",
+    "level2Cat",
+    "level3Cat",
+    "relatableCats",
+    "gender",
+    "ageGroup",
+    "material",
+    "brand"
   ],
   Mart_Categories: [
     "id",
@@ -400,7 +408,7 @@ function ensureMartSheet(ss, sheetName) {
 /**
  * ONE-CLICK INITIALIZER / UPGRADER:
  * Run inside your bound Google Sheet's Apps Script Editor.
- * Builds/upgrades all 10 Mart tabs, Drive folders, and CacheService.
+ * Builds/upgrades all Mart tabs, Drive folders, Sheet Dropdowns, Auto-SKU, and CacheService.
  */
 function setupMartBackend() {
   var ss = getBoundSpreadsheet();
@@ -424,6 +432,9 @@ function setupMartBackend() {
   // Auto-create Drive folders: Xeetrix_Mart_Storage -> Products, Categories & PaymentQR
   var folders = ensureDriveFoldersReady();
 
+  // Sync existing rows + apply 3-level category & attribute dropdowns in Mart_Products
+  syncMartProductsBulkSheet(true);
+
   // Warm public cache immediately
   invalidateMartCache();
   buildAndCachePublicBundle(ss);
@@ -436,6 +447,907 @@ function setupMartBackend() {
     " | Drive Root: " +
     folders.rootFolder.getName()
   );
+}
+
+var MART_SHEET_GENDER_OPTIONS = ["Unisex", "Boys", "Girls", "Men", "Women"];
+
+function onOpen() {
+  try {
+    var ui = SpreadsheetApp.getUi();
+    ui.createMenu("🛒 Xeetrix Mart")
+      .addItem("🔄 Sync Bulk Rows (Dropdowns, Auto-SKU & Attributes)", "syncMartProductsBulkSheet")
+      .addItem("⚙️ Setup / Refresh Columns & Dropdowns", "setupMartBackendMenuAction")
+      .addItem("⚡ Refresh Website Cache Now", "refreshMartPublicCacheMenuAction")
+      .addToUi();
+  } catch (e) {
+    // Non-UI context guard
+  }
+}
+
+function setupMartBackendMenuAction() {
+  var msg = setupMartBackend();
+  try {
+    SpreadsheetApp.getUi().alert("Xeetrix Mart Setup Complete", msg, SpreadsheetApp.getUi().ButtonSet.OK);
+  } catch (e) {
+    // Ignore outside UI
+  }
+}
+
+function refreshMartPublicCacheMenuAction() {
+  var ss = getBoundSpreadsheet();
+  invalidateMartCache();
+  var bundle = buildAndCachePublicBundle(ss);
+  try {
+    ss.toast(
+      "Website cache refreshed (" + (bundle.products ? bundle.products.length : 0) + " live products).",
+      "Xeetrix Mart",
+      4
+    );
+  } catch (e) {
+    // Ignore outside UI
+  }
+}
+
+function formatSheetCategoryOption(cat) {
+  if (!cat) return "";
+  var label = String(cat.nameEn || cat.nameBn || cat.slug || "").trim();
+  var code = resolveCategorySkuCodeServer(cat);
+  return label ? label + " [" + code + "]" : "";
+}
+
+function buildCategoryLookupIndex(allCategories) {
+  var bySlug = {};
+  var activeList = [];
+  for (var i = 0; i < (allCategories || []).length; i++) {
+    var c = allCategories[i];
+    if (!c || !c.slug) continue;
+    var slug = String(c.slug).trim();
+    bySlug[slug] = c;
+    if (c.active !== false) {
+      activeList.push(c);
+    }
+  }
+  activeList.sort(function (a, b) {
+    return (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0);
+  });
+
+  var l1List = [];
+  var childrenByParent = {};
+  for (var j = 0; j < activeList.length; j++) {
+    var item = activeList[j];
+    var pSlug = String(item.parentSlug || "").trim();
+    if (!pSlug || !bySlug[pSlug]) {
+      l1List.push(item);
+    } else {
+      if (!childrenByParent[pSlug]) childrenByParent[pSlug] = [];
+      childrenByParent[pSlug].push(item);
+    }
+  }
+  return {
+    bySlug: bySlug,
+    activeList: activeList,
+    l1List: l1List,
+    childrenByParent: childrenByParent
+  };
+}
+
+function matchSheetCategoryOption(rawValue, candidateList) {
+  var raw = String(rawValue || "").trim();
+  if (!raw || !candidateList || candidateList.length === 0) return null;
+  var lowerRaw = raw.toLowerCase();
+
+  var parsedLabel = "";
+  var parsedCode = "";
+  var bracketMatch = raw.match(/^(.+?)\s*\[([A-Za-z0-9]{2,4})\]$/);
+  if (bracketMatch) {
+    parsedLabel = String(bracketMatch[1] || "").trim().toLowerCase();
+    parsedCode = String(bracketMatch[2] || "").trim().toUpperCase();
+  }
+
+  for (var i = 0; i < candidateList.length; i++) {
+    var c = candidateList[i];
+    if (!c) continue;
+    if (formatSheetCategoryOption(c).toLowerCase() === lowerRaw) return c;
+    if (String(c.slug || "").trim().toLowerCase() === lowerRaw) return c;
+    if (String(c.nameEn || "").trim().toLowerCase() === lowerRaw) return c;
+    if (String(c.nameBn || "").trim().toLowerCase() === lowerRaw) return c;
+  }
+
+  if (parsedLabel || parsedCode) {
+    for (var j = 0; j < candidateList.length; j++) {
+      var cand = candidateList[j];
+      var candCode = resolveCategorySkuCodeServer(cand);
+      var candName = String(cand.nameEn || cand.nameBn || "").trim().toLowerCase();
+      if (candCode === parsedCode && (!parsedLabel || candName === parsedLabel)) {
+        return cand;
+      }
+    }
+    for (var k = 0; k < candidateList.length; k++) {
+      if (resolveCategorySkuCodeServer(candidateList[k]) === parsedCode) {
+        return candidateList[k];
+      }
+    }
+  }
+
+  for (var m = 0; m < candidateList.length; m++) {
+    var token = lowerRaw.toUpperCase();
+    if (token.length >= 2 && token.length <= 4 && resolveCategorySkuCodeServer(candidateList[m]) === token) {
+      return candidateList[m];
+    }
+  }
+  return null;
+}
+
+function resolveCategoriesToHelperFields(categoriesCsv, catIndex) {
+  var slugs = String(categoriesCsv || "")
+    .split(",")
+    .map(function (s) {
+      return s.trim();
+    })
+    .filter(function (s) {
+      return Boolean(s);
+    });
+  if (slugs.length === 0) {
+    return {
+      level1Cat: "",
+      level2Cat: "",
+      level3Cat: "",
+      relatableCats: ""
+    };
+  }
+  var primarySlug = slugs[0];
+  var primaryCat = catIndex.bySlug[primarySlug];
+  var l1 = "";
+  var l2 = "";
+  var l3 = "";
+  if (primaryCat) {
+    var chain = [primaryCat];
+    var visited = {};
+    visited[primaryCat.slug] = true;
+    var cursor = primaryCat;
+    while (cursor.parentSlug && chain.length < 3) {
+      var pSlug = String(cursor.parentSlug).trim();
+      if (!pSlug || visited[pSlug] || !catIndex.bySlug[pSlug]) break;
+      visited[pSlug] = true;
+      chain.unshift(catIndex.bySlug[pSlug]);
+      cursor = catIndex.bySlug[pSlug];
+    }
+    if (chain[0]) l1 = formatSheetCategoryOption(chain[0]);
+    if (chain[1]) l2 = formatSheetCategoryOption(chain[1]);
+    if (chain[2]) l3 = formatSheetCategoryOption(chain[2]);
+  }
+  var relatableLabels = [];
+  for (var i = 1; i < slugs.length; i++) {
+    var rel = catIndex.bySlug[slugs[i]];
+    relatableLabels.push(rel ? formatSheetCategoryOption(rel) : slugs[i]);
+  }
+  return {
+    level1Cat: l1,
+    level2Cat: l2,
+    level3Cat: l3,
+    relatableCats: relatableLabels.join(", ")
+  };
+}
+
+function resolveHelperFieldsToCategoriesCsv(rowObj, catIndex) {
+  var allCats = catIndex.activeList;
+  var l1 = matchSheetCategoryOption(rowObj.level1Cat, catIndex.l1List.length ? catIndex.l1List : allCats);
+  var l2Candidates = l1 && catIndex.childrenByParent[l1.slug] ? catIndex.childrenByParent[l1.slug] : allCats;
+  var l2 = matchSheetCategoryOption(rowObj.level2Cat, l2Candidates);
+  var l3Candidates = l2 && catIndex.childrenByParent[l2.slug] ? catIndex.childrenByParent[l2.slug] : allCats;
+  var l3 = matchSheetCategoryOption(rowObj.level3Cat, l3Candidates);
+
+  var primaryCat = l3 || l2 || l1;
+  if (!primaryCat) {
+    return {
+      primaryCat: null,
+      l1Cat: l1,
+      l2Cat: l2,
+      l3Cat: l3,
+      categoriesCsv: String(rowObj.categories || "").trim()
+    };
+  }
+
+  // Reconstruct missing parent chain automatically if user pasted only L2 or L3
+  if (!l1 || !l2) {
+    var chain = [primaryCat];
+    var visited = {};
+    visited[primaryCat.slug] = true;
+    var cursor = primaryCat;
+    while (cursor.parentSlug && chain.length < 3) {
+      var ps = String(cursor.parentSlug).trim();
+      if (!ps || visited[ps] || !catIndex.bySlug[ps]) break;
+      visited[ps] = true;
+      chain.unshift(catIndex.bySlug[ps]);
+      cursor = catIndex.bySlug[ps];
+    }
+    l1 = chain[0] || null;
+    l2 = chain[1] || null;
+    l3 = chain[2] || null;
+  }
+
+  var slugList = [primaryCat.slug];
+  var seen = {};
+  seen[primaryCat.slug] = true;
+
+  var rawRel = String(rowObj.relatableCats || "");
+  if (rawRel.trim()) {
+    var parts = rawRel.split(",");
+    for (var i = 0; i < parts.length; i++) {
+      var token = String(parts[i] || "").trim();
+      if (!token) continue;
+      var matchedRel = matchSheetCategoryOption(token, allCats);
+      var relSlug = matchedRel ? matchedRel.slug : slugifyText(token);
+      if (relSlug && !seen[relSlug]) {
+        seen[relSlug] = true;
+        slugList.push(relSlug);
+      }
+    }
+  }
+
+  return {
+    primaryCat: primaryCat,
+    l1Cat: l1,
+    l2Cat: l2,
+    l3Cat: l3,
+    categoriesCsv: slugList.join(",")
+  };
+}
+
+function parseAttributesJsonSafe(rawJson) {
+  var out = { gender: "", ageGroup: "", material: "", brand: "", custom: {} };
+  if (!rawJson) return out;
+  try {
+    var parsed = JSON.parse(String(rawJson));
+    if (parsed && typeof parsed === "object") {
+      out.gender = String(parsed.gender || "").trim();
+      out.ageGroup = String(parsed.ageGroup || "").trim();
+      out.material = String(parsed.material || "").trim();
+      out.brand = String(parsed.brand || "").trim();
+      if (parsed.custom && typeof parsed.custom === "object") {
+        out.custom = parsed.custom;
+      }
+    }
+  } catch (e) {
+    // Ignore invalid JSON
+  }
+  return out;
+}
+
+function buildAttributesJsonFromFields(baseJson, genderVal, ageGroupVal, materialVal, brandVal) {
+  var cur = parseAttributesJsonSafe(baseJson);
+  var g = String(genderVal !== undefined ? genderVal : cur.gender || "").trim();
+  var a = String(ageGroupVal !== undefined ? ageGroupVal : cur.ageGroup || "").trim();
+  var m = String(materialVal !== undefined ? materialVal : cur.material || "").trim();
+  var b = String(brandVal !== undefined ? brandVal : cur.brand || "").trim();
+  var customKeys = cur.custom ? Object.keys(cur.custom) : [];
+  if (!g && !a && !m && !b && customKeys.length === 0) {
+    return "";
+  }
+  var nextObj = {};
+  if (g) nextObj.gender = g;
+  if (a) nextObj.ageGroup = a;
+  if (m) nextObj.material = m;
+  if (b) nextObj.brand = b;
+  if (customKeys.length > 0) nextObj.custom = cur.custom;
+  return JSON.stringify(nextObj);
+}
+
+function buildAttributeDropdownMap(allAttrs) {
+  var map = {
+    gender: MART_SHEET_GENDER_OPTIONS.slice(),
+    ageGroup: [],
+    material: [],
+    brand: []
+  };
+  for (var i = 0; i < (allAttrs || []).length; i++) {
+    var attr = allAttrs[i];
+    if (!attr || attr.active === false) continue;
+    var s = String(attr.slug || "").toLowerCase().trim();
+    var opts = String(attr.optionsList || "")
+      .split(",")
+      .map(function (v) {
+        return v.trim();
+      })
+      .filter(function (v) {
+        return Boolean(v);
+      });
+    if (opts.length === 0) continue;
+    if (s === "gender") {
+      for (var g = 0; g < opts.length; g++) {
+        if (map.gender.indexOf(opts[g]) === -1) map.gender.push(opts[g]);
+      }
+    } else if (s === "age-group" || s === "agegroup") {
+      map.ageGroup = opts;
+    } else if (s === "material") {
+      map.material = opts;
+    } else if (s === "brand") {
+      map.brand = opts;
+    }
+  }
+  return map;
+}
+
+function buildListValidation(values, allowInvalid) {
+  var clean = [];
+  var seen = {};
+  for (var i = 0; i < (values || []).length; i++) {
+    var v = String(values[i] || "").trim();
+    if (v && !seen[v]) {
+      seen[v] = true;
+      clean.push(v);
+    }
+  }
+  if (clean.length === 0) return null;
+  if (clean.length > 480) clean = clean.slice(0, 480);
+  return SpreadsheetApp.newDataValidation()
+    .requireValueInList(clean, true)
+    .setAllowInvalid(allowInvalid !== false)
+    .build();
+}
+
+function applyRowCascadeValidation(sheet, rowIndex, colMap, l1Cat, l2Cat, catIndex) {
+  var l2Col = colMap["level2Cat"];
+  var l3Col = colMap["level3Cat"];
+  if (l2Col) {
+    var l2Cell = sheet.getRange(rowIndex, l2Col);
+    if (l1Cat && catIndex.childrenByParent[l1Cat.slug] && catIndex.childrenByParent[l1Cat.slug].length > 0) {
+      var l2Opts = catIndex.childrenByParent[l1Cat.slug].map(formatSheetCategoryOption);
+      l2Cell.setDataValidation(buildListValidation(l2Opts, false));
+    } else {
+      l2Cell.clearDataValidations();
+    }
+  }
+  if (l3Col) {
+    var l3Cell = sheet.getRange(rowIndex, l3Col);
+    if (l2Cat && catIndex.childrenByParent[l2Cat.slug] && catIndex.childrenByParent[l2Cat.slug].length > 0) {
+      var l3Opts = catIndex.childrenByParent[l2Cat.slug].map(formatSheetCategoryOption);
+      l3Cell.setDataValidation(buildListValidation(l3Opts, false));
+    } else {
+      l3Cell.clearDataValidations();
+    }
+  }
+}
+
+function refreshMartProductsColumnValidations(ss, prodSheet, catIndex, allAttrs) {
+  try {
+    var sheet = prodSheet || ensureMartSheet(ss, "Mart_Products");
+    var lastCol = Math.max(1, sheet.getLastColumn());
+    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    var colMap = {};
+    for (var c = 0; c < headers.length; c++) {
+      var h = String(headers[c] || "").trim();
+      if (h) colMap[h] = c + 1;
+    }
+
+    var targetRowCount = Math.max(50, sheet.getLastRow() + 50 - 1);
+    var maxAvail = Math.max(1, sheet.getMaxRows() - 1);
+    if (targetRowCount > maxAvail) targetRowCount = maxAvail;
+    if (targetRowCount < 1) return;
+
+    var l1Options = catIndex.l1List.map(formatSheetCategoryOption);
+    var allCatOptions = catIndex.activeList.map(formatSheetCategoryOption);
+    var attrMap = buildAttributeDropdownMap(allAttrs);
+
+    if (colMap["level1Cat"]) {
+      var l1Rule = buildListValidation(l1Options, false);
+      var l1Range = sheet.getRange(2, colMap["level1Cat"], targetRowCount, 1);
+      if (l1Rule) l1Range.setDataValidation(l1Rule);
+      else l1Range.clearDataValidations();
+    }
+    if (colMap["relatableCats"]) {
+      var relRule = buildListValidation(allCatOptions, true);
+      var relRange = sheet.getRange(2, colMap["relatableCats"], targetRowCount, 1);
+      if (relRule) relRange.setDataValidation(relRule);
+      else relRange.clearDataValidations();
+    }
+    if (colMap["gender"]) {
+      var gRule = buildListValidation(attrMap.gender, true);
+      if (gRule) sheet.getRange(2, colMap["gender"], targetRowCount, 1).setDataValidation(gRule);
+    }
+    if (colMap["ageGroup"]) {
+      var ageRange = sheet.getRange(2, colMap["ageGroup"], targetRowCount, 1);
+      var ageRule = buildListValidation(attrMap.ageGroup, true);
+      if (ageRule) ageRange.setDataValidation(ageRule);
+      else ageRange.clearDataValidations();
+    }
+    if (colMap["material"]) {
+      var matRange = sheet.getRange(2, colMap["material"], targetRowCount, 1);
+      var matRule = buildListValidation(attrMap.material, true);
+      if (matRule) matRange.setDataValidation(matRule);
+      else matRange.clearDataValidations();
+    }
+    if (colMap["brand"]) {
+      var brandRange = sheet.getRange(2, colMap["brand"], targetRowCount, 1);
+      var brandRule = buildListValidation(attrMap.brand, true);
+      if (brandRule) brandRange.setDataValidation(brandRule);
+      else brandRange.clearDataValidations();
+    }
+    if (colMap["fulfillmentType"]) {
+      var ftRule = buildListValidation(["own_stock", "dropship"], true);
+      if (ftRule) sheet.getRange(2, colMap["fulfillmentType"], targetRowCount, 1).setDataValidation(ftRule);
+    }
+    if (colMap["collectionMode"]) {
+      var cmRule = buildListValidation(["store_collects", "supplier_collects"], true);
+      if (cmRule) sheet.getRange(2, colMap["collectionMode"], targetRowCount, 1).setDataValidation(cmRule);
+    }
+  } catch (e) {
+    // Non-fatal validation refresh guard
+  }
+}
+
+function refreshMartProductsColumnValidationsSafe(ss) {
+  try {
+    var catSheet = ensureMartSheet(ss, "Mart_Categories");
+    var setSheet = ensureMartSheet(ss, "Mart_Settings");
+    var mergedSettings = mergeSettings(readSettingsMap(setSheet));
+    var allCats = readMartRows(catSheet, "Mart_Categories");
+    var allAttrs = readMartAttributesWithBackup(ss, mergedSettings);
+    var catIndex = buildCategoryLookupIndex(allCats);
+    refreshMartProductsColumnValidations(ss, ensureMartSheet(ss, "Mart_Products"), catIndex, allAttrs);
+  } catch (e) {
+    // Ignore errors
+  }
+}
+
+/**
+ * Populates sheet helper columns (level1Cat..3, relatableCats, gender, ageGroup, material, brand)
+ * when a product is created or edited from the Dashboard so 2-way sync stays accurate.
+ */
+function populateProductHelperColumnsForRecord(ss, targetObj, fallbackCategoriesCsv, fallbackAttrsJson) {
+  try {
+    var catSheet = ensureMartSheet(ss, "Mart_Categories");
+    var allCats = readMartRows(catSheet, "Mart_Categories");
+    var catIndex = buildCategoryLookupIndex(allCats);
+    var effCatsCsv =
+      targetObj.categories !== undefined ? String(targetObj.categories || "") : String(fallbackCategoriesCsv || "");
+    if (targetObj.categories !== undefined || fallbackCategoriesCsv !== undefined) {
+      var helperCats = resolveCategoriesToHelperFields(effCatsCsv, catIndex);
+      if (targetObj.level1Cat === undefined) targetObj.level1Cat = helperCats.level1Cat;
+      if (targetObj.level2Cat === undefined) targetObj.level2Cat = helperCats.level2Cat;
+      if (targetObj.level3Cat === undefined) targetObj.level3Cat = helperCats.level3Cat;
+      if (targetObj.relatableCats === undefined) targetObj.relatableCats = helperCats.relatableCats;
+    }
+    var effAttrsJson =
+      targetObj.attributesJson !== undefined
+        ? String(targetObj.attributesJson || "")
+        : String(fallbackAttrsJson || "");
+    if (targetObj.attributesJson !== undefined || fallbackAttrsJson !== undefined) {
+      var parsedAttrs = parseAttributesJsonSafe(effAttrsJson);
+      if (targetObj.gender === undefined) targetObj.gender = parsedAttrs.gender;
+      if (targetObj.ageGroup === undefined) targetObj.ageGroup = parsedAttrs.ageGroup;
+      if (targetObj.material === undefined) targetObj.material = parsedAttrs.material;
+      if (targetObj.brand === undefined) targetObj.brand = parsedAttrs.brand;
+    }
+  } catch (e) {
+    // Non-fatal helper column sync guard
+  }
+  return targetObj;
+}
+
+/**
+ * Simple onEdit trigger for real-time 3-level cascading dropdowns, auto-SKU,
+ * attributesJson sync, and draft-until-photo (active = FALSE) directly inside Mart_Products.
+ */
+function onEdit(e) {
+  try {
+    if (!e || !e.range) return;
+    var sheet = e.range.getSheet();
+    if (!sheet || sheet.getName() !== "Mart_Products") return;
+    var startRow = e.range.getRow();
+    if (startRow < 2) return;
+    handleMartProductsSheetEdit(e);
+  } catch (err) {
+    // Keep sheet editing responsive
+  }
+}
+
+function handleMartProductsSheetEdit(e) {
+  var ss = e.source || getBoundSpreadsheet();
+  var sheet = e.range.getSheet();
+  var lastCol = Math.max(1, sheet.getLastColumn());
+  var rawHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var colMap = {};
+  for (var c = 0; c < rawHeaders.length; c++) {
+    var h = String(rawHeaders[c] || "").trim();
+    if (h) colMap[h] = c + 1;
+  }
+
+  var startCol = e.range.getColumn();
+  var numCols = e.range.getNumColumns();
+  var endCol = startCol + numCols - 1;
+  var startRow = e.range.getRow();
+  var numRows = Math.min(25, e.range.getNumRows()); // Cap large pastes to menu sync
+
+  var isColEdited = function (name) {
+    var colIdx = colMap[name];
+    return Boolean(colIdx && colIdx >= startCol && colIdx <= endCol);
+  };
+
+  var l1Edited = isColEdited("level1Cat");
+  var l2Edited = isColEdited("level2Cat");
+  var l3Edited = isColEdited("level3Cat");
+  var relEdited = isColEdited("relatableCats");
+  var catsCsvEdited = isColEdited("categories");
+  var attrColEdited =
+    isColEdited("gender") || isColEdited("ageGroup") || isColEdited("material") || isColEdited("brand");
+  var nameEdited = isColEdited("nameEn") || isColEdited("nameBn");
+  var imgEdited = isColEdited("imageUrl");
+  var skuEdited = isColEdited("sku");
+
+  if (
+    !l1Edited &&
+    !l2Edited &&
+    !l3Edited &&
+    !relEdited &&
+    !catsCsvEdited &&
+    !attrColEdited &&
+    !nameEdited &&
+    !imgEdited &&
+    !skuEdited
+  ) {
+    return;
+  }
+
+  var catSheet = ensureMartSheet(ss, "Mart_Categories");
+  var allCats = readMartRows(catSheet, "Mart_Categories");
+  var catIndex = buildCategoryLookupIndex(allCats);
+
+  // Read existing SKUs across sheet to ensure sequential uniqueness
+  var allLastRow = sheet.getLastRow();
+  var existingSkuTracker = [];
+  if (allLastRow > 1 && colMap["sku"]) {
+    var allSkus = sheet.getRange(2, colMap["sku"], allLastRow - 1, 1).getValues();
+    var allIds = colMap["id"] ? sheet.getRange(2, colMap["id"], allLastRow - 1, 1).getValues() : null;
+    for (var s = 0; s < allSkus.length; s++) {
+      existingSkuTracker.push({
+        rowNumber: s + 2,
+        id: allIds ? String(allIds[s][0] || "") : "ROW-" + (s + 2),
+        sku: String(allSkus[s][0] || "").trim().toUpperCase()
+      });
+    }
+  }
+
+  var nowIso = new Date().toISOString();
+  var autoSkuPattern = /^XM-[A-Z0-9]{3}-[A-Z0-9]{3}-[A-Z0-9]{3}-\d{4,}$/;
+
+  for (var offset = 0; offset < numRows; offset++) {
+    var r = startRow + offset;
+    var rowVals = sheet.getRange(r, 1, 1, lastCol).getValues()[0];
+    var rowObj = {};
+    for (var hc = 0; hc < rawHeaders.length; hc++) {
+      var hName = String(rawHeaders[hc] || "").trim();
+      if (hName) rowObj[hName] = rowVals[hc];
+    }
+
+    // Check if row has meaningful content
+    var hasContent =
+      String(rowObj.nameEn || "").trim() ||
+      String(rowObj.nameBn || "").trim() ||
+      String(rowObj.level1Cat || "").trim() ||
+      String(rowObj.level2Cat || "").trim() ||
+      String(rowObj.level3Cat || "").trim() ||
+      String(rowObj.categories || "").trim() ||
+      String(rowObj.sku || "").trim();
+    if (!hasContent) continue;
+
+    // Clear dependent child selections on single-column parent edit
+    if (l1Edited && numCols === 1) {
+      rowObj.level2Cat = "";
+      rowObj.level3Cat = "";
+      if (colMap["level2Cat"]) sheet.getRange(r, colMap["level2Cat"]).setValue("");
+      if (colMap["level3Cat"]) sheet.getRange(r, colMap["level3Cat"]).setValue("");
+    } else if (l2Edited && numCols === 1) {
+      rowObj.level3Cat = "";
+      if (colMap["level3Cat"]) sheet.getRange(r, colMap["level3Cat"]).setValue("");
+    }
+
+    // 1. Sync Categories <-> Helper columns & Cascading Validations
+    var resolved = resolveHelperFieldsToCategoriesCsv(rowObj, catIndex);
+    if (catsCsvEdited && !l1Edited && !l2Edited && !l3Edited) {
+      var rev = resolveCategoriesToHelperFields(rowObj.categories, catIndex);
+      if (colMap["level1Cat"]) sheet.getRange(r, colMap["level1Cat"]).setValue(rev.level1Cat);
+      if (colMap["level2Cat"]) sheet.getRange(r, colMap["level2Cat"]).setValue(rev.level2Cat);
+      if (colMap["level3Cat"]) sheet.getRange(r, colMap["level3Cat"]).setValue(rev.level3Cat);
+      if (colMap["relatableCats"]) sheet.getRange(r, colMap["relatableCats"]).setValue(rev.relatableCats);
+      rowObj.level1Cat = rev.level1Cat;
+      rowObj.level2Cat = rev.level2Cat;
+      rowObj.level3Cat = rev.level3Cat;
+      resolved = resolveHelperFieldsToCategoriesCsv(rowObj, catIndex);
+    } else {
+      if (resolved.l1Cat && colMap["level1Cat"]) {
+        var fmtL1 = formatSheetCategoryOption(resolved.l1Cat);
+        if (String(rowObj.level1Cat || "").trim() !== fmtL1) {
+          sheet.getRange(r, colMap["level1Cat"]).setValue(fmtL1);
+        }
+      }
+      if (resolved.l2Cat && colMap["level2Cat"]) {
+        var fmtL2 = formatSheetCategoryOption(resolved.l2Cat);
+        if (String(rowObj.level2Cat || "").trim() !== fmtL2) {
+          sheet.getRange(r, colMap["level2Cat"]).setValue(fmtL2);
+        }
+      }
+      if (resolved.l3Cat && colMap["level3Cat"]) {
+        var fmtL3 = formatSheetCategoryOption(resolved.l3Cat);
+        if (String(rowObj.level3Cat || "").trim() !== fmtL3) {
+          sheet.getRange(r, colMap["level3Cat"]).setValue(fmtL3);
+        }
+      }
+      if (colMap["categories"] && resolved.categoriesCsv !== String(rowObj.categories || "").trim()) {
+        sheet.getRange(r, colMap["categories"]).setValue(resolved.categoriesCsv);
+      }
+      rowObj.categories = resolved.categoriesCsv;
+    }
+
+    applyRowCascadeValidation(sheet, r, colMap, resolved.l1Cat, resolved.l2Cat, catIndex);
+
+    // 2. Auto ID & Timestamp & Sourcing Defaults
+    var rowId = String(rowObj.id || "").trim();
+    if (!rowId && colMap["id"]) {
+      rowId = generateMartId("Mart_Products") + (numRows > 1 ? "-" + offset : "");
+      sheet.getRange(r, colMap["id"]).setValue(rowId);
+    }
+    if (!String(rowObj.createdAt || "").trim() && colMap["createdAt"]) {
+      sheet.getRange(r, colMap["createdAt"]).setValue(nowIso);
+    }
+    if (!String(rowObj.fulfillmentType || "").trim() && colMap["fulfillmentType"]) {
+      sheet.getRange(r, colMap["fulfillmentType"]).setValue("own_stock");
+    }
+    if (!String(rowObj.collectionMode || "").trim() && colMap["collectionMode"]) {
+      sheet.getRange(r, colMap["collectionMode"]).setValue("store_collects");
+    }
+    if (String(rowObj.supplierAvailable) === "" && colMap["supplierAvailable"]) {
+      sheet.getRange(r, colMap["supplierAvailable"]).setValue(true);
+    }
+    if ((rowObj.lowStockThreshold === "" || rowObj.lowStockThreshold === null) && colMap["lowStockThreshold"]) {
+      sheet.getRange(r, colMap["lowStockThreshold"]).setValue(5);
+    }
+    if ((rowObj.featured === "" || rowObj.featured === null) && colMap["featured"]) {
+      sheet.getRange(r, colMap["featured"]).setValue(false);
+    }
+
+    // 3. Draft-Until-Photo Protection (active = FALSE when imageUrl is empty and active was blank)
+    if (colMap["active"]) {
+      var hasImg = Boolean(String(rowObj.imageUrl || "").trim());
+      if (rowObj.active === "" || rowObj.active === null || rowObj.active === undefined) {
+        sheet.getRange(r, colMap["active"]).setValue(hasImg);
+      }
+    }
+
+    // 4. Auto SKU generation (when empty OR category changed and SKU follows XM-... auto format)
+    if (colMap["sku"]) {
+      var currentSku = String(rowObj.sku || "").trim().toUpperCase();
+      var shouldAutoSku =
+        !currentSku ||
+        ((l1Edited || l2Edited || l3Edited || catsCsvEdited) && !skuEdited && autoSkuPattern.test(currentSku));
+      if (shouldAutoSku) {
+        var trackerFiltered = existingSkuTracker.filter(function (item) {
+          return item.rowNumber !== r;
+        });
+        var nextSku = computeNextSequentialSkuServer(
+          rowObj.categories || "",
+          trackerFiltered,
+          allCats,
+          ""
+        );
+        sheet.getRange(r, colMap["sku"]).setValue(nextSku);
+        var updatedFound = false;
+        for (var tf = 0; tf < existingSkuTracker.length; tf++) {
+          if (existingSkuTracker[tf].rowNumber === r) {
+            existingSkuTracker[tf].sku = nextSku;
+            updatedFound = true;
+            break;
+          }
+        }
+        if (!updatedFound) {
+          existingSkuTracker.push({ rowNumber: r, id: rowId || "ROW-" + r, sku: nextSku });
+        }
+      }
+    }
+
+    // 5. Sync Attribute Helper Columns -> attributesJson
+    if (attrColEdited) {
+      var nextAttrJson = buildAttributesJsonFromFields(
+        rowObj.attributesJson,
+        rowObj.gender,
+        rowObj.ageGroup,
+        rowObj.material,
+        rowObj.brand
+      );
+      if (colMap["attributesJson"]) {
+        sheet.getRange(r, colMap["attributesJson"]).setValue(nextAttrJson);
+      }
+    }
+  }
+
+  invalidateMartCache();
+}
+
+/**
+ * Menu / Setup Action: Repairs & syncs ALL rows in Mart_Products
+ * (3-level cascading dropdowns, Auto-SKU, IDs, categories CSV, attributesJson, active=FALSE when no image).
+ */
+function syncMartProductsBulkSheet(silent) {
+  var ss = getBoundSpreadsheet();
+  var prodSheet = ensureMartSheet(ss, "Mart_Products");
+  var catSheet = ensureMartSheet(ss, "Mart_Categories");
+  var setSheet = ensureMartSheet(ss, "Mart_Settings");
+  var mergedSettings = mergeSettings(readSettingsMap(setSheet));
+  var allCats = readMartRows(catSheet, "Mart_Categories");
+  var allAttrs = readMartAttributesWithBackup(ss, mergedSettings);
+  var catIndex = buildCategoryLookupIndex(allCats);
+
+  // Refresh column-level dropdowns first
+  refreshMartProductsColumnValidations(ss, prodSheet, catIndex, allAttrs);
+
+  var lastRow = prodSheet.getLastRow();
+  if (lastRow <= 1) {
+    invalidateMartCache();
+    if (!silent) {
+      try {
+        ss.toast("Dropdowns ready in Mart_Products!", "Xeetrix Mart", 4);
+      } catch (e) {}
+    }
+    return 0;
+  }
+
+  var lastCol = Math.max(1, prodSheet.getLastColumn());
+  var data = prodSheet.getRange(1, 1, lastRow, lastCol).getValues();
+  var headers = data[0];
+  var colMap = {};
+  for (var c = 0; c < headers.length; c++) {
+    var h = String(headers[c] || "").trim();
+    if (h) colMap[h] = c + 1;
+  }
+
+  // First collect already assigned SKUs to prevent duplicates across pasted batch
+  var skuTracker = [];
+  for (var i = 1; i < data.length; i++) {
+    var existingSku = colMap["sku"] ? String(data[i][colMap["sku"] - 1] || "").trim().toUpperCase() : "";
+    if (existingSku) {
+      skuTracker.push({ rowNumber: i + 1, id: "ROW-" + (i + 1), sku: existingSku });
+    }
+  }
+
+  var nowIso = new Date().toISOString();
+  var syncedCount = 0;
+
+  for (var rIdx = 1; rIdx < data.length; rIdx++) {
+    var rowNum = rIdx + 1;
+    var rowArr = data[rIdx];
+    var rowObj = {};
+    var hasAnyVal = false;
+    for (var hc = 0; hc < headers.length; hc++) {
+      var hKey = String(headers[hc] || "").trim();
+      if (hKey) {
+        rowObj[hKey] = rowArr[hc];
+        if (rowArr[hc] !== "" && rowArr[hc] !== null && rowArr[hc] !== undefined) {
+          hasAnyVal = true;
+        }
+      }
+    }
+    if (!hasAnyVal) continue;
+
+    // 1. Two-way Category sync
+    var hasHelperCats = Boolean(
+      String(rowObj.level1Cat || "").trim() ||
+        String(rowObj.level2Cat || "").trim() ||
+        String(rowObj.level3Cat || "").trim()
+    );
+    var l1CatObj = null;
+    var l2CatObj = null;
+    if (hasHelperCats) {
+      var resFwd = resolveHelperFieldsToCategoriesCsv(rowObj, catIndex);
+      l1CatObj = resFwd.l1Cat;
+      l2CatObj = resFwd.l2Cat;
+      if (resFwd.l1Cat && colMap["level1Cat"]) rowArr[colMap["level1Cat"] - 1] = formatSheetCategoryOption(resFwd.l1Cat);
+      if (resFwd.l2Cat && colMap["level2Cat"]) rowArr[colMap["level2Cat"] - 1] = formatSheetCategoryOption(resFwd.l2Cat);
+      if (resFwd.l3Cat && colMap["level3Cat"]) rowArr[colMap["level3Cat"] - 1] = formatSheetCategoryOption(resFwd.l3Cat);
+      if (colMap["categories"] && resFwd.categoriesCsv) {
+        rowArr[colMap["categories"] - 1] = resFwd.categoriesCsv;
+        rowObj.categories = resFwd.categoriesCsv;
+      }
+    } else if (String(rowObj.categories || "").trim()) {
+      var resRev = resolveCategoriesToHelperFields(rowObj.categories, catIndex);
+      if (colMap["level1Cat"]) rowArr[colMap["level1Cat"] - 1] = resRev.level1Cat;
+      if (colMap["level2Cat"]) rowArr[colMap["level2Cat"] - 1] = resRev.level2Cat;
+      if (colMap["level3Cat"]) rowArr[colMap["level3Cat"] - 1] = resRev.level3Cat;
+      if (colMap["relatableCats"]) rowArr[colMap["relatableCats"] - 1] = resRev.relatableCats;
+      var parsedChain = resolveHelperFieldsToCategoriesCsv(
+        {
+          level1Cat: resRev.level1Cat,
+          level2Cat: resRev.level2Cat,
+          level3Cat: resRev.level3Cat,
+          categories: rowObj.categories
+        },
+        catIndex
+      );
+      l1CatObj = parsedChain.l1Cat;
+      l2CatObj = parsedChain.l2Cat;
+    }
+
+    // Apply row-level cascading dropdown for L2/L3
+    applyRowCascadeValidation(prodSheet, rowNum, colMap, l1CatObj, l2CatObj, catIndex);
+
+    // 2. Two-way Attribute sync
+    var hasHelperAttrs = Boolean(
+      String(rowObj.gender || "").trim() ||
+        String(rowObj.ageGroup || "").trim() ||
+        String(rowObj.material || "").trim() ||
+        String(rowObj.brand || "").trim()
+    );
+    if (hasHelperAttrs && colMap["attributesJson"]) {
+      rowArr[colMap["attributesJson"] - 1] = buildAttributesJsonFromFields(
+        rowObj.attributesJson,
+        rowObj.gender,
+        rowObj.ageGroup,
+        rowObj.material,
+        rowObj.brand
+      );
+    } else if (String(rowObj.attributesJson || "").trim()) {
+      var pAttrs = parseAttributesJsonSafe(rowObj.attributesJson);
+      if (colMap["gender"]) rowArr[colMap["gender"] - 1] = pAttrs.gender;
+      if (colMap["ageGroup"]) rowArr[colMap["ageGroup"] - 1] = pAttrs.ageGroup;
+      if (colMap["material"]) rowArr[colMap["material"] - 1] = pAttrs.material;
+      if (colMap["brand"]) rowArr[colMap["brand"] - 1] = pAttrs.brand;
+    }
+
+    // 3. Auto ID, SKU, Defaults & Draft-Until-Photo
+    if (colMap["id"] && !String(rowObj.id || "").trim()) {
+      rowArr[colMap["id"] - 1] = generateMartId("Mart_Products") + "-" + rIdx;
+    }
+    if (colMap["sku"] && !String(rowObj.sku || "").trim()) {
+      var genSku = computeNextSequentialSkuServer(rowObj.categories || "", skuTracker, allCats, "");
+      rowArr[colMap["sku"] - 1] = genSku;
+      skuTracker.push({ rowNumber: rowNum, id: "ROW-" + rowNum, sku: genSku });
+    }
+    if (colMap["createdAt"] && !String(rowObj.createdAt || "").trim()) {
+      rowArr[colMap["createdAt"] - 1] = nowIso;
+    }
+    if (colMap["fulfillmentType"] && !String(rowObj.fulfillmentType || "").trim()) {
+      rowArr[colMap["fulfillmentType"] - 1] = "own_stock";
+    }
+    if (colMap["collectionMode"] && !String(rowObj.collectionMode || "").trim()) {
+      rowArr[colMap["collectionMode"] - 1] = "store_collects";
+    }
+    if (colMap["supplierAvailable"] && String(rowObj.supplierAvailable) === "") {
+      rowArr[colMap["supplierAvailable"] - 1] = true;
+    }
+    if (
+      colMap["lowStockThreshold"] &&
+      (rowObj.lowStockThreshold === "" || rowObj.lowStockThreshold === null)
+    ) {
+      rowArr[colMap["lowStockThreshold"] - 1] = 5;
+    }
+    if (colMap["featured"] && (rowObj.featured === "" || rowObj.featured === null)) {
+      rowArr[colMap["featured"] - 1] = false;
+    }
+    if (colMap["active"] && (rowObj.active === "" || rowObj.active === null || rowObj.active === undefined)) {
+      rowArr[colMap["active"] - 1] = Boolean(String(rowObj.imageUrl || "").trim());
+    }
+    syncedCount += 1;
+  }
+
+  // Write batch changes back to sheet
+  if (data.length > 1) {
+    prodSheet.getRange(2, 1, data.length - 1, lastCol).setValues(data.slice(1));
+  }
+
+  invalidateMartCache();
+  buildAndCachePublicBundle(ss);
+
+  if (!silent) {
+    try {
+      ss.toast(
+        "Synced " + syncedCount + " rows (Dropdowns, Auto-SKU, Attributes & Cache updated).",
+        "Xeetrix Mart",
+        5
+      );
+    } catch (e) {
+      // Ignore outside UI
+    }
+  }
+  return syncedCount;
 }
 
 function invalidateMartCache() {
@@ -621,7 +1533,7 @@ function normalizeMartCell(header, val) {
   return val === null || val === undefined ? "" : String(val);
 }
 
-function readMartRows(sheet, sheetName) {
+function readMartRows(sheet, sheetName, optionalCategories) {
   if (!sheet || sheet.getLastRow() <= 1) {
     return [];
   }
@@ -637,6 +1549,11 @@ function readMartRows(sheet, sheetName) {
     var name = String(rawHeaders[col] || "").trim();
     if (name) colMap[name] = col;
   }
+
+  var catIndex =
+    sheetName === "Mart_Products" && Array.isArray(optionalCategories) && optionalCategories.length > 0
+      ? buildCategoryLookupIndex(optionalCategories)
+      : null;
 
   var rows = [];
   for (var r = 1; r < data.length; r++) {
@@ -658,8 +1575,11 @@ function readMartRows(sheet, sheetName) {
       obj[header] = normalizeMartCell(header, cellVal);
     }
 
-    // Legacy compatibility & sensible defaults
+    // Legacy compatibility, direct sheet helper fallback & sensible defaults
     if (sheetName === "Mart_Products") {
+      if (!obj.id) {
+        obj.id = "ROW-" + (r + 1);
+      }
       if (!obj.nameEn && colMap["name"] !== undefined) {
         obj.nameEn = String(row[colMap["name"]] || "");
       }
@@ -668,6 +1588,15 @@ function readMartRows(sheet, sheetName) {
         if (legacyCat) {
           obj.categories = slugifyText(legacyCat) || legacyCat;
         }
+      }
+      if (!obj.categories && catIndex && (obj.level1Cat || obj.level2Cat || obj.level3Cat)) {
+        obj.categories = resolveHelperFieldsToCategoriesCsv(obj, catIndex).categoriesCsv;
+      }
+      if (!obj.attributesJson && (obj.gender || obj.ageGroup || obj.material || obj.brand)) {
+        obj.attributesJson = buildAttributesJsonFromFields("", obj.gender, obj.ageGroup, obj.material, obj.brand);
+      }
+      if (!obj.imageUrl && (colMap["active"] === undefined || row[colMap["active"]] === "")) {
+        obj.active = false;
       }
       if (!obj.variantsEn && colMap["variants"] !== undefined) {
         obj.variantsEn = String(row[colMap["variants"]] || "");
@@ -872,8 +1801,14 @@ function buildAndCachePublicBundle(ss) {
     supplierActiveMap[suppliers[s].id] = suppliers[s].active === true;
   }
 
+  var activeCategories = sortTaxonomyByOrder(
+    readMartRows(catSheet, "Mart_Categories").filter(function (c) {
+      return c.active === true;
+    })
+  );
+
   // Strip internal costPrice / costOverride / supplierId / sourceName from public storefront payload
-  var activeProducts = readMartRows(prodSheet, "Mart_Products")
+  var activeProducts = readMartRows(prodSheet, "Mart_Products", activeCategories)
     .filter(function (p) {
       return p.active === true;
     })
@@ -920,11 +1855,6 @@ function buildAndCachePublicBundle(ss) {
       };
     });
 
-  var activeCategories = sortTaxonomyByOrder(
-    readMartRows(catSheet, "Mart_Categories").filter(function (c) {
-      return c.active === true;
-    })
-  );
   var activeLabels = sortTaxonomyByOrder(
     readMartRows(labelSheet, "Mart_Labels").filter(function (l) {
       return l.active === true;
@@ -1785,11 +2715,13 @@ function doGet(e) {
       var setSheet = ensureMartSheet(ss, "Mart_Settings");
       var mergedSettings = mergeSettings(readSettingsMap(setSheet));
 
+      var catRows = sortTaxonomyByOrder(readMartRows(catSheet, "Mart_Categories"));
+
       return jsonOut({
         ok: true,
         data: {
-          products: readMartRows(prodSheet, "Mart_Products"),
-          categories: sortTaxonomyByOrder(readMartRows(catSheet, "Mart_Categories")),
+          products: readMartRows(prodSheet, "Mart_Products", catRows),
+          categories: catRows,
           labels: sortTaxonomyByOrder(readMartRows(labelSheet, "Mart_Labels")),
           attributes: readMartAttributesWithBackup(ss, mergedSettings),
           suppliers: readMartRows(supSheet, "Mart_Suppliers"),
@@ -1914,6 +2846,7 @@ function doPost(e) {
           payload.slug = slugifyText(payload.nameEn || payload.nameBn || payload.sku);
         }
         payload = sanitizeProductFieldsAndSyncStock(payload, "", payload.sku);
+        payload = populateProductHelperColumnsForRecord(ss, payload, payload.categories, payload.attributesJson);
         var newSku = String(payload.sku || "").trim().toUpperCase();
         if (newSku) {
           for (var ep = 0; ep < existingProds.length; ep++) {
@@ -1982,7 +2915,20 @@ function doPost(e) {
 
       sheet.appendRow(rowValues);
 
-      if (sheetName === "Mart_Orders") {
+      if (sheetName === "Mart_Products") {
+        try {
+          var newRowIdx = sheet.getLastRow();
+          var appendCatSheet = ensureMartSheet(ss, "Mart_Categories");
+          var appendCatIndex = buildCategoryLookupIndex(readMartRows(appendCatSheet, "Mart_Categories"));
+          var appendColMap = {};
+          for (var ach = 0; ach < actualHeaders.length; ach++) {
+            var achName = String(actualHeaders[ach] || "").trim();
+            if (achName) appendColMap[achName] = ach + 1;
+          }
+          var appendChain = resolveHelperFieldsToCategoriesCsv(record, appendCatIndex);
+          applyRowCascadeValidation(sheet, newRowIdx, appendColMap, appendChain.l1Cat, appendChain.l2Cat, appendCatIndex);
+        } catch (e) {}
+      } else if (sheetName === "Mart_Orders") {
         if (payload.itemsJson) {
           decrementStockForOrder(ss, String(payload.itemsJson));
         }
@@ -1991,6 +2937,9 @@ function doPost(e) {
         }
       } else if (sheetName === "Mart_Attributes") {
         syncAttributesBackupToSettings(ss);
+        refreshMartProductsColumnValidationsSafe(ss);
+      } else if (sheetName === "Mart_Categories") {
+        refreshMartProductsColumnValidationsSafe(ss);
       }
 
       invalidateMartCache();
@@ -2066,6 +3015,9 @@ function doPost(e) {
 
       if (batchSheetName === "Mart_Attributes") {
         syncAttributesBackupToSettings(ss);
+        refreshMartProductsColumnValidationsSafe(ss);
+      } else if (batchSheetName === "Mart_Categories") {
+        refreshMartProductsColumnValidationsSafe(ss);
       }
 
       invalidateMartCache();
@@ -2101,6 +3053,18 @@ function doPost(e) {
         if (String(ids[r][0]) === targetId) {
           foundRowIndex = r + 2;
           break;
+        }
+      }
+      if (foundRowIndex === -1) {
+        var rowFallbackMatch = targetId.match(/^ROW-(\d+)$/);
+        if (rowFallbackMatch) {
+          var parsedRowIdx = parseInt(rowFallbackMatch[1], 10);
+          if (parsedRowIdx >= 2 && parsedRowIdx <= lastRow) {
+            foundRowIndex = parsedRowIdx;
+            var permanentId = generateMartId(updSheetName);
+            updSheet.getRange(foundRowIndex, idColIdx + 1).setValue(permanentId);
+            targetId = permanentId;
+          }
         }
       }
       if (foundRowIndex === -1) {
@@ -2160,6 +3124,12 @@ function doPost(e) {
           }
         }
         updates = prodSyncObj;
+        populateProductHelperColumnsForRecord(
+          ss,
+          updates,
+          updates.categories !== undefined ? updates.categories : prevRowObj.categories,
+          updates.attributesJson !== undefined ? updates.attributesJson : prevRowObj.attributesJson
+        );
       }
 
       var updateKeys = Object.keys(updates);
@@ -2198,6 +3168,9 @@ function doPost(e) {
 
       if (updSheetName === "Mart_Attributes") {
         syncAttributesBackupToSettings(ss);
+        refreshMartProductsColumnValidationsSafe(ss);
+      } else if (updSheetName === "Mart_Categories") {
+        refreshMartProductsColumnValidationsSafe(ss);
       }
 
       invalidateMartCache();
@@ -2227,9 +3200,24 @@ function doPost(e) {
       var delIdCol = delHeaders.indexOf("id");
       if (delIdCol === -1) delIdCol = 0;
       var delIds = delSheet.getRange(2, delIdCol + 1, delLastRow - 1, 1).getValues();
+      var delFoundRow = -1;
       for (var d = 0; d < delIds.length; d++) {
         if (String(delIds[d][0]) === delId) {
-          var rowToDelete = d + 2;
+          delFoundRow = d + 2;
+          break;
+        }
+      }
+      if (delFoundRow === -1) {
+        var delRowFallback = delId.match(/^ROW-(\d+)$/);
+        if (delRowFallback) {
+          var delParsedIdx = parseInt(delRowFallback[1], 10);
+          if (delParsedIdx >= 2 && delParsedIdx <= delLastRow && !String(delIds[delParsedIdx - 2][0] || "").trim()) {
+            delFoundRow = delParsedIdx;
+          }
+        }
+      }
+      if (delFoundRow !== -1) {
+        var rowToDelete = delFoundRow;
           var delStockRestored = false;
           var deletedRowObj = readSingleRowObject(delSheet, delHeaders, rowToDelete);
           if (delSheetName === "Mart_Orders") {
@@ -2248,14 +3236,15 @@ function doPost(e) {
               deletedRowObj.slug,
               deletedRowObj.parentSlug || ""
             );
+            refreshMartProductsColumnValidationsSafe(ss);
           } else if (delSheetName === "Mart_Labels" && deletedRowObj.slug) {
             cascadeTaxonomySlugChange(ss, "Mart_Labels", deletedRowObj.slug, "");
           } else if (delSheetName === "Mart_Attributes") {
             syncAttributesBackupToSettings(ss);
+            refreshMartProductsColumnValidationsSafe(ss);
           }
           invalidateMartCache();
           return jsonOut({ ok: true, id: delId, deleted: true, stockRestored: delStockRestored });
-        }
       }
       return jsonOut({ ok: false, error: "Record id not found: " + delId });
     }

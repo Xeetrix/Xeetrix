@@ -2383,13 +2383,14 @@ export async function updateMartRecord(
   sheet: Exclude<MartSheetName, "Mart_Settings">,
   id: string,
   updates: Record<string, unknown>
-): Promise<void> {
-  await postToMartAdminApi({
+): Promise<{ id: string }> {
+  const res = await postToMartAdminApi<{ id?: string }>({
     action: "updateRecord",
     sheet,
     id,
     updates,
   });
+  return { id: res.id || id };
 }
 
 export async function deleteMartRecord(

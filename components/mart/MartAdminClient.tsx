@@ -145,6 +145,7 @@ type MartAdminSection =
   | "settings";
 
 type ProductVariationMode = "none" | "simple" | "matrix";
+type ProductStatusFilter = "all" | "needs_photo" | "draft" | "live";
 
 const MART_ITEM_STATUSES: MartItemStatus[] = [
   "Pending",
@@ -296,6 +297,9 @@ export function MartAdminClient() {
   const [autoSquarePad, setAutoSquarePad] = useState(true);
   const [savingProduct, setSavingProduct] = useState(false);
   const [productSearch, setProductSearch] = useState("");
+  const [productStatusFilter, setProductStatusFilter] = useState<ProductStatusFilter>("all");
+  const [autoPublishOnQuickPhoto, setAutoPublishOnQuickPhoto] = useState(true);
+  const [quickUploadingProdId, setQuickUploadingProdId] = useState<string | null>(null);
   const [copiedAdminProdId, setCopiedAdminProdId] = useState<string | null>(null);
 
   function handleCopyAdminProductLink(p: MartProduct) {
@@ -708,6 +712,82 @@ export function MartAdminClient() {
       showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
     } finally {
       setUploadingProdImg(false);
+      e.target.value = "";
+    }
+  }
+
+  async function handleQuickProductPhotoUpload(
+    p: MartProduct,
+    e: React.ChangeEvent<HTMLInputElement>
+  ) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!data?.isLiveBackend) {
+      showNotice("error", t.admin.products.errConnectBackend);
+      e.target.value = "";
+      return;
+    }
+
+    setQuickUploadingProdId(p.id);
+    try {
+      const prepared = await prepareMartProductImageUpload(file, {
+        autoSquarePad,
+        targetSize: 1000,
+        quality: 0.9,
+      });
+      const uploaded = await uploadMartImageToDrive({
+        fileName: prepared.fileName,
+        mimeType: prepared.mimeType,
+        base64Data: prepared.base64Data,
+        folderType: "products",
+      });
+      const shouldPublish = autoPublishOnQuickPhoto && !p.active;
+      const updates: Record<string, unknown> = {
+        imageUrl: uploaded.url,
+        ...(shouldPublish ? { active: true } : {}),
+      };
+      const res = await updateMartRecord("Mart_Products", p.id, updates);
+      const nextId = res?.id || p.id;
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              products: prev.products.map((item) =>
+                item.id === p.id
+                  ? {
+                      ...item,
+                      id: nextId,
+                      imageUrl: uploaded.url,
+                      ...(shouldPublish ? { active: true } : {}),
+                    }
+                  : item
+              ),
+            }
+          : prev
+      );
+      if (editingProductId === p.id) {
+        setEditingProductId(nextId);
+        setProdImageUrl(uploaded.url);
+        if (shouldPublish) setProdActive(true);
+      }
+      const dimTag =
+        prepared.outputWidth > 0 && prepared.outputHeight > 0
+          ? `${prepared.outputWidth}×${prepared.outputHeight} · `
+          : "";
+      const publishNote = shouldPublish
+        ? lang === "bn"
+          ? " ও লাইভ করা হয়েছে"
+          : " & published live"
+        : "";
+      showNotice(
+        "success",
+        `${t.admin.products.msgImageUploaded}${publishNote} (${dimTag}${uploaded.fileId})`
+      );
+    } catch (err) {
+      const apiErr = err as MartApiError;
+      showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
+    } finally {
+      setQuickUploadingProdId(null);
       e.target.value = "";
     }
   }
@@ -2550,10 +2630,36 @@ export function MartAdminClient() {
     });
   }, [orders, orderSearch, orderStatusFilter]);
 
+  const productFilterCounts = useMemo(() => {
+    let needsPhoto = 0;
+    let draft = 0;
+    let live = 0;
+    products.forEach((p) => {
+      if (!String(p.imageUrl || "").trim()) needsPhoto += 1;
+      if (p.active) live += 1;
+      else draft += 1;
+    });
+    return {
+      all: products.length,
+      needs_photo: needsPhoto,
+      draft,
+      live,
+    };
+  }, [products]);
+
   const filteredProducts = useMemo(() => {
     const q = productSearch.trim().toLowerCase();
-    if (!q) return products;
     return products.filter((p) => {
+      if (productStatusFilter === "needs_photo" && String(p.imageUrl || "").trim()) {
+        return false;
+      }
+      if (productStatusFilter === "draft" && p.active) {
+        return false;
+      }
+      if (productStatusFilter === "live" && !p.active) {
+        return false;
+      }
+      if (!q) return true;
       const catNames = parseCsvSlugs(p.categories)
         .map((s) => {
           const c = categoryMap.get(s);
@@ -2576,7 +2682,7 @@ export function MartAdminClient() {
         .toLowerCase()
         .includes(q);
     });
-  }, [products, productSearch, categoryMap, labelMap, supMap]);
+  }, [products, productSearch, productStatusFilter, categoryMap, labelMap, supMap]);
 
   const prodUnitPriceNum = Number(prodPrice) || 0;
   const prodCostPriceNum = Number(prodCostPrice) || 0;
@@ -4252,6 +4358,87 @@ export function MartAdminClient() {
                     </button>
                   )}
                 </div>
+              </div>
+
+              {/* Segmented Status Filter Bar (All / Needs Photo / Draft / Live) + Auto-Publish Toggle */}
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Product status filter">
+                  {(
+                    [
+                      {
+                        key: "all" as const,
+                        labelEn: "All Products",
+                        labelBn: "সব পণ্য",
+                        count: productFilterCounts.all,
+                      },
+                      {
+                        key: "needs_photo" as const,
+                        labelEn: "Needs Photo",
+                        labelBn: "ছবি বাকি",
+                        count: productFilterCounts.needs_photo,
+                      },
+                      {
+                        key: "draft" as const,
+                        labelEn: "Draft",
+                        labelBn: "ড্রাফট",
+                        count: productFilterCounts.draft,
+                      },
+                      {
+                        key: "live" as const,
+                        labelEn: "Live",
+                        labelBn: "লাইভ",
+                        count: productFilterCounts.live,
+                      },
+                    ]
+                  ).map((tab) => {
+                    const isActive = productStatusFilter === tab.key;
+                    const needsAttn = tab.key === "needs_photo" && tab.count > 0;
+                    return (
+                      <button
+                        key={tab.key}
+                        type="button"
+                        role="tab"
+                        aria-selected={isActive}
+                        onClick={() => setProductStatusFilter(tab.key)}
+                        className={`min-h-[36px] inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap ${
+                          isActive
+                            ? "bg-[#0B5336] text-white"
+                            : needsAttn
+                            ? "bg-amber-50 text-amber-900 border border-amber-200 hover:bg-amber-100"
+                            : "bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900"
+                        }`}
+                      >
+                        {tab.key === "needs_photo" && <ImagePlus className="h-3.5 w-3.5 shrink-0" />}
+                        <span>{lang === "bn" ? tab.labelBn : tab.labelEn}</span>
+                        <span
+                          className={`rounded-md px-1.5 py-0.5 text-[11px] font-mono font-bold tabular-nums ${
+                            isActive
+                              ? "bg-white/20 text-white"
+                              : needsAttn
+                              ? "bg-amber-200/70 text-amber-950"
+                              : "bg-white text-slate-700"
+                          }`}
+                        >
+                          {toLocalizedDigits(tab.count, lang)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <label className="inline-flex items-center gap-2 text-xs text-slate-700 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={autoPublishOnQuickPhoto}
+                    onChange={(e) => setAutoPublishOnQuickPhoto(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-[#0B5336]"
+                  />
+                  <span className="font-medium">
+                    {lang === "bn"
+                      ? "ছবি দিলেই অটো-লাইভ (Live) হবে"
+                      : "Auto-publish live on photo upload"}
+                  </span>
+                </label>
               </div>
 
               {/* Minimalist 2-Column Product Add / Edit Studio */}
@@ -6215,7 +6402,7 @@ export function MartAdminClient() {
                       return (
                         <div key={p.id} className="p-4 space-y-3 text-xs">
                           <div className="flex items-start gap-3">
-                            <div className="h-14 w-14 rounded-xl bg-white p-0.5 overflow-hidden shrink-0 border border-slate-200">
+                            <div className="h-14 w-14 rounded-xl bg-white p-0.5 overflow-hidden shrink-0 border border-slate-200 relative flex items-center justify-center">
                               {p.imageUrl ? (
                                 // eslint-disable-next-line @next/next/no-img-element
                                 <img
@@ -6224,7 +6411,28 @@ export function MartAdminClient() {
                                   referrerPolicy="no-referrer"
                                   className="h-full w-full object-contain"
                                 />
-                              ) : null}
+                              ) : (
+                                <label
+                                  title={lang === "bn" ? "দ্রুত ছবি আপলোড করুন" : "Quick Upload Photo"}
+                                  className="h-full w-full flex flex-col items-center justify-center gap-0.5 bg-amber-50/70 text-amber-800 hover:bg-amber-100 cursor-pointer rounded-lg"
+                                >
+                                  {quickUploadingProdId === p.id ? (
+                                    <RefreshCw className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <ImagePlus className="h-4 w-4" />
+                                  )}
+                                  <span className="text-[9px] font-bold leading-none">
+                                    {lang === "bn" ? "ছবি দিন" : "Photo"}
+                                  </span>
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    disabled={quickUploadingProdId === p.id}
+                                    onChange={(ev) => handleQuickProductPhotoUpload(p, ev)}
+                                    className="sr-only"
+                                  />
+                                </label>
+                              )}
                             </div>
                             <div className="min-w-0 flex-1">
                               <div className="flex items-start justify-between gap-2">
@@ -6384,7 +6592,40 @@ export function MartAdminClient() {
                             </div>
                           </div>
 
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1">
+                            <label
+                              className={`min-h-[38px] inline-flex items-center justify-center gap-1 rounded-lg border px-2 py-1.5 font-medium whitespace-nowrap cursor-pointer ${
+                                !p.imageUrl
+                                  ? "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
+                                  : "border-slate-200 text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336]"
+                              }`}
+                            >
+                              {quickUploadingProdId === p.id ? (
+                                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Upload className="h-3.5 w-3.5" />
+                              )}
+                              <span>
+                                {quickUploadingProdId === p.id
+                                  ? lang === "bn"
+                                    ? "আপলোড..."
+                                    : "Uploading..."
+                                  : !p.imageUrl
+                                  ? lang === "bn"
+                                    ? "ছবি দিন"
+                                    : "Upload Photo"
+                                  : lang === "bn"
+                                  ? "ছবি বদলান"
+                                  : "New Photo"}
+                              </span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                disabled={quickUploadingProdId === p.id}
+                                onChange={(ev) => handleQuickProductPhotoUpload(p, ev)}
+                                className="sr-only"
+                              />
+                            </label>
                             <button
                               type="button"
                               onClick={() => handleCopyAdminProductLink(p)}
@@ -6492,7 +6733,7 @@ export function MartAdminClient() {
                             <tr key={p.id} className="hover:bg-slate-50">
                               <td className="px-4 py-3">
                                 <div className="flex items-center gap-3">
-                                  <div className="h-10 w-10 rounded-lg bg-white p-0.5 overflow-hidden shrink-0 border border-slate-200">
+                                  <div className="h-10 w-10 rounded-lg bg-white p-0.5 overflow-hidden shrink-0 border border-slate-200 flex items-center justify-center">
                                     {p.imageUrl ? (
                                       // eslint-disable-next-line @next/next/no-img-element
                                       <img
@@ -6501,7 +6742,25 @@ export function MartAdminClient() {
                                         referrerPolicy="no-referrer"
                                         className="h-full w-full object-contain"
                                       />
-                                    ) : null}
+                                    ) : (
+                                      <label
+                                        title={lang === "bn" ? "দ্রুত ছবি আপলোড করুন" : "Quick Upload Photo"}
+                                        className="h-full w-full flex items-center justify-center bg-amber-50/80 text-amber-800 hover:bg-amber-100 cursor-pointer rounded-md"
+                                      >
+                                        {quickUploadingProdId === p.id ? (
+                                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                                        ) : (
+                                          <ImagePlus className="h-3.5 w-3.5" />
+                                        )}
+                                        <input
+                                          type="file"
+                                          accept="image/*"
+                                          disabled={quickUploadingProdId === p.id}
+                                          onChange={(ev) => handleQuickProductPhotoUpload(p, ev)}
+                                          className="sr-only"
+                                        />
+                                      </label>
+                                    )}
                                   </div>
                                   <div>
                                     <div className="font-semibold text-slate-900">
@@ -6687,7 +6946,49 @@ export function MartAdminClient() {
                                 </div>
                               </td>
                               <td className="px-4 py-3 text-right">
-                                <div className="inline-flex items-center gap-3">
+                                <div className="inline-flex items-center gap-2.5">
+                                  <label
+                                    title={
+                                      !p.imageUrl
+                                        ? lang === "bn"
+                                          ? "ছবি আপলোড করে লাইভ করুন"
+                                          : "Upload product photo"
+                                        : lang === "bn"
+                                        ? "নতুন ছবি আপলোড করুন"
+                                        : "Replace product photo"
+                                    }
+                                    className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 font-semibold whitespace-nowrap cursor-pointer ${
+                                      !p.imageUrl
+                                        ? "border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
+                                        : "text-slate-600 hover:text-[#0B5336]"
+                                    }`}
+                                  >
+                                    {quickUploadingProdId === p.id ? (
+                                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <Upload className="h-3.5 w-3.5" />
+                                    )}
+                                    <span>
+                                      {quickUploadingProdId === p.id
+                                        ? lang === "bn"
+                                          ? "আপলোড..."
+                                          : "Uploading..."
+                                        : !p.imageUrl
+                                        ? lang === "bn"
+                                          ? "ছবি দিন"
+                                          : "Upload Photo"
+                                        : lang === "bn"
+                                        ? "ছবি"
+                                        : "Photo"}
+                                    </span>
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      disabled={quickUploadingProdId === p.id}
+                                      onChange={(ev) => handleQuickProductPhotoUpload(p, ev)}
+                                      className="sr-only"
+                                    />
+                                  </label>
                                   <button
                                     type="button"
                                     onClick={() => handleCopyAdminProductLink(p)}
