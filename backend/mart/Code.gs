@@ -346,9 +346,13 @@ function ensureDriveFoldersReady() {
 }
 
 function styleHeaderRange(range) {
-  range.setFontWeight("bold");
-  range.setBackground("#0B5336");
-  range.setFontColor("#FFFFFF");
+  try {
+    range.setFontWeight("bold");
+    range.setBackground("#0B5336");
+    range.setFontColor("#FFFFFF");
+  } catch (e) {
+    // Ignore if range is inside a Google Sheets Table with locked header formatting
+  }
 }
 
 /**
@@ -368,9 +372,13 @@ function ensureMartSheet(ss, sheetName) {
     var headerRange = sheet.getRange(1, 1, 1, headers.length);
     headerRange.setValues([headers]);
     styleHeaderRange(headerRange);
-    sheet.setFrozenRows(1);
+    try {
+      sheet.setFrozenRows(1);
+    } catch (e) {}
     for (var c = 1; c <= headers.length; c++) {
-      sheet.setColumnWidth(c, 150);
+      try {
+        sheet.setColumnWidth(c, 150);
+      } catch (e) {}
     }
     return sheet;
   }
@@ -397,18 +405,97 @@ function ensureMartSheet(ss, sheetName) {
     addRange.setValues([missingHeaders]);
     styleHeaderRange(addRange);
     for (var m = 0; m < missingHeaders.length; m++) {
-      sheet.setColumnWidth(startCol + m, 150);
+      try {
+        sheet.setColumnWidth(startCol + m, 150);
+      } catch (e) {}
     }
-    sheet.setFrozenRows(1);
+    try {
+      sheet.setFrozenRows(1);
+    } catch (e) {}
   }
 
   return sheet;
 }
 
 /**
+ * Protects Row 1 (Header Row) across all sheets/tables in the workbook.
+ * mode = "strict"  -> Blocks all other editors except Owner (100% locked for staff/team).
+ * mode = "warning" -> Shows an "Are you sure?" warning dialog even for the Owner & everyone else.
+ */
+function protectAllMartHeaderRows(ss, mode) {
+  var targetSs = ss || getBoundSpreadsheet();
+  var lockMode = mode === "warning" ? "warning" : "strict";
+  var sheets = targetSs.getSheets();
+  var protectedCount = 0;
+  var me = null;
+  try {
+    me = Session.getEffectiveUser();
+  } catch (e) {
+    me = null;
+  }
+
+  for (var i = 0; i < sheets.length; i++) {
+    var sh = sheets[i];
+    try {
+      var existing = sh.getProtections(SpreadsheetApp.ProtectionType.RANGE) || [];
+      for (var p = 0; p < existing.length; p++) {
+        var desc = String(existing[p].getDescription() || "");
+        if (desc.indexOf("Xeetrix Mart Header Lock") === 0) {
+          try {
+            existing[p].remove();
+          } catch (remErr) {}
+        }
+      }
+
+      var maxCols = Math.max(1, sh.getMaxColumns());
+      var headerRange = sh.getRange(1, 1, 1, maxCols);
+      var protection = headerRange
+        .protect()
+        .setDescription("Xeetrix Mart Header Lock (Row 1 - " + lockMode + ")");
+
+      if (lockMode === "warning") {
+        protection.setWarningOnly(true);
+      } else {
+        protection.setWarningOnly(false);
+        try {
+          if (me && me.getEmail && me.getEmail()) {
+            protection.addEditor(me);
+          }
+        } catch (addErr) {}
+        try {
+          var editors = protection.getEditors();
+          if (editors && editors.length > 0) {
+            var toRemove = [];
+            var myEmail = me && me.getEmail ? String(me.getEmail()).toLowerCase() : "";
+            for (var ed = 0; ed < editors.length; ed++) {
+              var edEmail = editors[ed] && editors[ed].getEmail ? String(editors[ed].getEmail()).toLowerCase() : "";
+              if (!myEmail || edEmail !== myEmail) {
+                toRemove.push(editors[ed]);
+              }
+            }
+            if (toRemove.length > 0) {
+              protection.removeEditors(toRemove);
+            }
+          }
+        } catch (remEdErr) {}
+        try {
+          if (protection.canDomainEdit()) {
+            protection.setDomainEdit(false);
+          }
+        } catch (domErr) {}
+      }
+      protectedCount += 1;
+    } catch (sheetErr) {
+      // Non-fatal per-sheet protection guard
+    }
+  }
+  return protectedCount;
+}
+
+/**
  * ONE-CLICK INITIALIZER / UPGRADER:
  * Run inside your bound Google Sheet's Apps Script Editor.
- * Builds/upgrades all Mart tabs, Drive folders, Sheet Dropdowns, Auto-SKU, and CacheService.
+ * Builds/upgrades all Mart tabs, Drive folders, Table-Safe Sheet Dropdowns, Auto-SKU, Header Row Lock & CacheService.
  */
 function setupMartBackend() {
   var ss = getBoundSpreadsheet();
@@ -432,21 +519,35 @@ function setupMartBackend() {
   // Auto-create Drive folders: Xeetrix_Mart_Storage -> Products, Categories & PaymentQR
   var folders = ensureDriveFoldersReady();
 
-  // Sync existing rows + apply 3-level category & attribute dropdowns in Mart_Products
-  syncMartProductsBulkSheet(true);
+  // Sync existing rows + apply Table-safe 3-level category & attribute dropdowns in Mart_Products
+  var syncRes = syncMartProductsBulkSheet(true);
+  var blockedCols = syncRes && Array.isArray(syncRes.blockedDropdownCols) ? syncRes.blockedDropdownCols : [];
+
+  // Protect Row 1 header across all sheets/tables
+  var lockedHeadersCount = protectAllMartHeaderRows(ss, "strict");
 
   // Warm public cache immediately
   invalidateMartCache();
   buildAndCachePublicBundle(ss);
 
-  return (
+  var msg =
     "Xeetrix Mart Enterprise Backend Ready! Sheet: " +
     ss.getName() +
     " | Tabs: " +
     tabNames.length +
+    " | Header Rows Locked: " +
+    lockedHeadersCount +
     " | Drive Root: " +
-    folders.rootFolder.getName()
-  );
+    folders.rootFolder.getName();
+
+  if (blockedCols.length > 0) {
+    msg +=
+      " | Table Tip: Set Column Type = None on [" +
+      blockedCols.join(", ") +
+      "] in Mart_Products to enable Arrow dropdowns.";
+  }
+
+  return msg;
 }
 
 var MART_SHEET_GENDER_OPTIONS = ["Unisex", "Boys", "Girls", "Men", "Women"];
@@ -457,6 +558,10 @@ function onOpen() {
     ui.createMenu("🛒 Xeetrix Mart")
       .addItem("🔄 Sync Bulk Rows (Dropdowns, Auto-SKU & Attributes)", "syncMartProductsBulkSheet")
       .addItem("⚙️ Setup / Refresh Columns & Dropdowns", "setupMartBackendMenuAction")
+      .addSeparator()
+      .addItem("🔒 Lock Header Rows (Strict — Staff Blocked)", "lockAllHeaderRowsStrictMenuAction")
+      .addItem("⚠️ Protect Header Rows (Warning for Owner & All)", "protectAllHeaderRowsWarningMenuAction")
+      .addSeparator()
       .addItem("⚡ Refresh Website Cache Now", "refreshMartPublicCacheMenuAction")
       .addToUi();
   } catch (e) {
@@ -471,6 +576,34 @@ function setupMartBackendMenuAction() {
   } catch (e) {
     // Ignore outside UI
   }
+}
+
+function lockAllHeaderRowsStrictMenuAction() {
+  var ss = getBoundSpreadsheet();
+  var count = protectAllMartHeaderRows(ss, "strict");
+  try {
+    SpreadsheetApp.getUi().alert(
+      "Header Rows Locked (Strict)",
+      "Row 1 header locked on " +
+        count +
+        " sheet(s). Other editors cannot edit Row 1. (To also warn yourself before accidental edits, use 'Protect Header Rows (Warning for Owner & All)'.)",
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+  } catch (e) {}
+}
+
+function protectAllHeaderRowsWarningMenuAction() {
+  var ss = getBoundSpreadsheet();
+  var count = protectAllMartHeaderRows(ss, "warning");
+  try {
+    SpreadsheetApp.getUi().alert(
+      "Header Warning Protection Enabled",
+      "Row 1 warning protection enabled on " +
+        count +
+        " sheet(s). Anyone (including the Owner) will see a confirmation popup before editing Row 1.",
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+  } catch (e) {}
 }
 
 function refreshMartPublicCacheMenuAction() {
@@ -786,30 +919,57 @@ function buildListValidation(values, allowInvalid) {
     .build();
 }
 
-function applyRowCascadeValidation(sheet, rowIndex, colMap, l1Cat, l2Cat, catIndex) {
+function safeSetDataValidation(range, rule, colName, blockedColsMap) {
+  try {
+    if (rule) {
+      range.setDataValidation(rule);
+    } else {
+      range.clearDataValidations();
+    }
+    return true;
+  } catch (err) {
+    if (colName && blockedColsMap) {
+      blockedColsMap[colName] = true;
+    }
+    return false;
+  }
+}
+
+function safeSetCellValue(sheet, rowIndex, colIndex, val) {
+  if (!sheet || !rowIndex || !colIndex || rowIndex < 1 || colIndex < 1) return false;
+  try {
+    sheet.getRange(rowIndex, colIndex).setValue(val);
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+function applyRowCascadeValidation(sheet, rowIndex, colMap, l1Cat, l2Cat, catIndex, blockedColsMap) {
   var l2Col = colMap["level2Cat"];
   var l3Col = colMap["level3Cat"];
   if (l2Col) {
     var l2Cell = sheet.getRange(rowIndex, l2Col);
     if (l1Cat && catIndex.childrenByParent[l1Cat.slug] && catIndex.childrenByParent[l1Cat.slug].length > 0) {
       var l2Opts = catIndex.childrenByParent[l1Cat.slug].map(formatSheetCategoryOption);
-      l2Cell.setDataValidation(buildListValidation(l2Opts, false));
+      safeSetDataValidation(l2Cell, buildListValidation(l2Opts, false), "level2Cat", blockedColsMap);
     } else {
-      l2Cell.clearDataValidations();
+      safeSetDataValidation(l2Cell, null, "level2Cat", blockedColsMap);
     }
   }
   if (l3Col) {
     var l3Cell = sheet.getRange(rowIndex, l3Col);
     if (l2Cat && catIndex.childrenByParent[l2Cat.slug] && catIndex.childrenByParent[l2Cat.slug].length > 0) {
       var l3Opts = catIndex.childrenByParent[l2Cat.slug].map(formatSheetCategoryOption);
-      l3Cell.setDataValidation(buildListValidation(l3Opts, false));
+      safeSetDataValidation(l3Cell, buildListValidation(l3Opts, false), "level3Cat", blockedColsMap);
     } else {
-      l3Cell.clearDataValidations();
+      safeSetDataValidation(l3Cell, null, "level3Cat", blockedColsMap);
     }
   }
 }
 
-function refreshMartProductsColumnValidations(ss, prodSheet, catIndex, allAttrs) {
+function refreshMartProductsColumnValidations(ss, prodSheet, catIndex, allAttrs, blockedColsMap) {
+  var blockedMap = blockedColsMap || {};
   try {
     var sheet = prodSheet || ensureMartSheet(ss, "Mart_Products");
     var lastCol = Math.max(1, sheet.getLastColumn());
@@ -823,7 +983,7 @@ function refreshMartProductsColumnValidations(ss, prodSheet, catIndex, allAttrs)
     var targetRowCount = Math.max(50, sheet.getLastRow() + 50 - 1);
     var maxAvail = Math.max(1, sheet.getMaxRows() - 1);
     if (targetRowCount > maxAvail) targetRowCount = maxAvail;
-    if (targetRowCount < 1) return;
+    if (targetRowCount < 1) return Object.keys(blockedMap);
 
     var l1Options = catIndex.l1List.map(formatSheetCategoryOption);
     var allCatOptions = catIndex.activeList.map(formatSheetCategoryOption);
@@ -831,49 +991,86 @@ function refreshMartProductsColumnValidations(ss, prodSheet, catIndex, allAttrs)
 
     if (colMap["level1Cat"]) {
       var l1Rule = buildListValidation(l1Options, false);
-      var l1Range = sheet.getRange(2, colMap["level1Cat"], targetRowCount, 1);
-      if (l1Rule) l1Range.setDataValidation(l1Rule);
-      else l1Range.clearDataValidations();
+      safeSetDataValidation(
+        sheet.getRange(2, colMap["level1Cat"], targetRowCount, 1),
+        l1Rule,
+        "level1Cat",
+        blockedMap
+      );
     }
     if (colMap["relatableCats"]) {
       var relRule = buildListValidation(allCatOptions, true);
-      var relRange = sheet.getRange(2, colMap["relatableCats"], targetRowCount, 1);
-      if (relRule) relRange.setDataValidation(relRule);
-      else relRange.clearDataValidations();
+      safeSetDataValidation(
+        sheet.getRange(2, colMap["relatableCats"], targetRowCount, 1),
+        relRule,
+        "relatableCats",
+        blockedMap
+      );
     }
     if (colMap["gender"]) {
       var gRule = buildListValidation(attrMap.gender, true);
-      if (gRule) sheet.getRange(2, colMap["gender"], targetRowCount, 1).setDataValidation(gRule);
+      if (gRule) {
+        safeSetDataValidation(
+          sheet.getRange(2, colMap["gender"], targetRowCount, 1),
+          gRule,
+          "gender",
+          blockedMap
+        );
+      }
     }
     if (colMap["ageGroup"]) {
-      var ageRange = sheet.getRange(2, colMap["ageGroup"], targetRowCount, 1);
       var ageRule = buildListValidation(attrMap.ageGroup, true);
-      if (ageRule) ageRange.setDataValidation(ageRule);
-      else ageRange.clearDataValidations();
+      safeSetDataValidation(
+        sheet.getRange(2, colMap["ageGroup"], targetRowCount, 1),
+        ageRule,
+        "ageGroup",
+        blockedMap
+      );
     }
     if (colMap["material"]) {
-      var matRange = sheet.getRange(2, colMap["material"], targetRowCount, 1);
       var matRule = buildListValidation(attrMap.material, true);
-      if (matRule) matRange.setDataValidation(matRule);
-      else matRange.clearDataValidations();
+      safeSetDataValidation(
+        sheet.getRange(2, colMap["material"], targetRowCount, 1),
+        matRule,
+        "material",
+        blockedMap
+      );
     }
     if (colMap["brand"]) {
-      var brandRange = sheet.getRange(2, colMap["brand"], targetRowCount, 1);
       var brandRule = buildListValidation(attrMap.brand, true);
-      if (brandRule) brandRange.setDataValidation(brandRule);
-      else brandRange.clearDataValidations();
+      safeSetDataValidation(
+        sheet.getRange(2, colMap["brand"], targetRowCount, 1),
+        brandRule,
+        "brand",
+        blockedMap
+      );
     }
     if (colMap["fulfillmentType"]) {
       var ftRule = buildListValidation(["own_stock", "dropship"], true);
-      if (ftRule) sheet.getRange(2, colMap["fulfillmentType"], targetRowCount, 1).setDataValidation(ftRule);
+      if (ftRule) {
+        safeSetDataValidation(
+          sheet.getRange(2, colMap["fulfillmentType"], targetRowCount, 1),
+          ftRule,
+          "fulfillmentType",
+          blockedMap
+        );
+      }
     }
     if (colMap["collectionMode"]) {
       var cmRule = buildListValidation(["store_collects", "supplier_collects"], true);
-      if (cmRule) sheet.getRange(2, colMap["collectionMode"], targetRowCount, 1).setDataValidation(cmRule);
+      if (cmRule) {
+        safeSetDataValidation(
+          sheet.getRange(2, colMap["collectionMode"], targetRowCount, 1),
+          cmRule,
+          "collectionMode",
+          blockedMap
+        );
+      }
     }
   } catch (e) {
     // Non-fatal validation refresh guard
   }
+  return Object.keys(blockedMap);
 }
 
 function refreshMartProductsColumnValidationsSafe(ss) {
@@ -884,9 +1081,9 @@ function refreshMartProductsColumnValidationsSafe(ss) {
     var allCats = readMartRows(catSheet, "Mart_Categories");
     var allAttrs = readMartAttributesWithBackup(ss, mergedSettings);
     var catIndex = buildCategoryLookupIndex(allCats);
-    refreshMartProductsColumnValidations(ss, ensureMartSheet(ss, "Mart_Products"), catIndex, allAttrs);
+    return refreshMartProductsColumnValidations(ss, ensureMartSheet(ss, "Mart_Products"), catIndex, allAttrs);
   } catch (e) {
-    // Ignore errors
+    return [];
   }
 }
 
@@ -1035,21 +1232,21 @@ function handleMartProductsSheetEdit(e) {
     if (l1Edited && numCols === 1) {
       rowObj.level2Cat = "";
       rowObj.level3Cat = "";
-      if (colMap["level2Cat"]) sheet.getRange(r, colMap["level2Cat"]).setValue("");
-      if (colMap["level3Cat"]) sheet.getRange(r, colMap["level3Cat"]).setValue("");
+      if (colMap["level2Cat"]) safeSetCellValue(sheet, r, colMap["level2Cat"], "");
+      if (colMap["level3Cat"]) safeSetCellValue(sheet, r, colMap["level3Cat"], "");
     } else if (l2Edited && numCols === 1) {
       rowObj.level3Cat = "";
-      if (colMap["level3Cat"]) sheet.getRange(r, colMap["level3Cat"]).setValue("");
+      if (colMap["level3Cat"]) safeSetCellValue(sheet, r, colMap["level3Cat"], "");
     }
 
     // 1. Sync Categories <-> Helper columns & Cascading Validations
     var resolved = resolveHelperFieldsToCategoriesCsv(rowObj, catIndex);
     if (catsCsvEdited && !l1Edited && !l2Edited && !l3Edited) {
       var rev = resolveCategoriesToHelperFields(rowObj.categories, catIndex);
-      if (colMap["level1Cat"]) sheet.getRange(r, colMap["level1Cat"]).setValue(rev.level1Cat);
-      if (colMap["level2Cat"]) sheet.getRange(r, colMap["level2Cat"]).setValue(rev.level2Cat);
-      if (colMap["level3Cat"]) sheet.getRange(r, colMap["level3Cat"]).setValue(rev.level3Cat);
-      if (colMap["relatableCats"]) sheet.getRange(r, colMap["relatableCats"]).setValue(rev.relatableCats);
+      if (colMap["level1Cat"]) safeSetCellValue(sheet, r, colMap["level1Cat"], rev.level1Cat);
+      if (colMap["level2Cat"]) safeSetCellValue(sheet, r, colMap["level2Cat"], rev.level2Cat);
+      if (colMap["level3Cat"]) safeSetCellValue(sheet, r, colMap["level3Cat"], rev.level3Cat);
+      if (colMap["relatableCats"]) safeSetCellValue(sheet, r, colMap["relatableCats"], rev.relatableCats);
       rowObj.level1Cat = rev.level1Cat;
       rowObj.level2Cat = rev.level2Cat;
       rowObj.level3Cat = rev.level3Cat;
@@ -1058,23 +1255,23 @@ function handleMartProductsSheetEdit(e) {
       if (resolved.l1Cat && colMap["level1Cat"]) {
         var fmtL1 = formatSheetCategoryOption(resolved.l1Cat);
         if (String(rowObj.level1Cat || "").trim() !== fmtL1) {
-          sheet.getRange(r, colMap["level1Cat"]).setValue(fmtL1);
+          safeSetCellValue(sheet, r, colMap["level1Cat"], fmtL1);
         }
       }
       if (resolved.l2Cat && colMap["level2Cat"]) {
         var fmtL2 = formatSheetCategoryOption(resolved.l2Cat);
         if (String(rowObj.level2Cat || "").trim() !== fmtL2) {
-          sheet.getRange(r, colMap["level2Cat"]).setValue(fmtL2);
+          safeSetCellValue(sheet, r, colMap["level2Cat"], fmtL2);
         }
       }
       if (resolved.l3Cat && colMap["level3Cat"]) {
         var fmtL3 = formatSheetCategoryOption(resolved.l3Cat);
         if (String(rowObj.level3Cat || "").trim() !== fmtL3) {
-          sheet.getRange(r, colMap["level3Cat"]).setValue(fmtL3);
+          safeSetCellValue(sheet, r, colMap["level3Cat"], fmtL3);
         }
       }
       if (colMap["categories"] && resolved.categoriesCsv !== String(rowObj.categories || "").trim()) {
-        sheet.getRange(r, colMap["categories"]).setValue(resolved.categoriesCsv);
+        safeSetCellValue(sheet, r, colMap["categories"], resolved.categoriesCsv);
       }
       rowObj.categories = resolved.categoriesCsv;
     }
@@ -1085,32 +1282,32 @@ function handleMartProductsSheetEdit(e) {
     var rowId = String(rowObj.id || "").trim();
     if (!rowId && colMap["id"]) {
       rowId = generateMartId("Mart_Products") + (numRows > 1 ? "-" + offset : "");
-      sheet.getRange(r, colMap["id"]).setValue(rowId);
+      safeSetCellValue(sheet, r, colMap["id"], rowId);
     }
     if (!String(rowObj.createdAt || "").trim() && colMap["createdAt"]) {
-      sheet.getRange(r, colMap["createdAt"]).setValue(nowIso);
+      safeSetCellValue(sheet, r, colMap["createdAt"], nowIso);
     }
     if (!String(rowObj.fulfillmentType || "").trim() && colMap["fulfillmentType"]) {
-      sheet.getRange(r, colMap["fulfillmentType"]).setValue("own_stock");
+      safeSetCellValue(sheet, r, colMap["fulfillmentType"], "own_stock");
     }
     if (!String(rowObj.collectionMode || "").trim() && colMap["collectionMode"]) {
-      sheet.getRange(r, colMap["collectionMode"]).setValue("store_collects");
+      safeSetCellValue(sheet, r, colMap["collectionMode"], "store_collects");
     }
     if (String(rowObj.supplierAvailable) === "" && colMap["supplierAvailable"]) {
-      sheet.getRange(r, colMap["supplierAvailable"]).setValue(true);
+      safeSetCellValue(sheet, r, colMap["supplierAvailable"], true);
     }
     if ((rowObj.lowStockThreshold === "" || rowObj.lowStockThreshold === null) && colMap["lowStockThreshold"]) {
-      sheet.getRange(r, colMap["lowStockThreshold"]).setValue(5);
+      safeSetCellValue(sheet, r, colMap["lowStockThreshold"], 5);
     }
     if ((rowObj.featured === "" || rowObj.featured === null) && colMap["featured"]) {
-      sheet.getRange(r, colMap["featured"]).setValue(false);
+      safeSetCellValue(sheet, r, colMap["featured"], false);
     }
 
     // 3. Draft-Until-Photo Protection (active = FALSE when imageUrl is empty and active was blank)
     if (colMap["active"]) {
       var hasImg = Boolean(String(rowObj.imageUrl || "").trim());
       if (rowObj.active === "" || rowObj.active === null || rowObj.active === undefined) {
-        sheet.getRange(r, colMap["active"]).setValue(hasImg);
+        safeSetCellValue(sheet, r, colMap["active"], hasImg);
       }
     }
 
@@ -1130,7 +1327,7 @@ function handleMartProductsSheetEdit(e) {
           allCats,
           ""
         );
-        sheet.getRange(r, colMap["sku"]).setValue(nextSku);
+        safeSetCellValue(sheet, r, colMap["sku"], nextSku);
         var updatedFound = false;
         for (var tf = 0; tf < existingSkuTracker.length; tf++) {
           if (existingSkuTracker[tf].rowNumber === r) {
@@ -1155,7 +1352,7 @@ function handleMartProductsSheetEdit(e) {
         rowObj.brand
       );
       if (colMap["attributesJson"]) {
-        sheet.getRange(r, colMap["attributesJson"]).setValue(nextAttrJson);
+        safeSetCellValue(sheet, r, colMap["attributesJson"], nextAttrJson);
       }
     }
   }
@@ -1164,7 +1361,7 @@ function handleMartProductsSheetEdit(e) {
 }
 
 /**
- * Menu / Setup Action: Repairs & syncs ALL rows in Mart_Products
+ * Menu / Setup Action: Repairs & syncs ALL rows in Mart_Products safely (Table & Typed-Column compatible)
  * (3-level cascading dropdowns, Auto-SKU, IDs, categories CSV, attributesJson, active=FALSE when no image).
  */
 function syncMartProductsBulkSheet(silent) {
@@ -1177,18 +1374,31 @@ function syncMartProductsBulkSheet(silent) {
   var allAttrs = readMartAttributesWithBackup(ss, mergedSettings);
   var catIndex = buildCategoryLookupIndex(allCats);
 
-  // Refresh column-level dropdowns first
-  refreshMartProductsColumnValidations(ss, prodSheet, catIndex, allAttrs);
+  var blockedColsMap = {};
+
+  // Refresh column-level dropdowns safely (per column, never throws on typed columns)
+  refreshMartProductsColumnValidations(ss, prodSheet, catIndex, allAttrs, blockedColsMap);
 
   var lastRow = prodSheet.getLastRow();
   if (lastRow <= 1) {
     invalidateMartCache();
+    var emptyBlocked = Object.keys(blockedColsMap);
     if (!silent) {
       try {
-        ss.toast("Dropdowns ready in Mart_Products!", "Xeetrix Mart", 4);
+        if (emptyBlocked.length > 0) {
+          SpreadsheetApp.getUi().alert(
+            "Table Column Type Notice",
+            "Dropdown columns [" +
+              emptyBlocked.join(", ") +
+              "] are locked by Google Sheets Table column types.\n\nFix: Click the ▼ arrow next to those column headers in Mart_Products -> Edit column type -> None, then click 'Sync Bulk Rows' again for Arrow dropdowns.",
+            SpreadsheetApp.getUi().ButtonSet.OK
+          );
+        } else {
+          ss.toast("Arrow Dropdowns ready in Mart_Products!", "Xeetrix Mart", 4);
+        }
       } catch (e) {}
     }
-    return 0;
+    return { syncedCount: 0, blockedDropdownCols: emptyBlocked };
   }
 
   var lastCol = Math.max(1, prodSheet.getLastColumn());
@@ -1211,6 +1421,17 @@ function syncMartProductsBulkSheet(silent) {
 
   var nowIso = new Date().toISOString();
   var syncedCount = 0;
+  var dirtyUpdates = [];
+
+  var queueCellChange = function (rIndex, colName, nextVal) {
+    var cNum = colMap[colName];
+    if (!cNum) return;
+    var prevVal = data[rIndex][cNum - 1];
+    if (prevVal === nextVal) return;
+    if (typeof prevVal === "string" && typeof nextVal === "string" && prevVal === nextVal) return;
+    data[rIndex][cNum - 1] = nextVal;
+    dirtyUpdates.push({ row: rIndex + 1, col: cNum, val: nextVal });
+  };
 
   for (var rIdx = 1; rIdx < data.length; rIdx++) {
     var rowNum = rIdx + 1;
@@ -1240,19 +1461,19 @@ function syncMartProductsBulkSheet(silent) {
       var resFwd = resolveHelperFieldsToCategoriesCsv(rowObj, catIndex);
       l1CatObj = resFwd.l1Cat;
       l2CatObj = resFwd.l2Cat;
-      if (resFwd.l1Cat && colMap["level1Cat"]) rowArr[colMap["level1Cat"] - 1] = formatSheetCategoryOption(resFwd.l1Cat);
-      if (resFwd.l2Cat && colMap["level2Cat"]) rowArr[colMap["level2Cat"] - 1] = formatSheetCategoryOption(resFwd.l2Cat);
-      if (resFwd.l3Cat && colMap["level3Cat"]) rowArr[colMap["level3Cat"] - 1] = formatSheetCategoryOption(resFwd.l3Cat);
-      if (colMap["categories"] && resFwd.categoriesCsv) {
-        rowArr[colMap["categories"] - 1] = resFwd.categoriesCsv;
+      if (resFwd.l1Cat) queueCellChange(rIdx, "level1Cat", formatSheetCategoryOption(resFwd.l1Cat));
+      if (resFwd.l2Cat) queueCellChange(rIdx, "level2Cat", formatSheetCategoryOption(resFwd.l2Cat));
+      if (resFwd.l3Cat) queueCellChange(rIdx, "level3Cat", formatSheetCategoryOption(resFwd.l3Cat));
+      if (resFwd.categoriesCsv) {
+        queueCellChange(rIdx, "categories", resFwd.categoriesCsv);
         rowObj.categories = resFwd.categoriesCsv;
       }
     } else if (String(rowObj.categories || "").trim()) {
       var resRev = resolveCategoriesToHelperFields(rowObj.categories, catIndex);
-      if (colMap["level1Cat"]) rowArr[colMap["level1Cat"] - 1] = resRev.level1Cat;
-      if (colMap["level2Cat"]) rowArr[colMap["level2Cat"] - 1] = resRev.level2Cat;
-      if (colMap["level3Cat"]) rowArr[colMap["level3Cat"] - 1] = resRev.level3Cat;
-      if (colMap["relatableCats"]) rowArr[colMap["relatableCats"] - 1] = resRev.relatableCats;
+      queueCellChange(rIdx, "level1Cat", resRev.level1Cat);
+      queueCellChange(rIdx, "level2Cat", resRev.level2Cat);
+      queueCellChange(rIdx, "level3Cat", resRev.level3Cat);
+      queueCellChange(rIdx, "relatableCats", resRev.relatableCats);
       var parsedChain = resolveHelperFieldsToCategoriesCsv(
         {
           level1Cat: resRev.level1Cat,
@@ -1266,8 +1487,8 @@ function syncMartProductsBulkSheet(silent) {
       l2CatObj = parsedChain.l2Cat;
     }
 
-    // Apply row-level cascading dropdown for L2/L3
-    applyRowCascadeValidation(prodSheet, rowNum, colMap, l1CatObj, l2CatObj, catIndex);
+    // Apply row-level cascading dropdown for L2/L3 safely (never crashes on typed columns)
+    applyRowCascadeValidation(prodSheet, rowNum, colMap, l1CatObj, l2CatObj, catIndex, blockedColsMap);
 
     // 2. Two-way Attribute sync
     var hasHelperAttrs = Boolean(
@@ -1277,77 +1498,89 @@ function syncMartProductsBulkSheet(silent) {
         String(rowObj.brand || "").trim()
     );
     if (hasHelperAttrs && colMap["attributesJson"]) {
-      rowArr[colMap["attributesJson"] - 1] = buildAttributesJsonFromFields(
+      var nextAttrVal = buildAttributesJsonFromFields(
         rowObj.attributesJson,
         rowObj.gender,
         rowObj.ageGroup,
         rowObj.material,
         rowObj.brand
       );
+      queueCellChange(rIdx, "attributesJson", nextAttrVal);
     } else if (String(rowObj.attributesJson || "").trim()) {
       var pAttrs = parseAttributesJsonSafe(rowObj.attributesJson);
-      if (colMap["gender"]) rowArr[colMap["gender"] - 1] = pAttrs.gender;
-      if (colMap["ageGroup"]) rowArr[colMap["ageGroup"] - 1] = pAttrs.ageGroup;
-      if (colMap["material"]) rowArr[colMap["material"] - 1] = pAttrs.material;
-      if (colMap["brand"]) rowArr[colMap["brand"] - 1] = pAttrs.brand;
+      if (pAttrs.gender) queueCellChange(rIdx, "gender", pAttrs.gender);
+      if (pAttrs.ageGroup) queueCellChange(rIdx, "ageGroup", pAttrs.ageGroup);
+      if (pAttrs.material) queueCellChange(rIdx, "material", pAttrs.material);
+      if (pAttrs.brand) queueCellChange(rIdx, "brand", pAttrs.brand);
     }
 
     // 3. Auto ID, SKU, Defaults & Draft-Until-Photo
-    if (colMap["id"] && !String(rowObj.id || "").trim()) {
-      rowArr[colMap["id"] - 1] = generateMartId("Mart_Products") + "-" + rIdx;
+    if (!String(rowObj.id || "").trim()) {
+      queueCellChange(rIdx, "id", generateMartId("Mart_Products") + "-" + rIdx);
     }
-    if (colMap["sku"] && !String(rowObj.sku || "").trim()) {
+    if (!String(rowObj.sku || "").trim()) {
       var genSku = computeNextSequentialSkuServer(rowObj.categories || "", skuTracker, allCats, "");
-      rowArr[colMap["sku"] - 1] = genSku;
+      queueCellChange(rIdx, "sku", genSku);
       skuTracker.push({ rowNumber: rowNum, id: "ROW-" + rowNum, sku: genSku });
     }
-    if (colMap["createdAt"] && !String(rowObj.createdAt || "").trim()) {
-      rowArr[colMap["createdAt"] - 1] = nowIso;
+    if (!String(rowObj.createdAt || "").trim()) {
+      queueCellChange(rIdx, "createdAt", nowIso);
     }
-    if (colMap["fulfillmentType"] && !String(rowObj.fulfillmentType || "").trim()) {
-      rowArr[colMap["fulfillmentType"] - 1] = "own_stock";
+    if (!String(rowObj.fulfillmentType || "").trim()) {
+      queueCellChange(rIdx, "fulfillmentType", "own_stock");
     }
-    if (colMap["collectionMode"] && !String(rowObj.collectionMode || "").trim()) {
-      rowArr[colMap["collectionMode"] - 1] = "store_collects";
+    if (!String(rowObj.collectionMode || "").trim()) {
+      queueCellChange(rIdx, "collectionMode", "store_collects");
     }
-    if (colMap["supplierAvailable"] && String(rowObj.supplierAvailable) === "") {
-      rowArr[colMap["supplierAvailable"] - 1] = true;
+    if (String(rowObj.supplierAvailable) === "") {
+      queueCellChange(rIdx, "supplierAvailable", true);
     }
-    if (
-      colMap["lowStockThreshold"] &&
-      (rowObj.lowStockThreshold === "" || rowObj.lowStockThreshold === null)
-    ) {
-      rowArr[colMap["lowStockThreshold"] - 1] = 5;
+    if (rowObj.lowStockThreshold === "" || rowObj.lowStockThreshold === null) {
+      queueCellChange(rIdx, "lowStockThreshold", 5);
     }
-    if (colMap["featured"] && (rowObj.featured === "" || rowObj.featured === null)) {
-      rowArr[colMap["featured"] - 1] = false;
+    if (rowObj.featured === "" || rowObj.featured === null) {
+      queueCellChange(rIdx, "featured", false);
     }
-    if (colMap["active"] && (rowObj.active === "" || rowObj.active === null || rowObj.active === undefined)) {
-      rowArr[colMap["active"] - 1] = Boolean(String(rowObj.imageUrl || "").trim());
+    if (rowObj.active === "" || rowObj.active === null || rowObj.active === undefined) {
+      queueCellChange(rIdx, "active", Boolean(String(rowObj.imageUrl || "").trim()));
     }
     syncedCount += 1;
   }
 
-  // Write batch changes back to sheet
-  if (data.length > 1) {
-    prodSheet.getRange(2, 1, data.length - 1, lastCol).setValues(data.slice(1));
+  // Write ONLY changed cells safely (prevents overwriting Table formulas, Checkboxes, or Typed columns)
+  for (var u = 0; u < dirtyUpdates.length; u++) {
+    var upd = dirtyUpdates[u];
+    safeSetCellValue(prodSheet, upd.row, upd.col, upd.val);
   }
 
   invalidateMartCache();
   buildAndCachePublicBundle(ss);
 
+  var blockedList = Object.keys(blockedColsMap);
   if (!silent) {
     try {
-      ss.toast(
-        "Synced " + syncedCount + " rows (Dropdowns, Auto-SKU, Attributes & Cache updated).",
-        "Xeetrix Mart",
-        5
-      );
+      if (blockedList.length > 0) {
+        SpreadsheetApp.getUi().alert(
+          "Synced " + syncedCount + " Rows (Table Tip)",
+          "Auto-SKU, IDs & Attributes synced for " +
+            syncedCount +
+            " row(s).\n\nHowever, these dropdown columns are still locked as Google Sheets Table Typed Columns:\n• " +
+            blockedList.join("\n• ") +
+            "\n\nFix: Click the ▼ arrow next to each listed column header -> Edit column type -> None, then run Sync Bulk Rows again for Arrow dropdowns.",
+          SpreadsheetApp.getUi().ButtonSet.OK
+        );
+      } else {
+        ss.toast(
+          "Synced " + syncedCount + " rows (Arrow Dropdowns, Auto-SKU, Attributes & Cache updated).",
+          "Xeetrix Mart",
+          5
+        );
+      }
     } catch (e) {
       // Ignore outside UI
     }
   }
-  return syncedCount;
+  return { syncedCount: syncedCount, blockedDropdownCols: blockedList };
 }
 
 function invalidateMartCache() {
