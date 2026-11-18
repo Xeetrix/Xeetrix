@@ -345,11 +345,21 @@ function ensureDriveFoldersReady() {
   };
 }
 
+function safeFlushSpreadsheet() {
+  try {
+    SpreadsheetApp.flush();
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 function styleHeaderRange(range) {
   try {
     range.setFontWeight("bold");
     range.setBackground("#0B5336");
     range.setFontColor("#FFFFFF");
+    SpreadsheetApp.flush();
   } catch (e) {
     // Ignore if range is inside a Google Sheets Table with locked header formatting
   }
@@ -370,16 +380,21 @@ function ensureMartSheet(ss, sheetName) {
   }
   if (sheet.getLastRow() === 0) {
     var headerRange = sheet.getRange(1, 1, 1, headers.length);
-    headerRange.setValues([headers]);
+    try {
+      headerRange.setValues([headers]);
+      SpreadsheetApp.flush();
+    } catch (e) {}
     styleHeaderRange(headerRange);
     try {
       sheet.setFrozenRows(1);
+      SpreadsheetApp.flush();
     } catch (e) {}
     for (var c = 1; c <= headers.length; c++) {
       try {
         sheet.setColumnWidth(c, 150);
       } catch (e) {}
     }
+    safeFlushSpreadsheet();
     return sheet;
   }
 
@@ -402,7 +417,10 @@ function ensureMartSheet(ss, sheetName) {
   if (missingHeaders.length > 0) {
     var startCol = lastCol + 1;
     var addRange = sheet.getRange(1, startCol, 1, missingHeaders.length);
-    addRange.setValues([missingHeaders]);
+    try {
+      addRange.setValues([missingHeaders]);
+      SpreadsheetApp.flush();
+    } catch (e) {}
     styleHeaderRange(addRange);
     for (var m = 0; m < missingHeaders.length; m++) {
       try {
@@ -411,6 +429,7 @@ function ensureMartSheet(ss, sheetName) {
     }
     try {
       sheet.setFrozenRows(1);
+      SpreadsheetApp.flush();
     } catch (e) {}
   }
 
@@ -484,6 +503,7 @@ function protectAllMartHeaderRows(ss, mode) {
           }
         } catch (domErr) {}
       }
+      SpreadsheetApp.flush();
       protectedCount += 1;
     } catch (sheetErr) {
       // Non-fatal per-sheet protection guard
@@ -512,7 +532,15 @@ function setupMartBackend() {
   for (var j = 0; j < keys.length; j++) {
     var k = keys[j];
     if (existingSettings[k] === undefined) {
-      settingsSheet.appendRow([k, MART_DEFAULT_SETTINGS[k], now]);
+      try {
+        settingsSheet.appendRow([k, MART_DEFAULT_SETTINGS[k], now]);
+        SpreadsheetApp.flush();
+      } catch (setErr) {
+        try {
+          settingsSheet.appendRow([k, MART_DEFAULT_SETTINGS[k], new Date()]);
+          SpreadsheetApp.flush();
+        } catch (setErr2) {}
+      }
     }
   }
 
@@ -547,6 +575,9 @@ function setupMartBackend() {
       "] in Mart_Products to enable Arrow dropdowns.";
   }
 
+  try {
+    Logger.log(msg);
+  } catch (e) {}
   return msg;
 }
 
@@ -919,12 +950,18 @@ function buildListValidation(values, allowInvalid) {
     .build();
 }
 
-function safeSetDataValidation(range, rule, colName, blockedColsMap) {
+function safeSetDataValidation(range, rule, colName, blockedColsMap, skipFlush) {
+  if (colName && blockedColsMap && blockedColsMap[colName]) {
+    return false;
+  }
   try {
     if (rule) {
       range.setDataValidation(rule);
     } else {
       range.clearDataValidations();
+    }
+    if (!skipFlush) {
+      SpreadsheetApp.flush();
     }
     return true;
   } catch (err) {
@@ -935,35 +972,50 @@ function safeSetDataValidation(range, rule, colName, blockedColsMap) {
   }
 }
 
-function safeSetCellValue(sheet, rowIndex, colIndex, val) {
+function safeSetCellValue(sheet, rowIndex, colIndex, val, skipFlush) {
   if (!sheet || !rowIndex || !colIndex || rowIndex < 1 || colIndex < 1) return false;
   try {
     sheet.getRange(rowIndex, colIndex).setValue(val);
+    if (!skipFlush) {
+      SpreadsheetApp.flush();
+    }
     return true;
   } catch (err) {
+    if (typeof val === "string" && /^\d{4}-\d{2}-\d{2}T/.test(val)) {
+      try {
+        var parsedDate = new Date(val);
+        if (!isNaN(parsedDate.getTime())) {
+          sheet.getRange(rowIndex, colIndex).setValue(parsedDate);
+          if (!skipFlush) {
+            SpreadsheetApp.flush();
+          }
+          return true;
+        }
+      } catch (dateErr) {}
+    }
     return false;
   }
 }
 
-function applyRowCascadeValidation(sheet, rowIndex, colMap, l1Cat, l2Cat, catIndex, blockedColsMap) {
+function applyRowCascadeValidation(sheet, rowIndex, colMap, l1Cat, l2Cat, catIndex, blockedColsMap, skipFlush) {
   var l2Col = colMap["level2Cat"];
   var l3Col = colMap["level3Cat"];
-  if (l2Col) {
+  if (l2Col && !(blockedColsMap && blockedColsMap["level2Cat"])) {
     var l2Cell = sheet.getRange(rowIndex, l2Col);
     if (l1Cat && catIndex.childrenByParent[l1Cat.slug] && catIndex.childrenByParent[l1Cat.slug].length > 0) {
       var l2Opts = catIndex.childrenByParent[l1Cat.slug].map(formatSheetCategoryOption);
-      safeSetDataValidation(l2Cell, buildListValidation(l2Opts, false), "level2Cat", blockedColsMap);
+      safeSetDataValidation(l2Cell, buildListValidation(l2Opts, false), "level2Cat", blockedColsMap, skipFlush);
     } else {
-      safeSetDataValidation(l2Cell, null, "level2Cat", blockedColsMap);
+      safeSetDataValidation(l2Cell, null, "level2Cat", blockedColsMap, skipFlush);
     }
   }
-  if (l3Col) {
+  if (l3Col && !(blockedColsMap && blockedColsMap["level3Cat"])) {
     var l3Cell = sheet.getRange(rowIndex, l3Col);
     if (l2Cat && catIndex.childrenByParent[l2Cat.slug] && catIndex.childrenByParent[l2Cat.slug].length > 0) {
       var l3Opts = catIndex.childrenByParent[l2Cat.slug].map(formatSheetCategoryOption);
-      safeSetDataValidation(l3Cell, buildListValidation(l3Opts, false), "level3Cat", blockedColsMap);
+      safeSetDataValidation(l3Cell, buildListValidation(l3Opts, false), "level3Cat", blockedColsMap, skipFlush);
     } else {
-      safeSetDataValidation(l3Cell, null, "level3Cat", blockedColsMap);
+      safeSetDataValidation(l3Cell, null, "level3Cat", blockedColsMap, skipFlush);
     }
   }
 }
@@ -1487,8 +1539,9 @@ function syncMartProductsBulkSheet(silent) {
       l2CatObj = parsedChain.l2Cat;
     }
 
-    // Apply row-level cascading dropdown for L2/L3 safely (never crashes on typed columns)
-    applyRowCascadeValidation(prodSheet, rowNum, colMap, l1CatObj, l2CatObj, catIndex, blockedColsMap);
+    // Apply row-level cascading dropdown for L2/L3 safely (probe early rows with flush so typed columns never leak errors)
+    var skipCascadeFlush = rowNum > 8;
+    applyRowCascadeValidation(prodSheet, rowNum, colMap, l1CatObj, l2CatObj, catIndex, blockedColsMap, skipCascadeFlush);
 
     // 2. Two-way Attribute sync
     var hasHelperAttrs = Boolean(
@@ -1547,10 +1600,31 @@ function syncMartProductsBulkSheet(silent) {
     syncedCount += 1;
   }
 
-  // Write ONLY changed cells safely (prevents overwriting Table formulas, Checkboxes, or Typed columns)
-  for (var u = 0; u < dirtyUpdates.length; u++) {
-    var upd = dirtyUpdates[u];
-    safeSetCellValue(prodSheet, upd.row, upd.col, upd.val);
+  safeFlushSpreadsheet();
+
+  // Write ONLY changed cells safely (flush-safe so Table typed columns never crash subsequent reads)
+  if (dirtyUpdates.length <= 25) {
+    for (var u = 0; u < dirtyUpdates.length; u++) {
+      var upd = dirtyUpdates[u];
+      safeSetCellValue(prodSheet, upd.row, upd.col, upd.val, false);
+    }
+  } else {
+    var batchSucceeded = true;
+    try {
+      for (var bu = 0; bu < dirtyUpdates.length; bu++) {
+        var bUpd = dirtyUpdates[bu];
+        prodSheet.getRange(bUpd.row, bUpd.col).setValue(bUpd.val);
+      }
+      SpreadsheetApp.flush();
+    } catch (batchErr) {
+      batchSucceeded = false;
+    }
+    if (!batchSucceeded) {
+      for (var fu = 0; fu < dirtyUpdates.length; fu++) {
+        var fUpd = dirtyUpdates[fu];
+        safeSetCellValue(prodSheet, fUpd.row, fUpd.col, fUpd.val, false);
+      }
+    }
   }
 
   invalidateMartCache();
@@ -1762,6 +1836,9 @@ function normalizeMartCell(header, val) {
   }
   if (header === "code" || header === "discountCode" || header === "sku" || header === "skuCode") {
     return String(val || "").trim().toUpperCase();
+  }
+  if (val instanceof Date && !isNaN(val.getTime())) {
+    return val.toISOString();
   }
   return val === null || val === undefined ? "" : String(val);
 }
@@ -3146,7 +3223,15 @@ function doPost(e) {
         rowValues.push(record[headerName] !== undefined ? record[headerName] : "");
       }
 
-      sheet.appendRow(rowValues);
+      try {
+        sheet.appendRow(rowValues);
+        SpreadsheetApp.flush();
+      } catch (appendErr) {
+        var nextEmptyRow = sheet.getLastRow() + 1;
+        for (var colW = 0; colW < rowValues.length; colW++) {
+          safeSetCellValue(sheet, nextEmptyRow, colW + 1, rowValues[colW], false);
+        }
+      }
 
       if (sheetName === "Mart_Products") {
         try {
@@ -3159,7 +3244,7 @@ function doPost(e) {
             if (achName) appendColMap[achName] = ach + 1;
           }
           var appendChain = resolveHelperFieldsToCategoriesCsv(record, appendCatIndex);
-          applyRowCascadeValidation(sheet, newRowIdx, appendColMap, appendChain.l1Cat, appendChain.l2Cat, appendCatIndex);
+          applyRowCascadeValidation(sheet, newRowIdx, appendColMap, appendChain.l1Cat, appendChain.l2Cat, appendCatIndex, null, false);
         } catch (e) {}
       } else if (sheetName === "Mart_Orders") {
         if (payload.itemsJson) {
@@ -3372,11 +3457,10 @@ function doPost(e) {
         var colIndex = rawHeaders.indexOf(key);
         if (colIndex === -1) colIndex = updHeaders.indexOf(key);
         if (colIndex !== -1) {
-          updSheet
-            .getRange(foundRowIndex, colIndex + 1)
-            .setValue(normalizeMartCell(key, updates[key]));
+          safeSetCellValue(updSheet, foundRowIndex, colIndex + 1, normalizeMartCell(key, updates[key]), true);
         }
       }
+      safeFlushSpreadsheet();
 
       if (
         (updSheetName === "Mart_Categories" || updSheetName === "Mart_Labels") &&
@@ -3504,14 +3588,28 @@ function doPost(e) {
           var existingKeys = settingsSheet.getRange(2, 1, sLastRow - 1, 1).getValues();
           for (var rowIdx = 0; rowIdx < existingKeys.length; rowIdx++) {
             if (String(existingKeys[rowIdx][0]) === sKey) {
-              settingsSheet.getRange(rowIdx + 2, 2, 1, 2).setValues([[sVal, nowIso]]);
+              try {
+                settingsSheet.getRange(rowIdx + 2, 2, 1, 2).setValues([[sVal, nowIso]]);
+                SpreadsheetApp.flush();
+              } catch (svErr) {
+                safeSetCellValue(settingsSheet, rowIdx + 2, 2, sVal, false);
+                safeSetCellValue(settingsSheet, rowIdx + 2, 3, nowIso, false);
+              }
               updatedExisting = true;
               break;
             }
           }
         }
         if (!updatedExisting) {
-          settingsSheet.appendRow([sKey, sVal, nowIso]);
+          try {
+            settingsSheet.appendRow([sKey, sVal, nowIso]);
+            SpreadsheetApp.flush();
+          } catch (saErr) {
+            try {
+              settingsSheet.appendRow([sKey, sVal, new Date()]);
+              SpreadsheetApp.flush();
+            } catch (saErr2) {}
+          }
         }
       }
 
