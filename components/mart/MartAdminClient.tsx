@@ -24,6 +24,7 @@ import {
   AlertCircle,
   AlertTriangle,
   ArrowLeft,
+  ArrowRight,
   Eye,
   EyeOff,
   Star,
@@ -40,6 +41,10 @@ import {
   ImagePlus,
   Link2,
   Check,
+  FolderTree,
+  Phone,
+  Mail,
+  MessageCircle,
 } from "lucide-react";
 import { MartLogo } from "./MartLogo";
 import { MartLanguageSwitcher } from "./MartLanguageSwitcher";
@@ -64,11 +69,10 @@ import {
   generateVariantSubSku,
   getCategoryHierarchyMeta,
   getStoredMartAdminPass,
-  MART_CONTACT_EMAIL,
-  MART_CONTACT_PHONE,
   MART_GENDER_OPTIONS,
   MartAdminBundle,
   MartApiError,
+  resolveMartContactInfo,
   MartAttribute,
   MartCategory,
   MartCategoryHierarchyMeta,
@@ -90,6 +94,7 @@ import {
   MartTransaction,
   MartVariationVariant,
   normalizeMartImageUrl,
+  organizeMartDriveAssets,
   parseAttributeOptionsList,
   parseGalleryUrls,
   parseOrderItems,
@@ -250,6 +255,9 @@ export function MartAdminClient() {
   // Product Form (Add or Edit — Bilingual + Multi-Category + Labels + Variations + Gallery + Wholesale + Hybrid Sourcing)
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [productStudioOpen, setProductStudioOpen] = useState(false);
+  const [productStudioTab, setProductStudioTab] = useState<
+    "basic" | "media" | "pricing" | "variants"
+  >("basic");
   const [prodSku, setProdSku] = useState("");
   const [skuManuallyEdited, setSkuManuallyEdited] = useState(false);
   const [prodNameEn, setProdNameEn] = useState("");
@@ -300,6 +308,7 @@ export function MartAdminClient() {
   const [productStatusFilter, setProductStatusFilter] = useState<ProductStatusFilter>("all");
   const [autoPublishOnQuickPhoto, setAutoPublishOnQuickPhoto] = useState(true);
   const [quickUploadingProdId, setQuickUploadingProdId] = useState<string | null>(null);
+  const [organizingDrive, setOrganizingDrive] = useState(false);
   const [copiedAdminProdId, setCopiedAdminProdId] = useState<string | null>(null);
 
   function handleCopyAdminProductLink(p: MartProduct) {
@@ -494,6 +503,7 @@ export function MartAdminClient() {
     setProdDescBn("");
     setProdFeatured(false);
     setProdActive(true);
+    setProductStudioTab("basic");
   }
 
   function handleRegenerateProductSku(
@@ -578,6 +588,7 @@ export function MartAdminClient() {
     setProdDescBn(p.descriptionBn || "");
     setProdFeatured(Boolean(p.featured));
     setProdActive(Boolean(p.active));
+    setProductStudioTab("basic");
     setProductStudioOpen(true);
     setActiveSection("products");
     scrollWorkspaceToTop();
@@ -679,6 +690,53 @@ export function MartAdminClient() {
     );
   }
 
+  function resolveCategoryDrivePath(catSlugs: string[]): string[] {
+    const primarySlug = (catSlugs || []).map((s) => s.trim()).find(Boolean);
+    if (!primarySlug) return ["Uncategorized"];
+    const bySlug = new Map<string, MartCategory>();
+    (data?.categories || []).forEach((c) => {
+      if (c.slug) bySlug.set(c.slug, c);
+    });
+    const target = bySlug.get(primarySlug);
+    if (!target) return [primarySlug];
+    const chain: MartCategory[] = [target];
+    const visited = new Set<string>([target.slug]);
+    let cursor: MartCategory = target;
+    while (cursor.parentSlug && chain.length < 3) {
+      const parent = bySlug.get(cursor.parentSlug.trim());
+      if (!parent || visited.has(parent.slug)) break;
+      visited.add(parent.slug);
+      chain.unshift(parent);
+      cursor = parent;
+    }
+    const segs = chain
+      .map((c) => (c.nameEn || c.slug || c.nameBn || "").trim())
+      .filter(Boolean);
+    return segs.length > 0 ? segs : ["Uncategorized"];
+  }
+
+  async function handleOrganizeDriveAssets() {
+    if (!data?.isLiveBackend) {
+      showNotice("error", t.admin.products.errConnectBackend);
+      return;
+    }
+    setOrganizingDrive(true);
+    try {
+      const summary = await organizeMartDriveAssets();
+      showNotice(
+        "success",
+        lang === "bn"
+          ? `Google Drive সাজানো সম্পন্ন! ${toLocalizedDigits(summary.productsProcessed, lang)}টি পণ্যের ${toLocalizedDigits(summary.organizedFiles, lang)}টি ছবি (সরেছে: ${toLocalizedDigits(summary.movedFiles, lang)}, রিনেম: ${toLocalizedDigits(summary.renamedFiles, lang)}) · অব্যবহৃত ${toLocalizedDigits(summary.movedToUnused, lang)}টি ফাইল _Unused ফোল্ডারে সরানো হয়েছে।`
+          : `Google Drive organized! ${summary.productsProcessed} product(s), ${summary.organizedFiles} active photo(s) (moved: ${summary.movedFiles}, renamed: ${summary.renamedFiles}) · ${summary.movedToUnused} unused file(s) moved safely to _Unused.`
+      );
+    } catch (err) {
+      const apiErr = err as MartApiError;
+      showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
+    } finally {
+      setOrganizingDrive(false);
+    }
+  }
+
   async function handleProductImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -695,18 +753,24 @@ export function MartAdminClient() {
         targetSize: 1000,
         quality: 0.9,
       });
+      const effectiveSku = (prodSku || liveSkuPreview.sku || "").trim().toUpperCase();
       const uploaded = await uploadMartImageToDrive({
         fileName: prepared.fileName,
         mimeType: prepared.mimeType,
         base64Data: prepared.base64Data,
         folderType: "products",
+        sku: effectiveSku,
+        productId: editingProductId || undefined,
+        categoryPath: resolveCategoryDrivePath(prodCategories),
+        imageRole: "MAIN",
       });
       setProdImageUrl(uploaded.url);
       const dimTag =
         prepared.outputWidth > 0 && prepared.outputHeight > 0
           ? `${prepared.outputWidth}×${prepared.outputHeight} · `
           : "";
-      showNotice("success", `${t.admin.products.msgImageUploaded} (${dimTag}${uploaded.fileId})`);
+      const savedNameTag = uploaded.fileName ? `${uploaded.fileName}` : uploaded.fileId;
+      showNotice("success", `${t.admin.products.msgImageUploaded} (${dimTag}${savedNameTag})`);
     } catch (err) {
       const apiErr = err as MartApiError;
       showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
@@ -740,6 +804,10 @@ export function MartAdminClient() {
         mimeType: prepared.mimeType,
         base64Data: prepared.base64Data,
         folderType: "products",
+        sku: (p.sku || "").trim().toUpperCase(),
+        productId: p.id,
+        categoryPath: resolveCategoryDrivePath(parseCsvSlugs(p.categories)),
+        imageRole: "MAIN",
       });
       const shouldPublish = autoPublishOnQuickPhoto && !p.active;
       const updates: Record<string, unknown> = {
@@ -779,9 +847,10 @@ export function MartAdminClient() {
           ? " ও লাইভ করা হয়েছে"
           : " & published live"
         : "";
+      const savedNameTag = uploaded.fileName ? `${uploaded.fileName}` : uploaded.fileId;
       showNotice(
         "success",
-        `${t.admin.products.msgImageUploaded}${publishNote} (${dimTag}${uploaded.fileId})`
+        `${t.admin.products.msgImageUploaded}${publishNote} (${dimTag}${savedNameTag})`
       );
     } catch (err) {
       const apiErr = err as MartApiError;
@@ -808,11 +877,17 @@ export function MartAdminClient() {
         targetSize: 1000,
         quality: 0.9,
       });
+      const effectiveSku = (prodSku || liveSkuPreview.sku || "").trim().toUpperCase();
       const uploaded = await uploadMartImageToDrive({
         fileName: prepared.fileName,
         mimeType: prepared.mimeType,
         base64Data: prepared.base64Data,
         folderType: "products",
+        sku: effectiveSku,
+        productId: editingProductId || undefined,
+        categoryPath: resolveCategoryDrivePath(prodCategories),
+        imageRole: "GALLERY",
+        galleryIndex: prodGalleryUrls.length + 1,
       });
       setProdGalleryUrls((prev) =>
         prev.includes(uploaded.url) ? prev : [...prev, uploaded.url]
@@ -821,7 +896,8 @@ export function MartAdminClient() {
         prepared.outputWidth > 0 && prepared.outputHeight > 0
           ? `${prepared.outputWidth}×${prepared.outputHeight} · `
           : "";
-      showNotice("success", `${t.admin.products.msgImageUploaded} (${dimTag}${uploaded.fileId})`);
+      const savedNameTag = uploaded.fileName ? `${uploaded.fileName}` : uploaded.fileId;
+      showNotice("success", `${t.admin.products.msgImageUploaded} (${dimTag}${savedNameTag})`);
     } catch (err) {
       const apiErr = err as MartApiError;
       showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
@@ -870,11 +946,19 @@ export function MartAdminClient() {
         targetSize: 1000,
         quality: 0.9,
       });
+      const effectiveSku = (prodSku || liveSkuPreview.sku || "").trim().toUpperCase();
+      const targetColorRow = prodColors[idx];
       const uploaded = await uploadMartImageToDrive({
         fileName: `color-${prepared.fileName}`,
         mimeType: prepared.mimeType,
         base64Data: prepared.base64Data,
         folderType: "products",
+        sku: effectiveSku,
+        productId: editingProductId || undefined,
+        categoryPath: resolveCategoryDrivePath(prodCategories),
+        imageRole: "COLOR",
+        colorLabel: targetColorRow?.nameEn || targetColorRow?.nameBn || String(idx + 1),
+        galleryIndex: idx + 1,
       });
       setProdColors((prev) =>
         prev.map((item, i) => (i === idx ? { ...item, imageUrl: uploaded.url } : item))
@@ -888,7 +972,8 @@ export function MartAdminClient() {
         prepared.outputWidth > 0 && prepared.outputHeight > 0
           ? `${prepared.outputWidth}×${prepared.outputHeight} · `
           : "";
-      showNotice("success", `${t.admin.products.msgImageUploaded} (${dimTag}${uploaded.fileId})`);
+      const savedNameTag = uploaded.fileName ? `${uploaded.fileName}` : uploaded.fileId;
+      showNotice("success", `${t.admin.products.msgImageUploaded} (${dimTag}${savedNameTag})`);
     } catch (err) {
       const apiErr = err as MartApiError;
       showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
@@ -1075,7 +1160,13 @@ export function MartAdminClient() {
       showNotice("error", t.admin.products.errConnectBackend);
       return;
     }
-    if ((!prodNameEn.trim() && !prodNameBn.trim()) || !prodPrice) {
+    if (!prodNameEn.trim() && !prodNameBn.trim()) {
+      setProductStudioTab("basic");
+      showNotice("error", t.admin.products.errMissingProdFields);
+      return;
+    }
+    if (!prodPrice) {
+      setProductStudioTab("pricing");
       showNotice("error", t.admin.products.errMissingProdFields);
       return;
     }
@@ -1128,6 +1219,7 @@ export function MartAdminClient() {
     const finalSku = (prodSku.trim() || autoSkuInfo.sku).toUpperCase();
     const duplicateProd = findDuplicateProductSku(finalSku, products, editingProductId);
     if (duplicateProd) {
+      setProductStudioTab("basic");
       showNotice(
         "error",
         lang === "bn"
@@ -4326,6 +4418,33 @@ export function MartAdminClient() {
                     />
                   </div>
 
+                  <button
+                    type="button"
+                    disabled={organizingDrive}
+                    onClick={handleOrganizeDriveAssets}
+                    title={
+                      lang === "bn"
+                        ? "সব পণ্যের ছবি Category/SKU ফোল্ডারে সাজান ও অব্যবহৃত ফাইল _Unused ফোল্ডারে সরান"
+                        : "Organize all product photos into Category/SKU folders and move unused files to _Unused"
+                    }
+                    className="min-h-[40px] inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-[#0B5336] disabled:opacity-60 whitespace-nowrap"
+                  >
+                    {organizingDrive ? (
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin text-[#0B5336]" />
+                    ) : (
+                      <FolderTree className="h-3.5 w-3.5 text-[#0B5336]" />
+                    )}
+                    <span>
+                      {organizingDrive
+                        ? lang === "bn"
+                          ? "ড্রাইভ সাজানো হচ্ছে..."
+                          : "Organizing Drive..."
+                        : lang === "bn"
+                        ? "ড্রাইভ সাজান"
+                        : "Organize Drive"}
+                    </span>
+                  </button>
+
                   {editingProductId || productStudioOpen ? (
                     <button
                       type="button"
@@ -4441,1929 +4560,2111 @@ export function MartAdminClient() {
                 </label>
               </div>
 
-              {/* Minimalist 2-Column Product Add / Edit Studio */}
-              {(productStudioOpen || Boolean(editingProductId)) && (
-                <form
-                  onSubmit={handleSaveProduct}
-                  className={`rounded-2xl border p-4 sm:p-6 space-y-5 transition-colors ${
-                    editingProductId
-                      ? "border-[#0B5336] ring-2 ring-[#0B5336]/15 bg-brand-50/15"
-                      : "border-slate-200 bg-slate-50/60"
-                  }`}
-                >
-                  {/* Studio Header Bar */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200">
-                    <div className="flex items-center gap-2.5">
-                      <div className="h-8 w-8 rounded-xl bg-[#0B5336]/10 text-[#0B5336] flex items-center justify-center shrink-0">
-                        {editingProductId ? (
-                          <Pencil className="h-4 w-4" />
-                        ) : (
-                          <Plus className="h-4 w-4" />
-                        )}
-                      </div>
-                      <div>
-                        <h3 className="font-display text-sm sm:text-base font-bold text-slate-900">
-                          {editingProductId
-                            ? `${t.admin.products.editTitle} (${editingProductId})`
-                            : t.admin.products.addTitle}
-                        </h3>
-                        {editingProductId && (
-                          <p className="text-[11px] font-medium text-[#0B5336]">
-                            {t.admin.products.editingBannerHint}
-                          </p>
-                        )}
-                      </div>
-                    </div>
+              {/* Clean 4-Tab Product Add / Edit Studio */}
+              {(productStudioOpen || Boolean(editingProductId)) && (() => {
+                const studioTabs: Array<{
+                  id: "basic" | "media" | "pricing" | "variants";
+                  step: number;
+                  label: string;
+                  summary: string;
+                  hasWarning?: boolean;
+                }> = [
+                  {
+                    id: "basic",
+                    step: 1,
+                    label: lang === "bn" ? "বেসিক ও ক্যাটাগরি" : "Basic & Category",
+                    summary: prodCategories[0]
+                      ? `${liveSkuPreview.l1Code}/${liveSkuPreview.l2Code}`
+                      : lang === "bn"
+                      ? "নাম ও SKU"
+                      : "Name & SKU",
+                    hasWarning: Boolean(duplicateSkuConflict),
+                  },
+                  {
+                    id: "media",
+                    step: 2,
+                    label: lang === "bn" ? "ছবি ও গ্যালারি" : "Media & Gallery",
+                    summary: prodImageUrl.trim()
+                      ? `${toLocalizedDigits(1 + prodGalleryUrls.length, lang)} ${
+                          lang === "bn" ? "ছবি" : "photos"
+                        }`
+                      : lang === "bn"
+                      ? "ছবি দিন"
+                      : "No photo",
+                  },
+                  {
+                    id: "pricing",
+                    step: 3,
+                    label: lang === "bn" ? "দাম ও সোর্সিং" : "Pricing & Sourcing",
+                    summary: prodPrice
+                      ? formatMartPrice(Number(prodPrice) || 0, lang)
+                      : lang === "bn"
+                      ? "মূল্য দিন"
+                      : "Set price",
+                  },
+                  {
+                    id: "variants",
+                    step: 4,
+                    label: lang === "bn" ? "ভ্যারিয়েন্ট ও অ্যাট্রিবিউট" : "Variants & Attributes",
+                    summary:
+                      variationMode === "matrix"
+                        ? `${toLocalizedDigits(prodMatrix.length || prodColors.length, lang)} ${
+                            lang === "bn" ? "ভ্যারিয়েন্ট" : "variants"
+                          }`
+                        : variationMode === "simple"
+                        ? lang === "bn"
+                          ? "সিম্পল অপশন"
+                          : "Simple options"
+                        : lang === "bn"
+                        ? "স্ট্যান্ডার্ড"
+                        : "Standard",
+                    hasWarning: Boolean(matrixNeedsSync),
+                  },
+                ];
+                const currentTabIndex = studioTabs.findIndex((tb) => tb.id === productStudioTab);
+                const prevTab = currentTabIndex > 0 ? studioTabs[currentTabIndex - 1] : null;
+                const nextTab =
+                  currentTabIndex >= 0 && currentTabIndex < studioTabs.length - 1
+                    ? studioTabs[currentTabIndex + 1]
+                    : null;
 
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          resetProductForm();
-                          setProductStudioOpen(false);
-                        }}
-                        className="rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:text-slate-900 whitespace-nowrap"
-                      >
-                        {t.admin.products.cancelEdit}
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={savingProduct}
-                        className="btn-primary px-5 py-2 text-xs whitespace-nowrap"
-                      >
-                        {savingProduct
-                          ? t.admin.products.savingProduct
-                          : editingProductId
-                          ? t.admin.products.saveChangesBtn
-                          : t.admin.products.publishProductBtn}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* 2-Column Studio Grid: Left 8 Cols (Content/Media/Variants) + Right 4 Cols (Pricing/Sourcing/Taxonomy) */}
-                  <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
-                    {/* LEFT COLUMN (8 Cols): Identity, Descriptions, Media Gallery & Variations */}
-                    <div className="xl:col-span-8 space-y-5">
-                      {/* Card 1: Product Identity & Bilingual Descriptions */}
-                      <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 space-y-4">
-                        <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-100">
-                          <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                            {lang === "bn"
-                              ? "১. পণ্যের নাম, SKU ও বিবরণ"
-                              : "1. Product Identity & Descriptions"}
-                          </span>
-                          <span className="text-[11px] text-slate-400">EN / বাংলা</span>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3.5">
-                          <div className="sm:col-span-5">
-                            <label className="block text-xs font-semibold text-slate-700 mb-1">
-                              {t.admin.products.nameEnLabel}
-                            </label>
-                            <input
-                              type="text"
-                              value={prodNameEn}
-                              onChange={(e) => setProdNameEn(e.target.value)}
-                              placeholder={t.admin.products.nameEnPlaceholder}
-                              className="input"
-                            />
-                          </div>
-
-                          <div className="sm:col-span-4">
-                            <label className="block text-xs font-semibold text-slate-700 mb-1">
-                              {t.admin.products.nameBnLabel}
-                            </label>
-                            <input
-                              type="text"
-                              value={prodNameBn}
-                              onChange={(e) => setProdNameBn(e.target.value)}
-                              placeholder={t.admin.products.nameBnPlaceholder}
-                              className="input"
-                            />
-                          </div>
-
-                          <div className="sm:col-span-3">
-                            <div className="flex items-center justify-between gap-1 mb-1">
-                              <label className="block text-xs font-semibold text-slate-700">
-                                {t.admin.products.skuLabel}
-                              </label>
-                              {editingProductId ? (
-                                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
-                                  <Lock className="h-2.5 w-2.5" />
-                                  <span>{lang === "bn" ? "লকড" : "Locked"}</span>
-                                </span>
-                              ) : (
-                                <span className="text-[10px] font-mono font-semibold text-[#0B5336]">
-                                  {`XM-${liveSkuPreview.l1Code}-${liveSkuPreview.l2Code}-${liveSkuPreview.l3Code}`}
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              <input
-                                type="text"
-                                value={prodSku}
-                                onChange={(e) => {
-                                  setProdSku(e.target.value.toUpperCase());
-                                  setSkuManuallyEdited(true);
-                                }}
-                                placeholder={liveSkuPreview.sku || t.admin.products.skuPlaceholder}
-                                className={`input font-mono uppercase text-xs flex-1 ${
-                                  duplicateSkuConflict
-                                    ? "border-red-400 focus:border-red-500 bg-red-50/40"
-                                    : ""
-                                }`}
-                              />
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleRegenerateProductSku(prodCategories, editingProductId)
-                                }
-                                title={
-                                  lang === "bn"
-                                    ? `ক্যাটাগরি অনুযায়ী পরবর্তী SKU জেনারেট করুন (${liveSkuPreview.sku})`
-                                    : `Regenerate sequential SKU from primary category (${liveSkuPreview.sku})`
-                                }
-                                className="h-[40px] w-[40px] shrink-0 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 hover:border-[#0B5336] hover:bg-brand-50 hover:text-[#0B5336] flex items-center justify-center transition-colors"
-                              >
-                                <RefreshCw className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                            {duplicateSkuConflict ? (
-                              <p className="text-[10px] font-semibold text-red-600 mt-1 leading-tight">
-                                {lang === "bn"
-                                  ? `ডুপ্লিকেট SKU (${duplicateSkuConflict.id})! পাশে রিফ্রেশ বাটনে চাপুন: ${liveSkuPreview.sku}`
-                                  : `Duplicate SKU (${duplicateSkuConflict.id})! Click refresh for ${liveSkuPreview.sku}`}
-                              </p>
-                            ) : (
-                              <p className="text-[10px] text-slate-400 mt-1 font-mono truncate">
-                                {editingProductId && prodSku !== liveSkuPreview.sku
-                                  ? lang === "bn"
-                                    ? `পরবর্তী সিরিয়াল: ${liveSkuPreview.sku}`
-                                    : `Next in category: ${liveSkuPreview.sku}`
-                                  : `MAX+1: ${liveSkuPreview.sku}`}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
-                          <div>
-                            <label className="block text-xs font-semibold text-slate-700 mb-1">
-                              {t.admin.products.descEnLabel}
-                            </label>
-                            <textarea
-                              rows={3}
-                              value={prodDescEn}
-                              onChange={(e) => setProdDescEn(e.target.value)}
-                              placeholder={t.admin.products.descEnPlaceholder}
-                              className="input min-h-[84px] py-2 text-xs"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-semibold text-slate-700 mb-1">
-                              {t.admin.products.descBnLabel}
-                            </label>
-                            <textarea
-                              rows={3}
-                              value={prodDescBn}
-                              onChange={(e) => setProdDescBn(e.target.value)}
-                              placeholder={t.admin.products.descBnPlaceholder}
-                              className="input min-h-[84px] py-2 text-xs"
-                            />
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Card 2: Product Images & Multi-Angle Gallery */}
-                      <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 space-y-4">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-slate-100">
-                          <div>
-                            <div className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                              <ImagePlus className="h-3.5 w-3.5 text-[#0B5336]" />
-                              <span>{tvar.mediaGallerySectionTitle}</span>
-                            </div>
-                            <p className="text-[11px] text-slate-500 mt-0.5">
-                              <span className="font-semibold text-[#0B5336]">
-                                {tvar.sizeGuideTitle}
-                              </span>
-                              {" · "}
-                              <span>{tvar.sizeGuideHint}</span>
-                            </p>
-                          </div>
-
-                          <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold text-slate-700 cursor-pointer shrink-0 hover:border-[#0B5336]">
-                            <input
-                              type="checkbox"
-                              checked={autoSquarePad}
-                              onChange={(e) => setAutoSquarePad(e.target.checked)}
-                              className="h-3.5 w-3.5 rounded accent-[#0B5336]"
-                            />
-                            <span>{tvar.autoSquarePadLabel}</span>
-                          </label>
-                        </div>
-
-                        {!autoSquarePad && (
-                          <div className="text-[11px] text-slate-500">
-                            {tvar.autoSquarePadOffHint}
-                          </div>
-                        )}
-
-                        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3.5 items-center">
-                          <div className="sm:col-span-2 flex items-center gap-3">
-                            <div className="h-20 w-20 rounded-xl border border-slate-200 bg-slate-50 p-1 overflow-hidden shrink-0 flex items-center justify-center">
-                              {prodImageUrl.trim() ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                  src={normalizeMartImageUrl(prodImageUrl)}
-                                  alt={tvar.primaryPreviewLabel}
-                                  referrerPolicy="no-referrer"
-                                  className="h-full w-full object-contain"
-                                />
-                              ) : (
-                                <span className="text-[10px] text-slate-400 text-center px-1">
-                                  {tvar.noPrimaryImageHint}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="sm:col-span-6">
-                            <label className="block text-xs font-semibold text-slate-700 mb-1">
-                              {t.admin.products.imageUrlLabel}
-                            </label>
-                            <input
-                              type="text"
-                              value={prodImageUrl}
-                              onChange={(e) => setProdImageUrl(e.target.value)}
-                              placeholder="https://lh3.googleusercontent.com/d/..."
-                              className="input font-mono text-xs"
-                            />
-                          </div>
-
-                          <div className="sm:col-span-4 sm:self-end">
-                            <label className="btn-outline bg-white w-full px-3.5 py-2.5 text-xs gap-2 cursor-pointer">
-                              <Upload className="h-3.5 w-3.5 text-[#0B5336]" />
-                              <span>
-                                {uploadingProdImg
-                                  ? t.admin.products.uploading
-                                  : t.admin.products.uploadToDrive}
-                              </span>
-                              <input
-                                type="file"
-                                accept="image/*"
-                                disabled={uploadingProdImg}
-                                onChange={handleProductImageUpload}
-                                className="sr-only"
-                              />
-                            </label>
-                          </div>
-                        </div>
-
-                        <div className="pt-3 border-t border-slate-100 space-y-2.5">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div>
-                              <div className="text-xs font-bold text-slate-800">
-                                {tvar.galleryTitle}
-                              </div>
-                              <div className="text-[11px] text-slate-500">{tvar.galleryHint}</div>
-                            </div>
-                            <label className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
-                              <ImagePlus className="h-3.5 w-3.5 text-[#0B5336]" />
-                              <span>
-                                {uploadingGalleryImg
-                                  ? t.admin.products.uploading
-                                  : tvar.uploadGalleryBtn}
-                              </span>
-                              <input
-                                type="file"
-                                accept="image/*"
-                                disabled={uploadingGalleryImg}
-                                onChange={handleGalleryImageUpload}
-                                className="sr-only"
-                              />
-                            </label>
-                          </div>
-
-                          <div className="flex flex-col sm:flex-row gap-2">
-                            <input
-                              type="text"
-                              value={extraImgInput}
-                              onChange={(e) => setExtraImgInput(e.target.value)}
-                              placeholder={tvar.addImageUrlPlaceholder}
-                              className="input text-xs font-mono flex-1"
-                            />
-                            <button
-                              type="button"
-                              onClick={handleAddExtraGalleryUrl}
-                              className="btn-outline bg-white px-4 py-2 text-xs whitespace-nowrap"
-                            >
-                              {tvar.addImageBtn}
-                            </button>
-                          </div>
-
-                          {prodGalleryUrls.length > 0 && (
-                            <div className="flex flex-wrap gap-2.5 pt-1">
-                              {prodGalleryUrls.map((url, idx) => (
-                                <div
-                                  key={`${url}-${idx}`}
-                                  className="group relative flex flex-col items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1.5"
-                                >
-                                  <div className="relative h-14 w-14 rounded-lg overflow-hidden bg-white p-1 border border-slate-100">
-                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                    <img
-                                      src={normalizeMartImageUrl(url)}
-                                      alt={tvar.galleryTitle}
-                                      referrerPolicy="no-referrer"
-                                      className="h-full w-full object-contain"
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        setProdGalleryUrls((prev) =>
-                                          prev.filter((_, i) => i !== idx)
-                                        )
-                                      }
-                                      aria-label={t.common.delete}
-                                      className="absolute top-0.5 right-0.5 rounded bg-slate-900/80 p-0.5 text-white hover:bg-red-600"
-                                    >
-                                      <X className="h-3 w-3" />
-                                    </button>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleSetPrimaryFromGallery(url)}
-                                    className="w-full rounded px-1.5 py-0.5 text-[10px] font-semibold text-[#0B5336] bg-brand-50 hover:bg-[#0B5336] hover:text-white transition-colors whitespace-nowrap"
-                                  >
-                                    {tvar.setAsPrimaryBtn}
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
+                return (
+                  <form
+                    onSubmit={handleSaveProduct}
+                    className={`rounded-2xl border bg-white overflow-hidden transition-colors ${
+                      editingProductId
+                        ? "border-[#0B5336] ring-2 ring-[#0B5336]/10"
+                        : "border-slate-200"
+                    }`}
+                  >
+                    {/* Persistent Studio Top Action Bar */}
+                    <div className="px-4 sm:px-6 py-4 bg-slate-50/70 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="h-9 w-9 rounded-xl bg-[#0B5336] text-white flex items-center justify-center shrink-0">
+                          {editingProductId ? (
+                            <Pencil className="h-4 w-4" />
+                          ) : (
+                            <Plus className="h-4 w-4" />
                           )}
                         </div>
-                      </div>
-
-                      {/* Card 3: Unified 3-Mode Variation Studio */}
-                      <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 space-y-4">
-                        <div className="space-y-2.5">
-                          <div className="pb-2 border-b border-slate-100">
-                            <div className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                              <Layers className="h-3.5 w-3.5 text-[#0B5336]" />
-                              <span>{tvar.modeLabel}</span>
-                            </div>
-                            <p className="text-[11px] text-slate-500 mt-0.5">
-                              {tvar.sectionSubtitle}
-                            </p>
-                          </div>
-
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
-                            {(
-                              [
-                                { id: "none", title: tvar.modeNone, hint: tvar.modeNoneHint },
-                                { id: "simple", title: tvar.modeSimple, hint: tvar.modeSimpleHint },
-                                { id: "matrix", title: tvar.modeMatrix, hint: tvar.modeMatrixHint },
-                              ] as const
-                            ).map((modeOpt) => {
-                              const active = variationMode === modeOpt.id;
-                              return (
-                                <button
-                                  key={modeOpt.id}
-                                  type="button"
-                                  onClick={() => {
-                                    setVariationMode(modeOpt.id);
-                                    setColorGalleryPickerIdx(null);
-                                  }}
-                                  className={`rounded-xl border p-3 text-left transition-colors ${
-                                    active
-                                      ? "border-[#0B5336] bg-brand-50/30 ring-2 ring-[#0B5336]/15"
-                                      : "border-slate-200 bg-slate-50/60 hover:border-slate-300"
-                                  }`}
-                                >
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span
-                                      className={`text-xs font-bold ${
-                                        active ? "text-[#0B5336]" : "text-slate-800"
-                                      }`}
-                                    >
-                                      {modeOpt.title}
-                                    </span>
-                                    {active && (
-                                      <CheckCircle2 className="h-3.5 w-3.5 text-[#0B5336] shrink-0" />
-                                    )}
-                                  </div>
-                                  <p className="text-[11px] text-slate-500 mt-1 leading-snug">
-                                    {modeOpt.hint}
-                                  </p>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        {/* Mode: Simple Option List */}
-                        {variationMode === "simple" && (
-                          <div className="pt-3 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                            <div>
-                              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                {t.admin.products.variantsEnLabel}
-                              </label>
-                              <input
-                                type="text"
-                                value={prodVariantsEn}
-                                onChange={(e) => setProdVariantsEn(e.target.value)}
-                                placeholder={t.admin.products.variantsEnPlaceholder}
-                                className="input"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                {t.admin.products.variantsBnLabel}
-                              </label>
-                              <input
-                                type="text"
-                                value={prodVariantsBn}
-                                onChange={(e) => setProdVariantsBn(e.target.value)}
-                                placeholder={t.admin.products.variantsBnPlaceholder}
-                                className="input"
-                              />
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Mode: Structured Color Swatches + Sizes + Price/Stock Matrix */}
-                        {variationMode === "matrix" && (
-                          <div className="space-y-4 pt-3 border-t border-slate-100">
-                            <div className="space-y-2.5">
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="text-xs font-bold text-slate-800">
-                                  {tvar.colorsTitle}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={handleAddColorRow}
-                                  className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-[#0B5336] hover:bg-brand-50 whitespace-nowrap"
-                                >
-                                  {tvar.addColorBtn}
-                                </button>
-                              </div>
-
-                              {prodColors.length > 0 && (
-                                <div className="space-y-2.5">
-                                  {prodColors.map((clr, idx) => {
-                                    const isUploadingColor = uploadingColorRowId === clr.id;
-                                    const pickerOpen = colorGalleryPickerIdx === idx;
-                                    return (
-                                      <div
-                                        key={clr.id}
-                                        className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2.5"
-                                      >
-                                        <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center">
-                                          <div className="sm:col-span-1 flex items-center gap-2">
-                                            <div className="h-10 w-10 rounded-lg border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center bg-white p-0.5">
-                                              {clr.imageUrl ? (
-                                                // eslint-disable-next-line @next/next/no-img-element
-                                                <img
-                                                  src={normalizeMartImageUrl(clr.imageUrl)}
-                                                  alt={clr.nameEn || clr.nameBn || "Color"}
-                                                  referrerPolicy="no-referrer"
-                                                  className="h-full w-full object-contain"
-                                                />
-                                              ) : (
-                                                <span
-                                                  className="h-5 w-5 rounded-full border border-slate-300"
-                                                  style={{
-                                                    backgroundColor: clr.hex || "#0B5336",
-                                                  }}
-                                                />
-                                              )}
-                                            </div>
-                                          </div>
-
-                                          <div className="sm:col-span-4">
-                                            <input
-                                              type="text"
-                                              value={clr.nameEn}
-                                              onChange={(e) =>
-                                                handleColorNameEnChange(idx, e.target.value)
-                                              }
-                                              placeholder={tvar.colorNameEnPlaceholder}
-                                              aria-label={tvar.colorNameEnLabel}
-                                              className="input bg-white min-h-[38px] py-1.5 text-xs"
-                                            />
-                                          </div>
-
-                                          <div className="sm:col-span-4">
-                                            <input
-                                              type="text"
-                                              value={clr.nameBn}
-                                              onChange={(e) =>
-                                                setProdColors((prev) =>
-                                                  prev.map((item, i) =>
-                                                    i === idx
-                                                      ? { ...item, nameBn: e.target.value }
-                                                      : item
-                                                  )
-                                                )
-                                              }
-                                              placeholder={tvar.colorNameBnPlaceholder}
-                                              aria-label={tvar.colorNameBnLabel}
-                                              className="input bg-white min-h-[38px] py-1.5 text-xs"
-                                            />
-                                          </div>
-
-                                          <div className="sm:col-span-2 flex items-center gap-2">
-                                            <input
-                                              type="color"
-                                              value={clr.hex || "#0B5336"}
-                                              onChange={(e) =>
-                                                setProdColors((prev) =>
-                                                  prev.map((item, i) =>
-                                                    i === idx
-                                                      ? { ...item, hex: e.target.value }
-                                                      : item
-                                                  )
-                                                )
-                                              }
-                                              aria-label={tvar.colorHexLabel}
-                                              className="h-9 w-12 rounded-lg border border-slate-200 cursor-pointer shrink-0 bg-white"
-                                            />
-                                            <span className="font-mono text-[11px] text-slate-400">
-                                              {clr.hex || "#0B5336"}
-                                            </span>
-                                          </div>
-
-                                          <div className="sm:col-span-1 text-right">
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                setProdColors((prev) =>
-                                                  prev.filter((_, i) => i !== idx)
-                                                );
-                                                if (colorGalleryPickerIdx === idx) {
-                                                  setColorGalleryPickerIdx(null);
-                                                }
-                                              }}
-                                              aria-label={t.common.delete}
-                                              className="text-red-600 hover:text-red-800 p-1.5 rounded-lg hover:bg-red-50"
-                                            >
-                                              <Trash2 className="h-4 w-4" />
-                                            </button>
-                                          </div>
-                                        </div>
-
-                                        <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-2 border-t border-slate-200/70">
-                                          <input
-                                            type="text"
-                                            value={clr.imageUrl || ""}
-                                            onChange={(e) =>
-                                              setProdColors((prev) =>
-                                                prev.map((item, i) =>
-                                                  i === idx
-                                                    ? { ...item, imageUrl: e.target.value }
-                                                    : item
-                                                )
-                                              )
-                                            }
-                                            placeholder={tvar.colorImageLabel}
-                                            className="input bg-white min-h-[36px] py-1 text-xs font-mono flex-1"
-                                          />
-
-                                          <div className="flex flex-wrap items-center gap-1.5 shrink-0">
-                                            <label className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] cursor-pointer inline-flex items-center gap-1.5 min-h-[36px] whitespace-nowrap">
-                                              <Upload className="h-3.5 w-3.5 text-[#0B5336]" />
-                                              <span>
-                                                {isUploadingColor
-                                                  ? t.admin.products.uploading
-                                                  : tvar.uploadColorImgBtn}
-                                              </span>
-                                              <input
-                                                type="file"
-                                                accept="image/*"
-                                                disabled={isUploadingColor}
-                                                onChange={(e) =>
-                                                  handleColorRowImageUpload(clr.id, idx, e)
-                                                }
-                                                className="sr-only"
-                                              />
-                                            </label>
-
-                                            <button
-                                              type="button"
-                                              onClick={() =>
-                                                setColorGalleryPickerIdx((prev) =>
-                                                  prev === idx ? null : idx
-                                                )
-                                              }
-                                              className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold min-h-[36px] whitespace-nowrap transition-colors ${
-                                                pickerOpen
-                                                  ? "border-[#0B5336] bg-[#0B5336] text-white"
-                                                  : "border-slate-300 bg-white text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336]"
-                                              }`}
-                                            >
-                                              {tvar.pickFromGalleryBtn}
-                                            </button>
-
-                                            {clr.imageUrl && (
-                                              <button
-                                                type="button"
-                                                onClick={() =>
-                                                  setProdColors((prev) =>
-                                                    prev.map((item, i) =>
-                                                      i === idx ? { ...item, imageUrl: "" } : item
-                                                    )
-                                                  )
-                                                }
-                                                className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-semibold text-slate-500 hover:text-red-600 min-h-[36px]"
-                                                title={tvar.clearColorImgBtn}
-                                              >
-                                                <X className="h-3.5 w-3.5" />
-                                              </button>
-                                            )}
-                                          </div>
-                                        </div>
-
-                                        {pickerOpen && (
-                                          <div className="rounded-lg border border-slate-200 bg-white p-2.5 space-y-2">
-                                            {availableGalleryPool.length === 0 ? (
-                                              <p className="text-[11px] text-slate-500">
-                                                {tvar.noGalleryPhotosHint}
-                                              </p>
-                                            ) : (
-                                              <div className="flex flex-wrap gap-2">
-                                                {availableGalleryPool.map((poolUrl, pIdx) => {
-                                                  const selected = clr.imageUrl === poolUrl;
-                                                  return (
-                                                    <button
-                                                      key={`${poolUrl}-${pIdx}`}
-                                                      type="button"
-                                                      onClick={() => {
-                                                        setProdColors((prev) =>
-                                                          prev.map((item, i) =>
-                                                            i === idx
-                                                              ? { ...item, imageUrl: poolUrl }
-                                                              : item
-                                                          )
-                                                        );
-                                                        setColorGalleryPickerIdx(null);
-                                                      }}
-                                                      className={`h-14 w-14 rounded-lg bg-white p-1 overflow-hidden border-2 transition-all ${
-                                                        selected
-                                                          ? "border-[#0B5336] ring-2 ring-[#0B5336]/25"
-                                                          : "border-slate-200 hover:border-[#0B5336]"
-                                                      }`}
-                                                    >
-                                                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                      <img
-                                                        src={normalizeMartImageUrl(poolUrl)}
-                                                        alt={tvar.galleryTitle}
-                                                        referrerPolicy="no-referrer"
-                                                        className="h-full w-full object-contain"
-                                                      />
-                                                    </button>
-                                                  );
-                                                })}
-                                              </div>
-                                            )}
-                                          </div>
-                                        )}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
-
-                            {/* Sizes Input + Matrix Generator */}
-                            <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-end pt-3 border-t border-slate-100">
-                              <div className="lg:col-span-7">
-                                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                  {tvar.sizesLabel}
-                                </label>
-                                <input
-                                  type="text"
-                                  value={prodSizesInput}
-                                  onChange={(e) => setProdSizesInput(e.target.value)}
-                                  placeholder={tvar.sizesPlaceholder}
-                                  className="input text-xs"
-                                />
-                              </div>
-                              <div className="lg:col-span-5 flex flex-wrap gap-2">
-                                <button
-                                  type="button"
-                                  onClick={handleBuildVariationMatrix}
-                                  className="btn-outline bg-white px-3.5 py-2 text-xs whitespace-nowrap"
-                                >
-                                  {tvar.syncMatrixBtn}
-                                </button>
-                                {prodMatrix.length > 0 && (
-                                  <button
-                                    type="button"
-                                    onClick={() => setProdMatrix([])}
-                                    className="rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 whitespace-nowrap"
-                                  >
-                                    {tvar.clearMatrixBtn}
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-
-                            {matrixNeedsSync && (
-                              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-900">
-                                <div className="flex items-center gap-2">
-                                  <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
-                                  <span>{tvar.matrixSyncNeededHint}</span>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={handleBuildVariationMatrix}
-                                  className="rounded-lg bg-amber-600 px-3 py-1 text-[11px] font-semibold text-white hover:bg-amber-700 whitespace-nowrap"
-                                >
-                                  {tvar.syncMatrixBtn}
-                                </button>
-                              </div>
-                            )}
-
-                            {prodMatrix.length > 0 && (
-                              <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
-                                <div className="flex flex-wrap items-center justify-between gap-2">
-                                  <span className="text-xs font-bold text-slate-800">
-                                    {tvar.matrixTitle} ({toLocalizedDigits(prodMatrix.length, lang)})
-                                  </span>
-                                  <span className="text-[11px] text-slate-500">{tvar.matrixHint}</span>
-                                </div>
-                                <div className="overflow-x-auto">
-                                  <table className="w-full text-left text-xs">
-                                    <thead className="border-b border-slate-200 text-slate-500">
-                                      <tr>
-                                        <th className="py-2 pr-2 font-semibold">{tvar.colCombination}</th>
-                                        <th className="py-2 pr-2 font-semibold">{tvar.colVariantSku}</th>
-                                        <th className="py-2 pr-2 font-semibold">{tvar.colPriceOverride}</th>
-                                        <th className="py-2 pr-2 font-semibold">{tvar.colCostOverride}</th>
-                                        <th className="py-2 pr-2 font-semibold">{tvar.colStock}</th>
-                                        <th className="py-2 font-semibold text-center">{tvar.colActive}</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                      {prodMatrix.map((row, idx) => (
-                                        <tr key={row.key}>
-                                          <td className="py-1.5 pr-2 font-semibold text-slate-800 whitespace-nowrap">
-                                            {[row.colorNameEn, row.size].filter(Boolean).join(" / ")}
-                                          </td>
-                                          <td className="py-1.5 pr-2">
-                                            <input
-                                              type="text"
-                                              value={row.sku}
-                                              onChange={(e) =>
-                                                setProdMatrix((prev) =>
-                                                  prev.map((m, i) =>
-                                                    i === idx ? { ...m, sku: e.target.value } : m
-                                                  )
-                                                )
-                                              }
-                                              className="rounded border border-slate-200 bg-white px-2 py-1 text-xs font-mono w-28"
-                                            />
-                                          </td>
-                                          <td className="py-1.5 pr-2">
-                                            <input
-                                              type="number"
-                                              min={0}
-                                              value={row.priceOverride || ""}
-                                              onChange={(e) =>
-                                                setProdMatrix((prev) =>
-                                                  prev.map((m, i) =>
-                                                    i === idx
-                                                      ? {
-                                                          ...m,
-                                                          priceOverride: Math.max(
-                                                            0,
-                                                            Number(e.target.value) || 0
-                                                          ),
-                                                        }
-                                                      : m
-                                                  )
-                                                )
-                                              }
-                                              className="rounded border border-slate-200 bg-white px-2 py-1 text-xs font-mono w-20"
-                                            />
-                                          </td>
-                                          <td className="py-1.5 pr-2">
-                                            <input
-                                              type="number"
-                                              min={0}
-                                              value={row.costOverride || ""}
-                                              onChange={(e) =>
-                                                setProdMatrix((prev) =>
-                                                  prev.map((m, i) =>
-                                                    i === idx
-                                                      ? {
-                                                          ...m,
-                                                          costOverride: Math.max(
-                                                            0,
-                                                            Number(e.target.value) || 0
-                                                          ),
-                                                        }
-                                                      : m
-                                                  )
-                                                )
-                                              }
-                                              className="rounded border border-slate-200 bg-white px-2 py-1 text-xs font-mono w-20"
-                                            />
-                                          </td>
-                                          <td className="py-1.5 pr-2">
-                                            <input
-                                              type="number"
-                                              min={0}
-                                              value={row.stock}
-                                              onChange={(e) =>
-                                                setProdMatrix((prev) =>
-                                                  prev.map((m, i) =>
-                                                    i === idx
-                                                      ? {
-                                                          ...m,
-                                                          stock: Math.max(
-                                                            0,
-                                                            Number(e.target.value) || 0
-                                                          ),
-                                                        }
-                                                      : m
-                                                  )
-                                                )
-                                              }
-                                              className="rounded border border-slate-200 bg-white px-2 py-1 text-xs font-mono w-20"
-                                            />
-                                          </td>
-                                          <td className="py-1.5 text-center">
-                                            <input
-                                              type="checkbox"
-                                              checked={row.active}
-                                              onChange={(e) =>
-                                                setProdMatrix((prev) =>
-                                                  prev.map((m, i) =>
-                                                    i === idx ? { ...m, active: e.target.checked } : m
-                                                  )
-                                                )
-                                              }
-                                              className="h-4 w-4 rounded border-slate-300 text-[#0B5336]"
-                                            />
-                                          </td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* RIGHT COLUMN (4 Cols): Pricing, Wholesale, Sourcing/Inventory, Taxonomy & Publish */}
-                    <div className="xl:col-span-4 space-y-5">
-                      {/* Right Card 1: Pricing, Cost & Wholesale Tier */}
-                      <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 space-y-4">
-                        <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-100">
-                          <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                            {lang === "bn" ? "২. মূল্য ও পাইকারি রেট" : "2. Pricing & Wholesale"}
-                          </span>
-                          {prodPrice && (
-                            <span
-                              className={`rounded-md px-2 py-0.5 text-[11px] font-mono font-bold tabular-nums ${
-                                prodUnitProfit >= 0
-                                  ? "bg-brand-50 text-[#0B5336]"
-                                  : "bg-red-50 text-red-600"
-                              }`}
-                            >
-                              {formatMartPrice(prodUnitProfit, lang)} (
-                              {toLocalizedDigits(prodMarginPct, lang)}%)
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="font-display text-sm sm:text-base font-bold text-slate-900 truncate">
+                              {editingProductId
+                                ? `${t.admin.products.editTitle} (${editingProductId})`
+                                : t.admin.products.addTitle}
+                            </h3>
+                            <span className="font-mono text-[11px] font-semibold text-[#0B5336] bg-white border border-slate-200 rounded-md px-2 py-0.5 tabular-nums whitespace-nowrap">
+                              {prodSku || liveSkuPreview.sku}
                             </span>
-                          )}
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-xs font-semibold text-slate-700 mb-1">
-                              {t.admin.products.priceLabel}
-                            </label>
-                            <input
-                              type="number"
-                              min={0}
-                              required
-                              value={prodPrice}
-                              onChange={(e) => setProdPrice(e.target.value)}
-                              placeholder="1250"
-                              className="input font-mono"
-                            />
                           </div>
-
-                          <div>
-                            <label className="block text-xs font-semibold text-slate-700 mb-1">
-                              {t.admin.products.comparePriceLabel}
-                            </label>
-                            <input
-                              type="number"
-                              min={0}
-                              value={prodComparePrice}
-                              onChange={(e) => setProdComparePrice(e.target.value)}
-                              placeholder="1550"
-                              className="input font-mono"
-                            />
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 mb-1">
-                            {tsrc.costPriceLabel}
-                          </label>
-                          <input
-                            type="number"
-                            min={0}
-                            value={prodCostPrice}
-                            onChange={(e) => setProdCostPrice(e.target.value)}
-                            placeholder="850"
-                            className="input font-mono"
-                          />
-                        </div>
-
-                        {/* Wholesale Tier */}
-                        <div className="pt-3 border-t border-slate-100 space-y-2.5">
-                          <div>
-                            <div className="text-xs font-bold text-slate-800">
-                              {tvar.wholesaleTitle}
-                            </div>
-                            <p className="text-[11px] text-slate-500">{tvar.wholesaleHint}</p>
-                          </div>
-                          <div className="grid grid-cols-2 gap-3">
-                            <div>
-                              <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                                {tvar.wholesaleMinQtyLabel}
-                              </label>
-                              <input
-                                type="number"
-                                min={0}
-                                value={prodWholesaleMinQty}
-                                onChange={(e) => setProdWholesaleMinQty(e.target.value)}
-                                placeholder="10"
-                                className="input font-mono text-xs"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                                {tvar.wholesalePriceLabel}
-                              </label>
-                              <input
-                                type="number"
-                                min={0}
-                                value={prodWholesalePrice}
-                                onChange={(e) => setProdWholesalePrice(e.target.value)}
-                                placeholder="980"
-                                className="input font-mono text-xs"
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Right Card 2: Sourcing, Stock & Supplier Control */}
-                      <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 space-y-3.5">
-                        <div className="pb-2 border-b border-slate-100">
-                          <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                            {tsrc.sectionTitle}
-                          </span>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 mb-1">
-                            {tsrc.fulfillmentModeLabel}
-                          </label>
-                          <select
-                            value={prodFulfillmentType}
-                            onChange={(e) =>
-                              setProdFulfillmentType(e.target.value as MartFulfillmentType)
-                            }
-                            className="input text-xs"
-                          >
-                            <option value="own_stock">{tsrc.ownStockMode}</option>
-                            <option value="dropship">{tsrc.dropshipMode}</option>
-                          </select>
-                          <p className="text-[11px] text-slate-500 mt-1">
-                            {prodFulfillmentType === "dropship"
-                              ? tsrc.dropshipHint
-                              : tsrc.ownStockHint}
-                          </p>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-xs font-semibold text-slate-700 mb-1">
-                              {t.admin.products.stockLabel}
-                            </label>
-                            {prodFulfillmentType === "dropship" ? (
-                              <div className="input flex items-center text-xs font-semibold text-[#0B5336] bg-brand-50">
-                                {tsrc.unlimitedLabel}
-                              </div>
-                            ) : variationMode === "matrix" && prodMatrix.length > 0 ? (
-                              <div>
-                                <div className="input flex items-center justify-between text-xs font-mono font-bold text-[#0B5336] bg-brand-50/70 tabular-nums">
-                                  <span>
-                                    {toLocalizedDigits(
-                                      prodMatrix
-                                        .filter((v) => v.active)
-                                        .reduce(
-                                          (s, v) => s + Math.max(0, Number(v.stock) || 0),
-                                          0
-                                        ),
-                                      lang
-                                    )}
-                                  </span>
-                                  <span className="font-sans font-medium text-[11px] text-slate-600">
-                                    Matrix
-                                  </span>
-                                </div>
-                              </div>
-                            ) : (
-                              <input
-                                type="number"
-                                min={0}
-                                required
-                                value={prodStock}
-                                onChange={(e) => setProdStock(e.target.value)}
-                                className="input font-mono"
-                              />
-                            )}
-                          </div>
-
-                          {prodFulfillmentType === "own_stock" ? (
-                            <div>
-                              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                {tsrc.lowStockThresholdLabel}
-                              </label>
-                              <input
-                                type="number"
-                                min={0}
-                                value={prodLowStockThreshold}
-                                onChange={(e) => setProdLowStockThreshold(e.target.value)}
-                                className="input font-mono"
-                              />
-                            </div>
-                          ) : (
-                            <div className="flex items-end pb-2">
-                              <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-800 cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={prodSupplierAvailable}
-                                  onChange={(e) => setProdSupplierAvailable(e.target.checked)}
-                                  className="h-4 w-4 rounded border-slate-300 text-[#0B5336]"
-                                />
-                                <span>{tsrc.supplierAvailableCheckbox}</span>
-                              </label>
-                            </div>
-                          )}
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 mb-1">
-                            {tsrc.supplierLabel}
-                          </label>
-                          <select
-                            value={prodSupplierId}
-                            onChange={(e) => {
-                              const id = e.target.value;
-                              setProdSupplierId(id);
-                              const sup = suppliers.find((s) => s.id === id);
-                              if (sup) {
-                                setProdCollectionMode(
-                                  sup.payoutMode === "supplier_pays_us"
-                                    ? "supplier_collects"
-                                    : "store_collects"
-                                );
-                              }
-                            }}
-                            className="input text-xs"
-                          >
-                            <option value="">{tsrc.noSupplierOption}</option>
-                            {suppliers.map((s) => (
-                              <option key={s.id} value={s.id}>
-                                {s.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 mb-1">
-                            {tsrc.sourceNameLabel}
-                          </label>
-                          <input
-                            type="text"
-                            value={prodSourceName}
-                            onChange={(e) => setProdSourceName(e.target.value)}
-                            placeholder={tsrc.sourceNamePlaceholder}
-                            className="input text-xs"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 mb-1">
-                            {tsrc.collectionModeLabel}
-                          </label>
-                          <select
-                            value={prodCollectionMode}
-                            onChange={(e) =>
-                              setProdCollectionMode(e.target.value as MartCollectionMode)
-                            }
-                            className="input text-xs"
-                          >
-                            <option value="store_collects">{tsrc.storeCollectsOption}</option>
-                            <option value="supplier_collects">
-                              {tsrc.supplierCollectsOption}
-                            </option>
-                          </select>
-                        </div>
-                      </div>
-
-                      {/* Right Card 3: 3-Step Primary Category Dropdowns (Drives Auto-SKU) + Relatable Categories Switch */}
-                      <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 space-y-4">
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between gap-2">
-                            <div>
-                              <div className="text-xs font-bold text-slate-800">
-                                {lang === "bn"
-                                  ? "প্রাইমারি ৩-লেভেল ক্যাটাগরি ও অটো SKU"
-                                  : "Primary 3-Level Category & Auto-SKU"}
-                              </div>
-                              <div className="text-[11px] text-slate-500">
-                                {lang === "bn"
-                                  ? "ড্রপডাউন থেকে মেইন > সাব > আইটেম সিলেক্ট করলে অটোমেটিক SKU জেনারেট হবে (কোনো ধাপ বাদ পড়লে GEN বসবে)"
-                                  : "Select Main > Sub > Item from dropdowns to auto-generate SKU (omitted levels use GEN)"}
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => setActiveSection("taxonomy")}
-                              className="text-[11px] font-semibold text-[#0B5336] hover:underline whitespace-nowrap shrink-0"
-                            >
-                              {t.admin.products.goToTaxonomyBtn}
-                            </button>
-                          </div>
-
-                          {categories.length === 0 ? (
-                            <p className="text-xs text-slate-500 py-1">
-                              {t.admin.products.noCategoriesHint}
-                            </p>
-                          ) : (
-                            <>
-                              {/* 3 Cascading Dropdowns for Primary Category */}
-                              <div className="grid grid-cols-1 gap-2.5 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
-                                {/* Level 1: Main Category */}
-                                <div>
-                                  <label className="flex items-center justify-between text-[11px] font-semibold text-slate-700 mb-1">
-                                    <span>
-                                      {lang === "bn"
-                                        ? "১. মেইন ক্যাটাগরি (Level 1: Main Category)"
-                                        : "1. Level 1: Main Category"}
-                                    </span>
-                                    <span className="font-mono text-[10px] font-bold text-[#0B5336] bg-brand-50 border border-brand-200 rounded px-1.5 py-0.2">
-                                      L1: {liveSkuPreview.l1Code}
-                                    </span>
-                                  </label>
-                                  <select
-                                    value={selectedPrimaryL1Slug}
-                                    onChange={(e) => handlePrimaryCategorySelect(e.target.value)}
-                                    className="input text-xs bg-white"
-                                  >
-                                    <option value="">
-                                      {lang === "bn"
-                                        ? "-- GEN (মেইন ক্যাটাগরি নির্বাচন করুন) --"
-                                        : "-- GEN (Select Main Category) --"}
-                                    </option>
-                                    {primaryLevel1Options.map((c1) => {
-                                      const code = resolveCategorySkuCode(c1);
-                                      const label = pickLocalized(
-                                        c1.nameEn,
-                                        c1.nameBn,
-                                        lang,
-                                        c1.slug
-                                      );
-                                      return (
-                                        <option key={c1.id} value={c1.slug}>
-                                          [{code}] {label}
-                                        </option>
-                                      );
-                                    })}
-                                  </select>
-                                </div>
-
-                                {/* Level 2: Sub-Category */}
-                                <div>
-                                  <label className="flex items-center justify-between text-[11px] font-semibold text-slate-700 mb-1">
-                                    <span>
-                                      {lang === "bn"
-                                        ? "২. সাব-ক্যাটাগরি (Level 2: Sub-Category)"
-                                        : "2. Level 2: Sub-Category"}
-                                    </span>
-                                    <span className="font-mono text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.2">
-                                      L2: {liveSkuPreview.l2Code}
-                                    </span>
-                                  </label>
-                                  <select
-                                    value={selectedPrimaryL2Slug}
-                                    disabled={!selectedPrimaryL1Slug}
-                                    onChange={(e) => {
-                                      const nextL2 = e.target.value;
-                                      handlePrimaryCategorySelect(
-                                        nextL2 || selectedPrimaryL1Slug
-                                      );
-                                    }}
-                                    className="input text-xs bg-white disabled:bg-slate-100 disabled:text-slate-400"
-                                  >
-                                    <option value="">
-                                      {!selectedPrimaryL1Slug
-                                        ? lang === "bn"
-                                          ? "-- আগে Level 1 সিলেক্ট করুন (GEN) --"
-                                          : "-- Select Level 1 first (GEN) --"
-                                        : primaryLevel2Options.length === 0
-                                        ? lang === "bn"
-                                          ? "-- এই ক্যাটাগরিতে কোনো সাব-ক্যাটাগরি নেই (GEN) --"
-                                          : "-- No Sub-Categories available (GEN) --"
-                                        : lang === "bn"
-                                        ? "-- GEN (সাব-ক্যাটাগরি ছাড়া / General) --"
-                                        : "-- GEN (Skip Sub-Category / General) --"}
-                                    </option>
-                                    {primaryLevel2Options.map((c2) => {
-                                      const code = resolveCategorySkuCode(c2);
-                                      const label = pickLocalized(
-                                        c2.nameEn,
-                                        c2.nameBn,
-                                        lang,
-                                        c2.slug
-                                      );
-                                      return (
-                                        <option key={c2.id} value={c2.slug}>
-                                          [{code}] {label}
-                                        </option>
-                                      );
-                                    })}
-                                  </select>
-                                </div>
-
-                                {/* Level 3: Child Category / Item */}
-                                <div>
-                                  <label className="flex items-center justify-between text-[11px] font-semibold text-slate-700 mb-1">
-                                    <span>
-                                      {lang === "bn"
-                                        ? "৩. ক্যাটাগরি লেভেল ৩ / আইটেম (Level 3: Item)"
-                                        : "3. Level 3: Child Category / Item"}
-                                    </span>
-                                    <span className="font-mono text-[10px] font-bold text-[#0B5336] bg-brand-50 border border-brand-200 rounded px-1.5 py-0.2">
-                                      L3: {liveSkuPreview.l3Code}
-                                    </span>
-                                  </label>
-                                  <select
-                                    value={selectedPrimaryL3Slug}
-                                    disabled={!selectedPrimaryL2Slug}
-                                    onChange={(e) => {
-                                      const nextL3 = e.target.value;
-                                      handlePrimaryCategorySelect(
-                                        nextL3 || selectedPrimaryL2Slug || selectedPrimaryL1Slug
-                                      );
-                                    }}
-                                    className="input text-xs bg-white disabled:bg-slate-100 disabled:text-slate-400"
-                                  >
-                                    <option value="">
-                                      {!selectedPrimaryL2Slug
-                                        ? lang === "bn"
-                                          ? "-- আগে Level 2 সিলেক্ট করুন (GEN) --"
-                                          : "-- Select Level 2 first (GEN) --"
-                                        : primaryLevel3Options.length === 0
-                                        ? lang === "bn"
-                                          ? "-- এই সাব-ক্যাটাগরিতে কোনো Level 3 আইটেম নেই (GEN) --"
-                                          : "-- No Level 3 Items available (GEN) --"
-                                        : lang === "bn"
-                                        ? "-- GEN (আইটেম ছাড়া / General) --"
-                                        : "-- GEN (Skip Level 3 Item / General) --"}
-                                    </option>
-                                    {primaryLevel3Options.map((c3) => {
-                                      const code = resolveCategorySkuCode(c3);
-                                      const label = pickLocalized(
-                                        c3.nameEn,
-                                        c3.nameBn,
-                                        lang,
-                                        c3.slug
-                                      );
-                                      return (
-                                        <option key={c3.id} value={c3.slug}>
-                                          [{code}] {label}
-                                        </option>
-                                      );
-                                    })}
-                                  </select>
-                                </div>
-                              </div>
-
-                              {/* Live Primary SKU Preview Bar */}
-                              <div className="rounded-lg border border-brand-200 bg-brand-50/60 px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-[11px]">
-                                <div className="flex items-center gap-1.5 min-w-0">
-                                  <Star className="h-3.5 w-3.5 text-gold-600 fill-gold-500 shrink-0" />
-                                  <span className="font-semibold text-slate-800 truncate">
-                                    {lang === "bn" ? "Primary পাথ:" : "Primary Path:"}{" "}
-                                    <span className="text-[#0B5336]">
-                                      {prodCategories[0]
-                                        ? lang === "bn"
-                                          ? liveSkuPreview.breadcrumbBn
-                                          : liveSkuPreview.breadcrumbEn
-                                        : lang === "bn"
-                                        ? "GEN > GEN > GEN (নির্ধারিত নয়)"
-                                        : "GEN > GEN > GEN (Unassigned)"}
-                                    </span>
-                                  </span>
-                                </div>
-                                <span className="font-mono text-[11px] font-bold text-[#0B5336] bg-white border border-brand-200 rounded px-2 py-0.5 shrink-0">
-                                  {prodSku || liveSkuPreview.sku}
-                                </span>
-                              </div>
-
-                              {/* Relatable Categories Switch Box */}
-                              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-2.5">
-                                <div className="flex items-center justify-between gap-3">
-                                  <div className="min-w-0">
-                                    <div className="flex items-center gap-1.5">
-                                      <span className="text-xs font-bold text-slate-800">
-                                        {lang === "bn"
-                                          ? "আরো কোনো ক্যাটাগরি রিলেটেবল?"
-                                          : "Any Relatable Categories?"}
-                                      </span>
-                                      {prodCategories.length > 1 && (
-                                        <span className="rounded bg-[#0B5336] px-1.5 py-0.2 text-[10px] font-bold text-white">
-                                          +{toLocalizedDigits(prodCategories.length - 1, lang)}
-                                        </span>
-                                      )}
-                                    </div>
-                                    <p className="text-[11px] text-slate-500">
-                                      {lang === "bn"
-                                        ? "সুইচ অন করে রিলেটেবল ক্যাটাগরি মার্ক করুন (এতে কখনোই SKU পরিবর্তন হবে না)"
-                                        : "Turn ON to mark extra relatable categories (never alters the SKU)"}
-                                    </p>
-                                  </div>
-
-                                  <button
-                                    type="button"
-                                    role="switch"
-                                    aria-checked={relatableCategoriesEnabled}
-                                    onClick={() => {
-                                      if (!prodCategories[0]) {
-                                        showNotice(
-                                          "error",
-                                          lang === "bn"
-                                            ? "রিলেটেবল ক্যাটাগরি দেওয়ার আগে উপরের ড্রপডাউন থেকে অন্তত মেইন ক্যাটাগরি সিলেক্ট করুন।"
-                                            : "Please select a Primary Category from the dropdowns above first."
-                                        );
-                                        return;
-                                      }
-                                      const nextState = !relatableCategoriesEnabled;
-                                      setRelatableCategoriesEnabled(nextState);
-                                      if (!nextState && prodCategories.length > 1) {
-                                        // Keep only the Primary Category (index 0); SKU remains unchanged
-                                        setProdCategories([prodCategories[0]]);
-                                      }
-                                    }}
-                                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                                      relatableCategoriesEnabled
-                                        ? "bg-[#0B5336]"
-                                        : "bg-slate-300"
-                                    }`}
-                                  >
-                                    <span
-                                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                                        relatableCategoriesEnabled
-                                          ? "translate-x-5"
-                                          : "translate-x-0"
-                                      }`}
-                                    />
-                                  </button>
-                                </div>
-
-                                {relatableCategoriesEnabled && prodCategories[0] && (
-                                  <div className="pt-2 border-t border-slate-200/80 space-y-2">
-                                    {categories.length > 8 && (
-                                      <div className="relative">
-                                        <Search className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                                        <input
-                                          type="text"
-                                          value={prodCatSearchQuery}
-                                          onChange={(e) => setProdCatSearchQuery(e.target.value)}
-                                          placeholder={
-                                            lang === "bn"
-                                              ? "রিলেটেবল ক্যাটাগরির নাম বা কোড (যেমন: SHT, GRL, WNT) দিয়ে খুঁজুন..."
-                                              : "Search relatable categories by name or SKU code..."
-                                          }
-                                          className="w-full rounded-lg border border-slate-200 bg-white pl-8 pr-7 py-1.5 text-xs text-slate-800 outline-none focus:border-[#0B5336]"
-                                        />
-                                        {prodCatSearchQuery.trim() && (
-                                          <button
-                                            type="button"
-                                            onClick={() => setProdCatSearchQuery("")}
-                                            className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 hover:text-slate-700"
-                                          >
-                                            ✕
-                                          </button>
-                                        )}
-                                      </div>
-                                    )}
-
-                                    <div className="flex flex-wrap gap-1.5 max-h-56 overflow-y-auto pr-1">
-                                      {sortedCategoriesForTree
-                                        .filter((cat) => {
-                                          const q = prodCatSearchQuery.trim().toLowerCase();
-                                          if (!q) return true;
-                                          if (prodCategories.includes(cat.slug)) return true;
-                                          const meta = categoryHierarchyMap.get(cat.slug);
-                                          const code = resolveCategorySkuCode(cat).toLowerCase();
-                                          return (
-                                            (cat.nameEn || "").toLowerCase().includes(q) ||
-                                            (cat.nameBn || "").toLowerCase().includes(q) ||
-                                            (cat.slug || "").toLowerCase().includes(q) ||
-                                            code.includes(q) ||
-                                            (meta?.breadcrumbEn || "")
-                                              .toLowerCase()
-                                              .includes(q) ||
-                                            (meta?.breadcrumbBn || "")
-                                              .toLowerCase()
-                                              .includes(q)
-                                          );
-                                        })
-                                        .map((cat) => {
-                                          const isPrimarySelected =
-                                            prodCategories[0] === cat.slug;
-                                          const isRelatableSelected =
-                                            !isPrimarySelected &&
-                                            prodCategories.slice(1).includes(cat.slug);
-                                          const checked =
-                                            isPrimarySelected || isRelatableSelected;
-                                          const meta = categoryHierarchyMap.get(cat.slug);
-                                          const lvl = meta?.level || 1;
-                                          const catCode = resolveCategorySkuCode(cat);
-                                          const fullBreadcrumb =
-                                            lang === "bn"
-                                              ? meta?.breadcrumbBn || cat.nameBn || cat.nameEn
-                                              : meta?.breadcrumbEn || cat.nameEn || cat.slug;
-                                          return (
-                                            <div
-                                              key={cat.id}
-                                              className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-medium transition-colors ${
-                                                isPrimarySelected
-                                                  ? "border-gold-500 bg-gold-50 text-slate-900"
-                                                  : isRelatableSelected
-                                                  ? "border-[#0B5336] bg-[#0B5336] text-white"
-                                                  : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-                                              }`}
-                                            >
-                                              <label
-                                                className={`inline-flex items-center gap-1.5 ${
-                                                  isPrimarySelected
-                                                    ? "cursor-default"
-                                                    : "cursor-pointer"
-                                                }`}
-                                              >
-                                                <input
-                                                  type="checkbox"
-                                                  checked={checked}
-                                                  disabled={isPrimarySelected}
-                                                  onChange={() =>
-                                                    toggleRelatableCategorySlug(cat.slug)
-                                                  }
-                                                  className="sr-only"
-                                                />
-                                                <span
-                                                  className={`rounded px-1 py-0.2 font-mono text-[9px] font-bold ${
-                                                    isRelatableSelected
-                                                      ? "bg-white/20 text-white"
-                                                      : lvl === 3
-                                                      ? "bg-brand-50 text-[#0B5336] border border-brand-200"
-                                                      : lvl === 2
-                                                      ? "bg-amber-50 text-amber-800 border border-amber-200"
-                                                      : "bg-slate-200 text-slate-700"
-                                                  }`}
-                                                >
-                                                  L{lvl}
-                                                </span>
-                                                <span>{fullBreadcrumb}</span>
-                                                <span
-                                                  className={`rounded px-1 py-0.2 font-mono text-[9px] font-bold ${
-                                                    isPrimarySelected
-                                                      ? "bg-gold-400 text-slate-950"
-                                                      : isRelatableSelected
-                                                      ? "bg-white/20 text-white"
-                                                      : "bg-slate-200/80 text-slate-600"
-                                                  }`}
-                                                >
-                                                  {catCode}
-                                                </span>
-                                              </label>
-                                              {isPrimarySelected && (
-                                                <span className="ml-0.5 rounded bg-gold-400 px-1 py-0.2 text-[9px] font-bold text-slate-950 whitespace-nowrap">
-                                                  ★ Primary (SKU)
-                                                </span>
-                                              )}
-                                            </div>
-                                          );
-                                        })}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            </>
-                          )}
-                        </div>
-
-                        <div className="pt-3 border-t border-slate-100 space-y-2">
-                          <div className="flex items-center justify-between gap-2">
-                            <div>
-                              <div className="text-xs font-bold text-slate-800">
-                                {t.admin.products.labelsLabel}
-                              </div>
-                              <div className="text-[11px] text-slate-500">
-                                {t.admin.products.labelsHint}
-                              </div>
-                            </div>
-                          </div>
-
-                          {labels.length === 0 ? (
-                            <p className="text-xs text-slate-500 py-1">
-                              {t.admin.products.noLabelsHint}
-                            </p>
-                          ) : (
-                            <div className="flex flex-wrap gap-1.5">
-                              {labels.map((lbl) => {
-                                const checked = prodLabels.includes(lbl.slug);
-                                const lblText = pickLocalized(
-                                  lbl.nameEn,
-                                  lbl.nameBn,
-                                  lang,
-                                  lbl.slug
-                                );
-                                return (
-                                  <label
-                                    key={lbl.id}
-                                    className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-medium cursor-pointer transition-colors ${
-                                      checked
-                                        ? "border-gold-500 bg-gold-500 text-slate-950 font-semibold"
-                                        : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300"
-                                    }`}
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      checked={checked}
-                                      onChange={() => toggleProdLabelSlug(lbl.slug)}
-                                      className="sr-only"
-                                    />
-                                    <span>{lblText}</span>
-                                  </label>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Right Card 3B: Smart Attributes & Filter Tags (Dynamic from Mart_Attributes) */}
-                      <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 space-y-3.5">
-                        <div className="pb-2 border-b border-slate-100 flex items-start justify-between gap-2">
-                          <div>
-                            <div className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                              {lang === "bn"
-                                ? "স্মার্ট ট্যাগ ও অ্যাট্রিবিউট ফিল্টার"
-                                : "Smart Attributes & Filter Tags"}
-                            </div>
+                          {editingProductId && (
                             <p className="text-[11px] text-slate-500 mt-0.5">
-                              {lang === "bn"
-                                ? "অ্যাট্রিবিউট লিস্ট থেকে সিলেক্ট করুন অথবা নতুন ভ্যালু যোগ করতে Taxonomy-তে যান"
-                                : "Pick from managed attribute options or manage attribute groups in Taxonomy"}
+                              {t.admin.products.editingBannerHint}
                             </p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => setActiveSection("taxonomy")}
-                            className="text-[11px] font-semibold text-[#0B5336] hover:underline whitespace-nowrap shrink-0"
-                          >
-                            {lang === "bn" ? "+ অ্যাট্রিবিউট এডিট" : "+ Manage Attributes"}
-                          </button>
-                        </div>
-
-                        {/* Gender Selector */}
-                        <div className="space-y-1.5">
-                          <label className="block text-xs font-semibold text-slate-700">
-                            {lang === "bn" ? "লিঙ্গ / Gender" : "Gender / Target Audience"}
-                          </label>
-                          <div className="flex flex-wrap gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => setProdGender("")}
-                              className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
-                                prodGender === ""
-                                  ? "border-slate-800 bg-slate-800 text-white"
-                                  : "border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300"
-                              }`}
-                            >
-                              {lang === "bn" ? "নির্ধারিত নয়" : "Any / None"}
-                            </button>
-                            {MART_GENDER_OPTIONS.map((gOpt) => {
-                              const active = prodGender === gOpt.value;
-                              return (
-                                <button
-                                  key={gOpt.value}
-                                  type="button"
-                                  onClick={() =>
-                                    setProdGender((prev) =>
-                                      prev === gOpt.value ? "" : gOpt.value
-                                    )
-                                  }
-                                  className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
-                                    active
-                                      ? "border-[#0B5336] bg-[#0B5336] text-white"
-                                      : "border-slate-200 bg-slate-50 text-slate-700 hover:border-[#0B5336]"
-                                  }`}
-                                >
-                                  {lang === "bn" ? gOpt.labelBn : gOpt.labelEn}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        {/* Age Group & Brand (Dynamically driven by Mart_Attributes) */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-xs font-semibold text-slate-700 mb-1">
-                              {lang === "bn" ? "বয়স সীমা (Age Group)" : "Age Group"}
-                            </label>
-                            <input
-                              type="text"
-                              value={prodAgeGroup}
-                              onChange={(e) => setProdAgeGroup(e.target.value)}
-                              placeholder={
-                                lang === "bn"
-                                  ? "যেমন: 0-6 Months, 3-5 Years"
-                                  : "e.g. 0-6 Months, 3-5 Years, Adult"
-                              }
-                              className="input text-xs"
-                            />
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {ageGroupAttrOptions.map((preset) => (
-                                <button
-                                  key={preset}
-                                  type="button"
-                                  onClick={() =>
-                                    setProdAgeGroup((prev) =>
-                                      prev === preset ? "" : preset
-                                    )
-                                  }
-                                  className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
-                                    prodAgeGroup === preset
-                                      ? "bg-[#0B5336] text-white"
-                                      : "bg-slate-100 hover:bg-brand-50 hover:text-[#0B5336] text-slate-600"
-                                  }`}
-                                >
-                                  {preset}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-
-                          <div>
-                            <label className="block text-xs font-semibold text-slate-700 mb-1">
-                              {lang === "bn" ? "ব্র্যান্ড (Brand)" : "Brand"}
-                            </label>
-                            <input
-                              type="text"
-                              value={prodBrand}
-                              onChange={(e) => setProdBrand(e.target.value)}
-                              placeholder={
-                                lang === "bn" ? "যেমন: Xeetrix, Joykiddy" : "e.g. Xeetrix, Joykiddy"
-                              }
-                              className="input text-xs"
-                            />
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {brandAttrOptions.map((bPreset) => (
-                                <button
-                                  key={bPreset}
-                                  type="button"
-                                  onClick={() =>
-                                    setProdBrand((prev) =>
-                                      prev === bPreset ? "" : bPreset
-                                    )
-                                  }
-                                  className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
-                                    prodBrand === bPreset
-                                      ? "bg-[#0B5336] text-white"
-                                      : "bg-slate-100 hover:bg-brand-50 hover:text-[#0B5336] text-slate-600"
-                                  }`}
-                                >
-                                  {bPreset}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Material / Fabric (Dynamically driven by Mart_Attributes) */}
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 mb-1">
-                            {lang === "bn" ? "ম্যাটেরিয়াল / ফেব্রিক (Material)" : "Material / Fabric"}
-                          </label>
-                          <input
-                            type="text"
-                            value={prodMaterial}
-                            onChange={(e) => setProdMaterial(e.target.value)}
-                            placeholder={
-                              lang === "bn"
-                                ? "যেমন: 100% Cotton, Silk, Denim"
-                                : "e.g. 100% Cotton, Silk, Denim"
-                            }
-                            className="input text-xs"
-                          />
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {materialAttrOptions.map((mat) => (
-                              <button
-                                key={mat}
-                                type="button"
-                                onClick={() =>
-                                  setProdMaterial((prev) => (prev === mat ? "" : mat))
-                                }
-                                className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
-                                  prodMaterial === mat
-                                    ? "bg-[#0B5336] text-white"
-                                    : "bg-slate-100 hover:bg-brand-50 hover:text-[#0B5336] text-slate-600"
-                                }`}
-                              >
-                                {mat}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Dynamic Custom Attribute Groups added by Admin in Mart_Attributes */}
-                        {customAttributeGroups.length > 0 && (
-                          <div className="pt-2 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            {customAttributeGroups.map((cAttr) => {
-                              const opts = parseAttributeOptionsList(cAttr.optionsList);
-                              const currentVal = prodCustomAttrs[cAttr.slug] || "";
-                              const groupLabel = pickLocalized(
-                                cAttr.nameEn,
-                                cAttr.nameBn,
-                                lang,
-                                cAttr.slug
-                              );
-                              return (
-                                <div key={cAttr.id}>
-                                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                    {groupLabel}
-                                  </label>
-                                  <input
-                                    type="text"
-                                    value={currentVal}
-                                    onChange={(e) => {
-                                      const val = e.target.value;
-                                      setProdCustomAttrs((prev) => ({
-                                        ...prev,
-                                        [cAttr.slug]: val,
-                                      }));
-                                    }}
-                                    placeholder={
-                                      opts.length > 0
-                                        ? `${opts.slice(0, 2).join(", ")}...`
-                                        : groupLabel
-                                    }
-                                    className="input text-xs"
-                                  />
-                                  {opts.length > 0 && (
-                                    <div className="flex flex-wrap gap-1 mt-1">
-                                      {opts.map((optVal) => (
-                                        <button
-                                          key={optVal}
-                                          type="button"
-                                          onClick={() =>
-                                            setProdCustomAttrs((prev) => ({
-                                              ...prev,
-                                              [cAttr.slug]:
-                                                prev[cAttr.slug] === optVal ? "" : optVal,
-                                            }))
-                                          }
-                                          className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
-                                            currentVal === optVal
-                                              ? "bg-[#0B5336] text-white"
-                                              : "bg-slate-100 hover:bg-brand-50 hover:text-[#0B5336] text-slate-600"
-                                          }`}
-                                        >
-                                          {optVal}
-                                        </button>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-
-                        {/* Custom Filter Tags (Comma-separated) */}
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 mb-1">
-                            {lang === "bn"
-                              ? "কাস্টম ফিল্টার ও সার্চ ট্যাগ (কমা দিয়ে আলাদা করুন)"
-                              : "Custom Filter & Search Tags (Comma-separated)"}
-                          </label>
-                          <input
-                            type="text"
-                            value={prodTags}
-                            onChange={(e) => setProdTags(e.target.value)}
-                            placeholder={
-                              lang === "bn"
-                                ? "যেমন: Hoodie, Winter Wear, Baby Blanket, Gift"
-                                : "e.g. Hoodie, Winter Wear, Baby Blanket, Educational"
-                            }
-                            className="input text-xs"
-                          />
-                          <div className="flex flex-wrap gap-1 mt-1.5">
-                            {[
-                              "Winter Wear",
-                              "Hoodie",
-                              "Baby Blanket",
-                              "Overcoat",
-                              "Gift Idea",
-                              "Bestseller",
-                            ].map((tagPreset) => {
-                              const currentList = parseProductTags(prodTags);
-                              const hasTag = currentList.some(
-                                (tItem) => tItem.toLowerCase() === tagPreset.toLowerCase()
-                              );
-                              return (
-                                <button
-                                  key={tagPreset}
-                                  type="button"
-                                  onClick={() => {
-                                    const nextList = hasTag
-                                      ? currentList.filter(
-                                          (tItem) =>
-                                            tItem.toLowerCase() !== tagPreset.toLowerCase()
-                                        )
-                                      : [...currentList, tagPreset];
-                                    setProdTags(nextList.join(", "));
-                                  }}
-                                  className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
-                                    hasTag
-                                      ? "bg-[#0B5336] text-white"
-                                      : "bg-slate-100 text-slate-600 hover:bg-brand-50 hover:text-[#0B5336]"
-                                  }`}
-                                >
-                                  + {tagPreset}
-                                </button>
-                              );
-                            })}
-                          </div>
+                          )}
                         </div>
                       </div>
 
-                      {/* Right Card 4: Storefront Visibility & Publish Action */}
-                      <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 space-y-4">
-                        <div className="flex flex-col gap-2.5 text-xs font-medium text-slate-700">
-                          <label className="inline-flex items-center gap-2.5 cursor-pointer">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <div className="flex items-center gap-3 pr-1 border-r border-slate-200/80 text-xs font-medium text-slate-700">
+                          <label className="inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap">
                             <input
                               type="checkbox"
                               checked={prodActive}
                               onChange={(e) => setProdActive(e.target.checked)}
-                              className="h-4 w-4 rounded border-slate-300 text-[#0B5336]"
+                              className="h-3.5 w-3.5 rounded border-slate-300 accent-[#0B5336]"
                             />
                             <span>{t.admin.products.visibleCheckbox}</span>
                           </label>
-
-                          <label className="inline-flex items-center gap-2.5 cursor-pointer">
+                          <label className="inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap">
                             <input
                               type="checkbox"
                               checked={prodFeatured}
                               onChange={(e) => setProdFeatured(e.target.checked)}
-                              className="h-4 w-4 rounded border-slate-300 text-[#0B5336]"
+                              className="h-3.5 w-3.5 rounded border-slate-300 accent-[#0B5336]"
                             />
                             <span>{t.admin.products.featuredCheckbox}</span>
                           </label>
                         </div>
 
-                        <button
-                          type="submit"
-                          disabled={savingProduct}
-                          className="btn-primary w-full py-2.5 text-xs justify-center"
-                        >
-                          {savingProduct
-                            ? t.admin.products.savingProduct
-                            : editingProductId
-                            ? t.admin.products.saveChangesBtn
-                            : t.admin.products.publishProductBtn}
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              resetProductForm();
+                              setProductStudioOpen(false);
+                            }}
+                            className="rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:text-slate-900 whitespace-nowrap shrink-0"
+                          >
+                            {t.admin.products.cancelEdit}
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={savingProduct}
+                            className="btn-primary px-5 py-2 text-xs whitespace-nowrap shrink-0"
+                          >
+                            {savingProduct
+                              ? t.admin.products.savingProduct
+                              : editingProductId
+                              ? t.admin.products.saveChangesBtn
+                              : t.admin.products.publishProductBtn}
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </form>
-              )}
+
+                    {/* Clean 4-Tab Step Bar */}
+                    <div
+                      role="tablist"
+                      aria-label={lang === "bn" ? "প্রোডাক্ট স্টুডিও ধাপসমূহ" : "Product Studio Steps"}
+                      className="flex items-stretch overflow-x-auto border-b border-slate-200 bg-white px-2 sm:px-4"
+                    >
+                      {studioTabs.map((tb) => {
+                        const active = productStudioTab === tb.id;
+                        return (
+                          <button
+                            key={tb.id}
+                            type="button"
+                            role="tab"
+                            aria-selected={active}
+                            onClick={() => setProductStudioTab(tb.id)}
+                            className={`relative flex items-center gap-2.5 px-3.5 sm:px-5 py-3.5 text-left transition-colors whitespace-nowrap shrink-0 border-b-2 -mb-px ${
+                              active
+                                ? "border-[#0B5336] text-[#0B5336] bg-brand-50/20"
+                                : "border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50/70"
+                            }`}
+                          >
+                            <span
+                              className={`h-5 w-5 rounded-full text-[11px] font-mono font-bold tabular-nums flex items-center justify-center shrink-0 ${
+                                tb.hasWarning
+                                  ? "bg-amber-100 text-amber-800"
+                                  : active
+                                  ? "bg-[#0B5336] text-white"
+                                  : "bg-slate-100 text-slate-500"
+                              }`}
+                            >
+                              {toLocalizedDigits(tb.step, lang)}
+                            </span>
+                            <div className="min-w-0">
+                              <div className="text-xs font-bold leading-tight">{tb.label}</div>
+                              <div className="text-[10px] text-slate-400 font-mono tabular-nums mt-0.5">
+                                {tb.summary}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Focused Active Tab Canvas */}
+                    <div className="p-4 sm:p-6 bg-white">
+                      {/* ==================== TAB 1: BASIC & CATEGORY ==================== */}
+                      {productStudioTab === "basic" && (
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                          {/* Left: Identity & Descriptions (7 cols) */}
+                          <div className="lg:col-span-7 space-y-5">
+                            <div className="space-y-4">
+                              <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-100">
+                                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                                  {lang === "bn"
+                                    ? "পণ্যের নাম, SKU ও বিবরণ"
+                                    : "Product Identity & Descriptions"}
+                                </h4>
+                                <span className="text-[11px] text-slate-400">EN / বাংলা</span>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                                <div>
+                                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                    {t.admin.products.nameEnLabel}
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={prodNameEn}
+                                    onChange={(e) => setProdNameEn(e.target.value)}
+                                    placeholder={t.admin.products.nameEnPlaceholder}
+                                    className="input"
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                    {t.admin.products.nameBnLabel}
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={prodNameBn}
+                                    onChange={(e) => setProdNameBn(e.target.value)}
+                                    placeholder={t.admin.products.nameBnPlaceholder}
+                                    className="input"
+                                  />
+                                </div>
+                              </div>
+
+                              <div>
+                                <div className="flex items-center justify-between gap-2 mb-1">
+                                  <label className="block text-xs font-semibold text-slate-700">
+                                    {t.admin.products.skuLabel}
+                                  </label>
+                                  {editingProductId ? (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700">
+                                      <Lock className="h-3 w-3" />
+                                      <span>{lang === "bn" ? "SKU লকড" : "SKU Locked"}</span>
+                                    </span>
+                                  ) : (
+                                    <span className="text-[11px] font-mono text-slate-500 tabular-nums">
+                                      {`Pattern: XM-${liveSkuPreview.l1Code}-${liveSkuPreview.l2Code}-${liveSkuPreview.l3Code}`}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="text"
+                                    value={prodSku}
+                                    onChange={(e) => {
+                                      setProdSku(e.target.value.toUpperCase());
+                                      setSkuManuallyEdited(true);
+                                    }}
+                                    placeholder={liveSkuPreview.sku || t.admin.products.skuPlaceholder}
+                                    className={`input font-mono uppercase text-xs flex-1 tabular-nums ${
+                                      duplicateSkuConflict
+                                        ? "border-red-400 focus:border-red-500 bg-red-50/40"
+                                        : ""
+                                    }`}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleRegenerateProductSku(prodCategories, editingProductId)
+                                    }
+                                    title={
+                                      lang === "bn"
+                                        ? `ক্যাটাগরি অনুযায়ী পরবর্তী SKU জেনারেট করুন (${liveSkuPreview.sku})`
+                                        : `Regenerate sequential SKU from primary category (${liveSkuPreview.sku})`
+                                    }
+                                    className="h-[40px] px-3 shrink-0 rounded-xl border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 hover:border-[#0B5336] hover:bg-brand-50 hover:text-[#0B5336] inline-flex items-center gap-1.5 transition-colors whitespace-nowrap"
+                                  >
+                                    <RefreshCw className="h-3.5 w-3.5" />
+                                    <span>{lang === "bn" ? "অটো SKU" : "Auto SKU"}</span>
+                                  </button>
+                                </div>
+                                {duplicateSkuConflict ? (
+                                  <p className="text-[11px] font-semibold text-red-600 mt-1">
+                                    {lang === "bn"
+                                      ? `ডুপ্লিকেট SKU (${duplicateSkuConflict.id})! অটো SKU বাটনে চাপুন: ${liveSkuPreview.sku}`
+                                      : `Duplicate SKU (${duplicateSkuConflict.id})! Click Auto SKU for ${liveSkuPreview.sku}`}
+                                  </p>
+                                ) : (
+                                  <p className="text-[11px] text-slate-400 mt-1 font-mono tabular-nums">
+                                    {editingProductId && prodSku !== liveSkuPreview.sku
+                                      ? lang === "bn"
+                                        ? `পরবর্তী সিরিয়াল: ${liveSkuPreview.sku}`
+                                        : `Next in category: ${liveSkuPreview.sku}`
+                                      : `URL: /mart/p/${(prodSku || liveSkuPreview.sku).toUpperCase()}`}
+                                  </p>
+                                )}
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                                <div>
+                                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                    {t.admin.products.descEnLabel}
+                                  </label>
+                                  <textarea
+                                    rows={4}
+                                    value={prodDescEn}
+                                    onChange={(e) => setProdDescEn(e.target.value)}
+                                    placeholder={t.admin.products.descEnPlaceholder}
+                                    className="input min-h-[108px] py-2 text-xs"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                    {t.admin.products.descBnLabel}
+                                  </label>
+                                  <textarea
+                                    rows={4}
+                                    value={prodDescBn}
+                                    onChange={(e) => setProdDescBn(e.target.value)}
+                                    placeholder={t.admin.products.descBnPlaceholder}
+                                    className="input min-h-[108px] py-2 text-xs"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Right: 3-Level Category, Relatable Switch & Labels (5 cols) */}
+                          <div className="lg:col-span-5 lg:border-l lg:border-slate-200 lg:pl-6 space-y-5">
+                            <div className="space-y-3">
+                              <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-100">
+                                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                                  {lang === "bn"
+                                    ? "প্রাইমারি ৩-লেভেল ক্যাটাগরি"
+                                    : "Primary 3-Level Category"}
+                                </h4>
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveSection("taxonomy")}
+                                  className="text-[11px] font-semibold text-[#0B5336] hover:underline whitespace-nowrap shrink-0"
+                                >
+                                  {t.admin.products.goToTaxonomyBtn}
+                                </button>
+                              </div>
+
+                              {categories.length === 0 ? (
+                                <p className="text-xs text-slate-500 py-1">
+                                  {t.admin.products.noCategoriesHint}
+                                </p>
+                              ) : (
+                                <>
+                                  <div className="space-y-2.5">
+                                    <div>
+                                      <label className="flex items-center justify-between text-[11px] font-semibold text-slate-700 mb-1">
+                                        <span>
+                                          {lang === "bn"
+                                            ? "১. মেইন ক্যাটাগরি (Level 1)"
+                                            : "1. Level 1: Main Category"}
+                                        </span>
+                                        <span className="font-mono text-[10px] text-slate-500">
+                                          L1: {liveSkuPreview.l1Code}
+                                        </span>
+                                      </label>
+                                      <select
+                                        value={selectedPrimaryL1Slug}
+                                        onChange={(e) =>
+                                          handlePrimaryCategorySelect(e.target.value)
+                                        }
+                                        className="input text-xs bg-white"
+                                      >
+                                        <option value="">
+                                          {lang === "bn"
+                                            ? "-- GEN (মেইন ক্যাটাগরি নির্বাচন করুন) --"
+                                            : "-- GEN (Select Main Category) --"}
+                                        </option>
+                                        {primaryLevel1Options.map((c1) => {
+                                          const code = resolveCategorySkuCode(c1);
+                                          const label = pickLocalized(
+                                            c1.nameEn,
+                                            c1.nameBn,
+                                            lang,
+                                            c1.slug
+                                          );
+                                          return (
+                                            <option key={c1.id} value={c1.slug}>
+                                              [{code}] {label}
+                                            </option>
+                                          );
+                                        })}
+                                      </select>
+                                    </div>
+
+                                    <div>
+                                      <label className="flex items-center justify-between text-[11px] font-semibold text-slate-700 mb-1">
+                                        <span>
+                                          {lang === "bn"
+                                            ? "২. সাব-ক্যাটাগরি (Level 2)"
+                                            : "2. Level 2: Sub-Category"}
+                                        </span>
+                                        <span className="font-mono text-[10px] text-slate-500">
+                                          L2: {liveSkuPreview.l2Code}
+                                        </span>
+                                      </label>
+                                      <select
+                                        value={selectedPrimaryL2Slug}
+                                        disabled={!selectedPrimaryL1Slug}
+                                        onChange={(e) => {
+                                          const nextL2 = e.target.value;
+                                          handlePrimaryCategorySelect(
+                                            nextL2 || selectedPrimaryL1Slug
+                                          );
+                                        }}
+                                        className="input text-xs bg-white disabled:bg-slate-100 disabled:text-slate-400"
+                                      >
+                                        <option value="">
+                                          {!selectedPrimaryL1Slug
+                                            ? lang === "bn"
+                                              ? "-- আগে Level 1 সিলেক্ট করুন (GEN) --"
+                                              : "-- Select Level 1 first (GEN) --"
+                                            : primaryLevel2Options.length === 0
+                                            ? lang === "bn"
+                                              ? "-- কোনো সাব-ক্যাটাগরি নেই (GEN) --"
+                                              : "-- No Sub-Categories available (GEN) --"
+                                            : lang === "bn"
+                                            ? "-- GEN (সাব-ক্যাটাগরি ছাড়া) --"
+                                            : "-- GEN (Skip Sub-Category) --"}
+                                        </option>
+                                        {primaryLevel2Options.map((c2) => {
+                                          const code = resolveCategorySkuCode(c2);
+                                          const label = pickLocalized(
+                                            c2.nameEn,
+                                            c2.nameBn,
+                                            lang,
+                                            c2.slug
+                                          );
+                                          return (
+                                            <option key={c2.id} value={c2.slug}>
+                                              [{code}] {label}
+                                            </option>
+                                          );
+                                        })}
+                                      </select>
+                                    </div>
+
+                                    <div>
+                                      <label className="flex items-center justify-between text-[11px] font-semibold text-slate-700 mb-1">
+                                        <span>
+                                          {lang === "bn"
+                                            ? "৩. আইটেম ক্যাটাগরি (Level 3)"
+                                            : "3. Level 3: Child Item"}
+                                        </span>
+                                        <span className="font-mono text-[10px] text-slate-500">
+                                          L3: {liveSkuPreview.l3Code}
+                                        </span>
+                                      </label>
+                                      <select
+                                        value={selectedPrimaryL3Slug}
+                                        disabled={!selectedPrimaryL2Slug}
+                                        onChange={(e) => {
+                                          const nextL3 = e.target.value;
+                                          handlePrimaryCategorySelect(
+                                            nextL3 ||
+                                              selectedPrimaryL2Slug ||
+                                              selectedPrimaryL1Slug
+                                          );
+                                        }}
+                                        className="input text-xs bg-white disabled:bg-slate-100 disabled:text-slate-400"
+                                      >
+                                        <option value="">
+                                          {!selectedPrimaryL2Slug
+                                            ? lang === "bn"
+                                              ? "-- আগে Level 2 সিলেক্ট করুন (GEN) --"
+                                              : "-- Select Level 2 first (GEN) --"
+                                            : primaryLevel3Options.length === 0
+                                            ? lang === "bn"
+                                              ? "-- কোনো Level 3 আইটেম নেই (GEN) --"
+                                              : "-- No Level 3 Items available (GEN) --"
+                                            : lang === "bn"
+                                            ? "-- GEN (আইটেম ছাড়া) --"
+                                            : "-- GEN (Skip Level 3 Item) --"}
+                                        </option>
+                                        {primaryLevel3Options.map((c3) => {
+                                          const code = resolveCategorySkuCode(c3);
+                                          const label = pickLocalized(
+                                            c3.nameEn,
+                                            c3.nameBn,
+                                            lang,
+                                            c3.slug
+                                          );
+                                          return (
+                                            <option key={c3.id} value={c3.slug}>
+                                              [{code}] {label}
+                                            </option>
+                                          );
+                                        })}
+                                      </select>
+                                    </div>
+                                  </div>
+
+                                  {/* Compact Primary Path Line */}
+                                  <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px]">
+                                    <span className="text-slate-600 truncate">
+                                      <strong className="text-slate-800">
+                                        {lang === "bn" ? "পাথ:" : "Path:"}
+                                      </strong>{" "}
+                                      {prodCategories[0]
+                                        ? lang === "bn"
+                                          ? liveSkuPreview.breadcrumbBn
+                                          : liveSkuPreview.breadcrumbEn
+                                        : lang === "bn"
+                                        ? "GEN > GEN > GEN"
+                                        : "GEN > GEN > GEN"}
+                                    </span>
+                                    <span className="font-mono font-bold text-[#0B5336] shrink-0 tabular-nums">
+                                      {prodSku || liveSkuPreview.sku}
+                                    </span>
+                                  </div>
+
+                                  {/* Relatable Categories Switch */}
+                                  <div className="pt-2 border-t border-slate-100 space-y-2.5">
+                                    <div className="flex items-center justify-between gap-3">
+                                      <div className="min-w-0">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="text-xs font-semibold text-slate-800">
+                                            {lang === "bn"
+                                              ? "অতিরিক্ত রিলেটেবল ক্যাটাগরি"
+                                              : "Extra Relatable Categories"}
+                                          </span>
+                                          {prodCategories.length > 1 && (
+                                            <span className="font-mono text-[10px] font-bold text-[#0B5336]">
+                                              (+{toLocalizedDigits(prodCategories.length - 1, lang)})
+                                            </span>
+                                          )}
+                                        </div>
+                                        <p className="text-[11px] text-slate-500">
+                                          {lang === "bn"
+                                            ? "অন করলে অতিরিক্ত ক্যাটাগরি যোগ করা যাবে (SKU বদলাবে না)"
+                                            : "Add secondary categories without altering SKU"}
+                                        </p>
+                                      </div>
+
+                                      <button
+                                        type="button"
+                                        role="switch"
+                                        aria-checked={relatableCategoriesEnabled}
+                                        onClick={() => {
+                                          if (!prodCategories[0]) {
+                                            showNotice(
+                                              "error",
+                                              lang === "bn"
+                                                ? "রিলেটেবল ক্যাটাগরি দেওয়ার আগে উপরের ড্রপডাউন থেকে অন্তত মেইন ক্যাটাগরি সিলেক্ট করুন।"
+                                                : "Please select a Primary Category from the dropdowns above first."
+                                            );
+                                            return;
+                                          }
+                                          const nextState = !relatableCategoriesEnabled;
+                                          setRelatableCategoriesEnabled(nextState);
+                                          if (!nextState && prodCategories.length > 1) {
+                                            setProdCategories([prodCategories[0]]);
+                                          }
+                                        }}
+                                        className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                          relatableCategoriesEnabled
+                                            ? "bg-[#0B5336]"
+                                            : "bg-slate-300"
+                                        }`}
+                                      >
+                                        <span
+                                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 ease-in-out ${
+                                            relatableCategoriesEnabled
+                                              ? "translate-x-5"
+                                              : "translate-x-0"
+                                          }`}
+                                        />
+                                      </button>
+                                    </div>
+
+                                    {relatableCategoriesEnabled && prodCategories[0] && (
+                                      <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/60 p-2.5">
+                                        {categories.length > 6 && (
+                                          <div className="relative">
+                                            <Search className="h-3.5 w-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                            <input
+                                              type="text"
+                                              value={prodCatSearchQuery}
+                                              onChange={(e) =>
+                                                setProdCatSearchQuery(e.target.value)
+                                              }
+                                              placeholder={
+                                                lang === "bn"
+                                                  ? "ক্যাটাগরি বা কোড দিয়ে খুঁজুন..."
+                                                  : "Filter categories by name or code..."
+                                              }
+                                              className="w-full rounded-lg border border-slate-200 bg-white pl-8 pr-7 py-1.5 text-xs text-slate-800 outline-none focus:border-[#0B5336]"
+                                            />
+                                            {prodCatSearchQuery.trim() && (
+                                              <button
+                                                type="button"
+                                                onClick={() => setProdCatSearchQuery("")}
+                                                className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 hover:text-slate-700"
+                                              >
+                                                ✕
+                                              </button>
+                                            )}
+                                          </div>
+                                        )}
+
+                                        <div className="max-h-44 overflow-y-auto divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
+                                          {sortedCategoriesForTree
+                                            .filter((cat) => {
+                                              const q = prodCatSearchQuery.trim().toLowerCase();
+                                              if (!q) return true;
+                                              if (prodCategories.includes(cat.slug)) return true;
+                                              const meta = categoryHierarchyMap.get(cat.slug);
+                                              const code =
+                                                resolveCategorySkuCode(cat).toLowerCase();
+                                              return (
+                                                (cat.nameEn || "").toLowerCase().includes(q) ||
+                                                (cat.nameBn || "").toLowerCase().includes(q) ||
+                                                (cat.slug || "").toLowerCase().includes(q) ||
+                                                code.includes(q) ||
+                                                (meta?.breadcrumbEn || "")
+                                                  .toLowerCase()
+                                                  .includes(q) ||
+                                                (meta?.breadcrumbBn || "")
+                                                  .toLowerCase()
+                                                  .includes(q)
+                                              );
+                                            })
+                                            .map((cat) => {
+                                              const isPrimarySelected =
+                                                prodCategories[0] === cat.slug;
+                                              const isRelatableSelected =
+                                                !isPrimarySelected &&
+                                                prodCategories.slice(1).includes(cat.slug);
+                                              const checked =
+                                                isPrimarySelected || isRelatableSelected;
+                                              const meta = categoryHierarchyMap.get(cat.slug);
+                                              const catCode = resolveCategorySkuCode(cat);
+                                              const fullBreadcrumb =
+                                                lang === "bn"
+                                                  ? meta?.breadcrumbBn || cat.nameBn || cat.nameEn
+                                                  : meta?.breadcrumbEn || cat.nameEn || cat.slug;
+                                              return (
+                                                <label
+                                                  key={cat.id}
+                                                  className={`flex items-center justify-between gap-2 px-2.5 py-1.5 text-[11px] ${
+                                                    isPrimarySelected
+                                                      ? "bg-amber-50/60 text-slate-900 cursor-default"
+                                                      : "hover:bg-slate-50 cursor-pointer text-slate-700"
+                                                  }`}
+                                                >
+                                                  <span className="flex items-center gap-2 min-w-0">
+                                                    <input
+                                                      type="checkbox"
+                                                      checked={checked}
+                                                      disabled={isPrimarySelected}
+                                                      onChange={() =>
+                                                        toggleRelatableCategorySlug(cat.slug)
+                                                      }
+                                                      className="h-3.5 w-3.5 rounded border-slate-300 accent-[#0B5336] shrink-0"
+                                                    />
+                                                    <span className="truncate">
+                                                      {fullBreadcrumb}
+                                                    </span>
+                                                  </span>
+                                                  <span className="font-mono text-[10px] text-slate-400 shrink-0">
+                                                    {isPrimarySelected ? "★ Primary" : catCode}
+                                                  </span>
+                                                </label>
+                                              );
+                                            })}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </>
+                              )}
+                            </div>
+
+                            {/* Labels / Collections (Clean Compact Checkbox Grid) */}
+                            <div className="pt-3 border-t border-slate-100 space-y-2.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <h4 className="text-xs font-bold text-slate-800">
+                                  {t.admin.products.labelsLabel}
+                                </h4>
+                                {prodLabels.length > 0 && (
+                                  <span className="font-mono text-[11px] text-[#0B5336] font-semibold">
+                                    {toLocalizedDigits(prodLabels.length, lang)}{" "}
+                                    {lang === "bn" ? "সিলেক্টেড" : "selected"}
+                                  </span>
+                                )}
+                              </div>
+
+                              {labels.length === 0 ? (
+                                <p className="text-xs text-slate-500">
+                                  {t.admin.products.noLabelsHint}
+                                </p>
+                              ) : (
+                                <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto pr-1">
+                                  {labels.map((lbl) => {
+                                    const checked = prodLabels.includes(lbl.slug);
+                                    const lblText = pickLocalized(
+                                      lbl.nameEn,
+                                      lbl.nameBn,
+                                      lang,
+                                      lbl.slug
+                                    );
+                                    return (
+                                      <label
+                                        key={lbl.id}
+                                        className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-[11px] cursor-pointer transition-colors ${
+                                          checked
+                                            ? "border-[#0B5336] bg-brand-50/40 text-[#0B5336] font-semibold"
+                                            : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                                        }`}
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={checked}
+                                          onChange={() => toggleProdLabelSlug(lbl.slug)}
+                                          className="h-3.5 w-3.5 rounded border-slate-300 accent-[#0B5336] shrink-0"
+                                        />
+                                        <span className="truncate">{lblText}</span>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* ==================== TAB 2: MEDIA & GALLERY ==================== */}
+                      {productStudioTab === "media" && (
+                        <div className="max-w-4xl space-y-6">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                            <div>
+                              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                                <ImagePlus className="h-4 w-4 text-[#0B5336]" />
+                                <span>{tvar.mediaGallerySectionTitle}</span>
+                              </h4>
+                              <p className="text-[11px] text-slate-500 mt-0.5">
+                                <span className="font-semibold text-[#0B5336]">
+                                  {tvar.sizeGuideTitle}
+                                </span>
+                                {" · "}
+                                <span>{tvar.sizeGuideHint}</span>
+                              </p>
+                            </div>
+
+                            <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold text-slate-700 cursor-pointer shrink-0 hover:border-[#0B5336]">
+                              <input
+                                type="checkbox"
+                                checked={autoSquarePad}
+                                onChange={(e) => setAutoSquarePad(e.target.checked)}
+                                className="h-3.5 w-3.5 rounded accent-[#0B5336]"
+                              />
+                              <span>{tvar.autoSquarePadLabel}</span>
+                            </label>
+                          </div>
+
+                          {!autoSquarePad && (
+                            <p className="text-[11px] text-slate-500">{tvar.autoSquarePadOffHint}</p>
+                          )}
+
+                          {/* Primary Image Row */}
+                          <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 items-center">
+                            <div className="sm:col-span-3 flex items-center gap-3">
+                              <div className="h-24 w-24 rounded-xl border border-slate-200 bg-slate-50 p-1.5 overflow-hidden shrink-0 flex items-center justify-center">
+                                {prodImageUrl.trim() ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    src={normalizeMartImageUrl(prodImageUrl)}
+                                    alt={tvar.primaryPreviewLabel}
+                                    referrerPolicy="no-referrer"
+                                    className="h-full w-full object-contain"
+                                  />
+                                ) : (
+                                  <span className="text-[10px] text-slate-400 text-center px-1">
+                                    {tvar.noPrimaryImageHint}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="sm:col-span-6">
+                              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                {t.admin.products.imageUrlLabel}
+                              </label>
+                              <input
+                                type="text"
+                                value={prodImageUrl}
+                                onChange={(e) => setProdImageUrl(e.target.value)}
+                                placeholder="https://lh3.googleusercontent.com/d/..."
+                                className="input font-mono text-xs"
+                              />
+                              <p className="text-[11px] text-slate-400 mt-1 font-mono truncate">
+                                Drive: Products / {liveSkuPreview.l1Code} /{" "}
+                                {(prodSku || liveSkuPreview.sku).toUpperCase()}
+                              </p>
+                            </div>
+
+                            <div className="sm:col-span-3 sm:self-center">
+                              <label className="btn-outline bg-white w-full px-3.5 py-2.5 text-xs gap-2 cursor-pointer justify-center">
+                                <Upload className="h-3.5 w-3.5 text-[#0B5336]" />
+                                <span>
+                                  {uploadingProdImg
+                                    ? t.admin.products.uploading
+                                    : t.admin.products.uploadToDrive}
+                                </span>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  disabled={uploadingProdImg}
+                                  onChange={handleProductImageUpload}
+                                  className="sr-only"
+                                />
+                              </label>
+                            </div>
+                          </div>
+
+                          {/* Additional Multi-Angle Gallery */}
+                          <div className="pt-5 border-t border-slate-200 space-y-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div>
+                                <div className="text-xs font-bold text-slate-800">
+                                  {tvar.galleryTitle}
+                                </div>
+                                <div className="text-[11px] text-slate-500">
+                                  {tvar.galleryHint}
+                                </div>
+                              </div>
+                              <label className="rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
+                                <ImagePlus className="h-3.5 w-3.5 text-[#0B5336]" />
+                                <span>
+                                  {uploadingGalleryImg
+                                    ? t.admin.products.uploading
+                                    : tvar.uploadGalleryBtn}
+                                </span>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  disabled={uploadingGalleryImg}
+                                  onChange={handleGalleryImageUpload}
+                                  className="sr-only"
+                                />
+                              </label>
+                            </div>
+
+                            <div className="flex flex-col sm:flex-row gap-2">
+                              <input
+                                type="text"
+                                value={extraImgInput}
+                                onChange={(e) => setExtraImgInput(e.target.value)}
+                                placeholder={tvar.addImageUrlPlaceholder}
+                                className="input text-xs font-mono flex-1"
+                              />
+                              <button
+                                type="button"
+                                onClick={handleAddExtraGalleryUrl}
+                                className="btn-outline bg-white px-4 py-2 text-xs whitespace-nowrap"
+                              >
+                                {tvar.addImageBtn}
+                              </button>
+                            </div>
+
+                            {prodGalleryUrls.length > 0 && (
+                              <div className="flex flex-wrap gap-3 pt-2">
+                                {prodGalleryUrls.map((url, idx) => (
+                                  <div
+                                    key={`${url}-${idx}`}
+                                    className="group relative flex flex-col items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 p-2"
+                                  >
+                                    <div className="relative h-16 w-16 rounded-lg overflow-hidden bg-white p-1 border border-slate-100">
+                                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                                      <img
+                                        src={normalizeMartImageUrl(url)}
+                                        alt={tvar.galleryTitle}
+                                        referrerPolicy="no-referrer"
+                                        className="h-full w-full object-contain"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setProdGalleryUrls((prev) =>
+                                            prev.filter((_, i) => i !== idx)
+                                          )
+                                        }
+                                        aria-label={t.common.delete}
+                                        className="absolute top-0.5 right-0.5 rounded bg-slate-900/80 p-0.5 text-white hover:bg-red-600"
+                                      >
+                                        <X className="h-3 w-3" />
+                                      </button>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSetPrimaryFromGallery(url)}
+                                      className="w-full rounded px-2 py-0.5 text-[10px] font-semibold text-[#0B5336] bg-white border border-slate-200 hover:bg-[#0B5336] hover:text-white transition-colors whitespace-nowrap"
+                                    >
+                                      {tvar.setAsPrimaryBtn}
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* ==================== TAB 3: PRICING & SOURCING ==================== */}
+                      {productStudioTab === "pricing" && (
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+                          {/* Left: Retail Pricing, Cost & Wholesale */}
+                          <div className="space-y-4">
+                            <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-100">
+                              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                                {lang === "bn" ? "মূল্য ও পাইকারি রেট" : "Pricing & Wholesale Tier"}
+                              </h4>
+                              {prodPrice && (
+                                <span
+                                  className={`font-mono text-xs font-bold tabular-nums ${
+                                    prodUnitProfit >= 0 ? "text-[#0B5336]" : "text-red-600"
+                                  }`}
+                                >
+                                  {lang === "bn" ? "লাভ:" : "Profit:"}{" "}
+                                  {formatMartPrice(prodUnitProfit, lang)} (
+                                  {toLocalizedDigits(prodMarginPct, lang)}%)
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                              <div>
+                                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                  {t.admin.products.priceLabel}
+                                </label>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={prodPrice}
+                                  onChange={(e) => setProdPrice(e.target.value)}
+                                  placeholder="1250"
+                                  className="input font-mono tabular-nums"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                  {t.admin.products.comparePriceLabel}
+                                </label>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={prodComparePrice}
+                                  onChange={(e) => setProdComparePrice(e.target.value)}
+                                  placeholder="1550"
+                                  className="input font-mono tabular-nums"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                  {tsrc.costPriceLabel}
+                                </label>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={prodCostPrice}
+                                  onChange={(e) => setProdCostPrice(e.target.value)}
+                                  placeholder="850"
+                                  className="input font-mono tabular-nums"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="pt-4 border-t border-slate-100 space-y-3">
+                              <div>
+                                <div className="text-xs font-bold text-slate-800">
+                                  {tvar.wholesaleTitle}
+                                </div>
+                                <p className="text-[11px] text-slate-500">{tvar.wholesaleHint}</p>
+                              </div>
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                    {tvar.wholesaleMinQtyLabel}
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    value={prodWholesaleMinQty}
+                                    onChange={(e) => setProdWholesaleMinQty(e.target.value)}
+                                    placeholder="10"
+                                    className="input font-mono text-xs tabular-nums"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                    {tvar.wholesalePriceLabel}
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    value={prodWholesalePrice}
+                                    onChange={(e) => setProdWholesalePrice(e.target.value)}
+                                    placeholder="980"
+                                    className="input font-mono text-xs tabular-nums"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Right: Sourcing Mode, Stock & Supplier */}
+                          <div className="lg:border-l lg:border-slate-200 lg:pl-6 space-y-4">
+                            <div className="pb-2 border-b border-slate-100">
+                              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                                {tsrc.sectionTitle}
+                              </h4>
+                            </div>
+
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                {tsrc.fulfillmentModeLabel}
+                              </label>
+                              <select
+                                value={prodFulfillmentType}
+                                onChange={(e) =>
+                                  setProdFulfillmentType(e.target.value as MartFulfillmentType)
+                                }
+                                className="input text-xs"
+                              >
+                                <option value="own_stock">{tsrc.ownStockMode}</option>
+                                <option value="dropship">{tsrc.dropshipMode}</option>
+                              </select>
+                              <p className="text-[11px] text-slate-500 mt-1">
+                                {prodFulfillmentType === "dropship"
+                                  ? tsrc.dropshipHint
+                                  : tsrc.ownStockHint}
+                              </p>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                  {t.admin.products.stockLabel}
+                                </label>
+                                {prodFulfillmentType === "dropship" ? (
+                                  <div className="input flex items-center text-xs font-semibold text-[#0B5336] bg-brand-50">
+                                    {tsrc.unlimitedLabel}
+                                  </div>
+                                ) : variationMode === "matrix" && prodMatrix.length > 0 ? (
+                                  <div className="input flex items-center justify-between text-xs font-mono font-bold text-[#0B5336] bg-brand-50/70 tabular-nums">
+                                    <span>
+                                      {toLocalizedDigits(
+                                        prodMatrix
+                                          .filter((v) => v.active)
+                                          .reduce(
+                                            (s, v) => s + Math.max(0, Number(v.stock) || 0),
+                                            0
+                                          ),
+                                        lang
+                                      )}
+                                    </span>
+                                    <span className="font-sans font-medium text-[11px] text-slate-600">
+                                      Matrix
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    value={prodStock}
+                                    onChange={(e) => setProdStock(e.target.value)}
+                                    className="input font-mono tabular-nums"
+                                  />
+                                )}
+                              </div>
+
+                              {prodFulfillmentType === "own_stock" ? (
+                                <div>
+                                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                    {tsrc.lowStockThresholdLabel}
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    value={prodLowStockThreshold}
+                                    onChange={(e) => setProdLowStockThreshold(e.target.value)}
+                                    className="input font-mono tabular-nums"
+                                  />
+                                </div>
+                              ) : (
+                                <div className="flex items-end pb-2">
+                                  <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-800 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={prodSupplierAvailable}
+                                      onChange={(e) =>
+                                        setProdSupplierAvailable(e.target.checked)
+                                      }
+                                      className="h-4 w-4 rounded border-slate-300 accent-[#0B5336]"
+                                    />
+                                    <span>{tsrc.supplierAvailableCheckbox}</span>
+                                  </label>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                  {tsrc.supplierLabel}
+                                </label>
+                                <select
+                                  value={prodSupplierId}
+                                  onChange={(e) => {
+                                    const id = e.target.value;
+                                    setProdSupplierId(id);
+                                    const sup = suppliers.find((s) => s.id === id);
+                                    if (sup) {
+                                      setProdCollectionMode(
+                                        sup.payoutMode === "supplier_pays_us"
+                                          ? "supplier_collects"
+                                          : "store_collects"
+                                      );
+                                    }
+                                  }}
+                                  className="input text-xs"
+                                >
+                                  <option value="">{tsrc.noSupplierOption}</option>
+                                  {suppliers.map((s) => (
+                                    <option key={s.id} value={s.id}>
+                                      {s.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                  {tsrc.sourceNameLabel}
+                                </label>
+                                <input
+                                  type="text"
+                                  value={prodSourceName}
+                                  onChange={(e) => setProdSourceName(e.target.value)}
+                                  placeholder={tsrc.sourceNamePlaceholder}
+                                  className="input text-xs"
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                {tsrc.collectionModeLabel}
+                              </label>
+                              <select
+                                value={prodCollectionMode}
+                                onChange={(e) =>
+                                  setProdCollectionMode(e.target.value as MartCollectionMode)
+                                }
+                                className="input text-xs"
+                              >
+                                <option value="store_collects">{tsrc.storeCollectsOption}</option>
+                                <option value="supplier_collects">
+                                  {tsrc.supplierCollectsOption}
+                                </option>
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* ==================== TAB 4: VARIANTS & ATTRIBUTES ==================== */}
+                      {productStudioTab === "variants" && (
+                        <div className="space-y-6">
+                          {/* Section A: 3-Mode Variation Studio */}
+                          <div className="space-y-4">
+                            <div className="pb-2 border-b border-slate-100">
+                              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                                <Layers className="h-3.5 w-3.5 text-[#0B5336]" />
+                                <span>{tvar.modeLabel}</span>
+                              </h4>
+                              <p className="text-[11px] text-slate-500 mt-0.5">
+                                {tvar.sectionSubtitle}
+                              </p>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                              {(
+                                [
+                                  { id: "none", title: tvar.modeNone, hint: tvar.modeNoneHint },
+                                  {
+                                    id: "simple",
+                                    title: tvar.modeSimple,
+                                    hint: tvar.modeSimpleHint,
+                                  },
+                                  {
+                                    id: "matrix",
+                                    title: tvar.modeMatrix,
+                                    hint: tvar.modeMatrixHint,
+                                  },
+                                ] as const
+                              ).map((modeOpt) => {
+                                const active = variationMode === modeOpt.id;
+                                return (
+                                  <button
+                                    key={modeOpt.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setVariationMode(modeOpt.id);
+                                      setColorGalleryPickerIdx(null);
+                                    }}
+                                    className={`rounded-xl border p-3.5 text-left transition-colors ${
+                                      active
+                                        ? "border-[#0B5336] bg-brand-50/25"
+                                        : "border-slate-200 bg-white hover:border-slate-300"
+                                    }`}
+                                  >
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span
+                                        className={`text-xs font-bold ${
+                                          active ? "text-[#0B5336]" : "text-slate-800"
+                                        }`}
+                                      >
+                                        {modeOpt.title}
+                                      </span>
+                                      {active && (
+                                        <CheckCircle2 className="h-4 w-4 text-[#0B5336] shrink-0" />
+                                      )}
+                                    </div>
+                                    <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                                      {modeOpt.hint}
+                                    </p>
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            {/* Simple Option List */}
+                            {variationMode === "simple" && (
+                              <div className="pt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                    {t.admin.products.variantsEnLabel}
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={prodVariantsEn}
+                                    onChange={(e) => setProdVariantsEn(e.target.value)}
+                                    placeholder={t.admin.products.variantsEnPlaceholder}
+                                    className="input"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                    {t.admin.products.variantsBnLabel}
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={prodVariantsBn}
+                                    onChange={(e) => setProdVariantsBn(e.target.value)}
+                                    placeholder={t.admin.products.variantsBnPlaceholder}
+                                    className="input"
+                                  />
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Color Swatches + Sizes + Price/Stock Matrix */}
+                            {variationMode === "matrix" && (
+                              <div className="space-y-4 pt-2">
+                                <div className="space-y-2.5">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-xs font-bold text-slate-800">
+                                      {tvar.colorsTitle}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={handleAddColorRow}
+                                      className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-[#0B5336] hover:bg-brand-50 whitespace-nowrap"
+                                    >
+                                      {tvar.addColorBtn}
+                                    </button>
+                                  </div>
+
+                                  {prodColors.length > 0 && (
+                                    <div className="space-y-2.5">
+                                      {prodColors.map((clr, idx) => {
+                                        const isUploadingColor = uploadingColorRowId === clr.id;
+                                        const pickerOpen = colorGalleryPickerIdx === idx;
+                                        return (
+                                          <div
+                                            key={clr.id}
+                                            className="rounded-xl border border-slate-200 bg-slate-50/50 p-3 space-y-2.5"
+                                          >
+                                            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center">
+                                              <div className="sm:col-span-1 flex items-center gap-2">
+                                                <div className="h-10 w-10 rounded-lg border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center bg-white p-0.5">
+                                                  {clr.imageUrl ? (
+                                                    // eslint-disable-next-line @next/next/no-img-element
+                                                    <img
+                                                      src={normalizeMartImageUrl(clr.imageUrl)}
+                                                      alt={clr.nameEn || clr.nameBn || "Color"}
+                                                      referrerPolicy="no-referrer"
+                                                      className="h-full w-full object-contain"
+                                                    />
+                                                  ) : (
+                                                    <span
+                                                      className="h-5 w-5 rounded-full border border-slate-300"
+                                                      style={{
+                                                        backgroundColor: clr.hex || "#0B5336",
+                                                      }}
+                                                    />
+                                                  )}
+                                                </div>
+                                              </div>
+
+                                              <div className="sm:col-span-4">
+                                                <input
+                                                  type="text"
+                                                  value={clr.nameEn}
+                                                  onChange={(e) =>
+                                                    handleColorNameEnChange(idx, e.target.value)
+                                                  }
+                                                  placeholder={tvar.colorNameEnPlaceholder}
+                                                  aria-label={tvar.colorNameEnLabel}
+                                                  className="input bg-white min-h-[38px] py-1.5 text-xs"
+                                                />
+                                              </div>
+
+                                              <div className="sm:col-span-4">
+                                                <input
+                                                  type="text"
+                                                  value={clr.nameBn}
+                                                  onChange={(e) =>
+                                                    setProdColors((prev) =>
+                                                      prev.map((item, i) =>
+                                                        i === idx
+                                                          ? { ...item, nameBn: e.target.value }
+                                                          : item
+                                                      )
+                                                    )
+                                                  }
+                                                  placeholder={tvar.colorNameBnPlaceholder}
+                                                  aria-label={tvar.colorNameBnLabel}
+                                                  className="input bg-white min-h-[38px] py-1.5 text-xs"
+                                                />
+                                              </div>
+
+                                              <div className="sm:col-span-2 flex items-center gap-2">
+                                                <input
+                                                  type="color"
+                                                  value={clr.hex || "#0B5336"}
+                                                  onChange={(e) =>
+                                                    setProdColors((prev) =>
+                                                      prev.map((item, i) =>
+                                                        i === idx
+                                                          ? { ...item, hex: e.target.value }
+                                                          : item
+                                                      )
+                                                    )
+                                                  }
+                                                  aria-label={tvar.colorHexLabel}
+                                                  className="h-9 w-12 rounded-lg border border-slate-200 cursor-pointer shrink-0 bg-white"
+                                                />
+                                                <span className="font-mono text-[11px] text-slate-400">
+                                                  {clr.hex || "#0B5336"}
+                                                </span>
+                                              </div>
+
+                                              <div className="sm:col-span-1 text-right">
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    setProdColors((prev) =>
+                                                      prev.filter((_, i) => i !== idx)
+                                                    );
+                                                    if (colorGalleryPickerIdx === idx) {
+                                                      setColorGalleryPickerIdx(null);
+                                                    }
+                                                  }}
+                                                  aria-label={t.common.delete}
+                                                  className="text-red-600 hover:text-red-800 p-1.5 rounded-lg hover:bg-red-50"
+                                                >
+                                                  <Trash2 className="h-4 w-4" />
+                                                </button>
+                                              </div>
+                                            </div>
+
+                                            <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-2 border-t border-slate-200/70">
+                                              <input
+                                                type="text"
+                                                value={clr.imageUrl || ""}
+                                                onChange={(e) =>
+                                                  setProdColors((prev) =>
+                                                    prev.map((item, i) =>
+                                                      i === idx
+                                                        ? { ...item, imageUrl: e.target.value }
+                                                        : item
+                                                    )
+                                                  )
+                                                }
+                                                placeholder={tvar.colorImageLabel}
+                                                className="input bg-white min-h-[36px] py-1 text-xs font-mono flex-1"
+                                              />
+
+                                              <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                                                <label className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] cursor-pointer inline-flex items-center gap-1.5 min-h-[36px] whitespace-nowrap">
+                                                  <Upload className="h-3.5 w-3.5 text-[#0B5336]" />
+                                                  <span>
+                                                    {isUploadingColor
+                                                      ? t.admin.products.uploading
+                                                      : tvar.uploadColorImgBtn}
+                                                  </span>
+                                                  <input
+                                                    type="file"
+                                                    accept="image/*"
+                                                    disabled={isUploadingColor}
+                                                    onChange={(e) =>
+                                                      handleColorRowImageUpload(clr.id, idx, e)
+                                                    }
+                                                    className="sr-only"
+                                                  />
+                                                </label>
+
+                                                <button
+                                                  type="button"
+                                                  onClick={() =>
+                                                    setColorGalleryPickerIdx((prev) =>
+                                                      prev === idx ? null : idx
+                                                    )
+                                                  }
+                                                  className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold min-h-[36px] whitespace-nowrap transition-colors ${
+                                                    pickerOpen
+                                                      ? "border-[#0B5336] bg-[#0B5336] text-white"
+                                                      : "border-slate-300 bg-white text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336]"
+                                                  }`}
+                                                >
+                                                  {tvar.pickFromGalleryBtn}
+                                                </button>
+
+                                                {clr.imageUrl && (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                      setProdColors((prev) =>
+                                                        prev.map((item, i) =>
+                                                          i === idx
+                                                            ? { ...item, imageUrl: "" }
+                                                            : item
+                                                        )
+                                                      )
+                                                    }
+                                                    className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-semibold text-slate-500 hover:text-red-600 min-h-[36px]"
+                                                    title={tvar.clearColorImgBtn}
+                                                  >
+                                                    <X className="h-3.5 w-3.5" />
+                                                  </button>
+                                                )}
+                                              </div>
+                                            </div>
+
+                                            {pickerOpen && (
+                                              <div className="rounded-lg border border-slate-200 bg-white p-2.5 space-y-2">
+                                                {availableGalleryPool.length === 0 ? (
+                                                  <p className="text-[11px] text-slate-500">
+                                                    {tvar.noGalleryPhotosHint}
+                                                  </p>
+                                                ) : (
+                                                  <div className="flex flex-wrap gap-2">
+                                                    {availableGalleryPool.map((poolUrl, pIdx) => {
+                                                      const selected = clr.imageUrl === poolUrl;
+                                                      return (
+                                                        <button
+                                                          key={`${poolUrl}-${pIdx}`}
+                                                          type="button"
+                                                          onClick={() => {
+                                                            setProdColors((prev) =>
+                                                              prev.map((item, i) =>
+                                                                i === idx
+                                                                  ? {
+                                                                      ...item,
+                                                                      imageUrl: poolUrl,
+                                                                    }
+                                                                  : item
+                                                              )
+                                                            );
+                                                            setColorGalleryPickerIdx(null);
+                                                          }}
+                                                          className={`h-14 w-14 rounded-lg bg-white p-1 overflow-hidden border-2 transition-all ${
+                                                            selected
+                                                              ? "border-[#0B5336] ring-2 ring-[#0B5336]/25"
+                                                              : "border-slate-200 hover:border-[#0B5336]"
+                                                          }`}
+                                                        >
+                                                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                          <img
+                                                            src={normalizeMartImageUrl(poolUrl)}
+                                                            alt={tvar.galleryTitle}
+                                                            referrerPolicy="no-referrer"
+                                                            className="h-full w-full object-contain"
+                                                          />
+                                                        </button>
+                                                      );
+                                                    })}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Sizes Input + Matrix Generator */}
+                                <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-end pt-3 border-t border-slate-100">
+                                  <div className="lg:col-span-7">
+                                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                      {tvar.sizesLabel}
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={prodSizesInput}
+                                      onChange={(e) => setProdSizesInput(e.target.value)}
+                                      placeholder={tvar.sizesPlaceholder}
+                                      className="input text-xs"
+                                    />
+                                  </div>
+                                  <div className="lg:col-span-5 flex flex-wrap gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={handleBuildVariationMatrix}
+                                      className="btn-outline bg-white px-3.5 py-2 text-xs whitespace-nowrap"
+                                    >
+                                      {tvar.syncMatrixBtn}
+                                    </button>
+                                    {prodMatrix.length > 0 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setProdMatrix([])}
+                                        className="rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 whitespace-nowrap"
+                                      >
+                                        {tvar.clearMatrixBtn}
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {matrixNeedsSync && (
+                                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-900">
+                                    <div className="flex items-center gap-2">
+                                      <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                                      <span>{tvar.matrixSyncNeededHint}</span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={handleBuildVariationMatrix}
+                                      className="rounded-lg bg-amber-600 px-3 py-1 text-[11px] font-semibold text-white hover:bg-amber-700 whitespace-nowrap"
+                                    >
+                                      {tvar.syncMatrixBtn}
+                                    </button>
+                                  </div>
+                                )}
+
+                                {prodMatrix.length > 0 && (
+                                  <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/50 p-3">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                      <span className="text-xs font-bold text-slate-800">
+                                        {tvar.matrixTitle} (
+                                        {toLocalizedDigits(prodMatrix.length, lang)})
+                                      </span>
+                                      <span className="text-[11px] text-slate-500">
+                                        {tvar.matrixHint}
+                                      </span>
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                      <table className="w-full text-left text-xs">
+                                        <thead className="border-b border-slate-200 text-slate-500">
+                                          <tr>
+                                            <th className="py-2 pr-2 font-semibold">
+                                              {tvar.colCombination}
+                                            </th>
+                                            <th className="py-2 pr-2 font-semibold">
+                                              {tvar.colVariantSku}
+                                            </th>
+                                            <th className="py-2 pr-2 font-semibold">
+                                              {tvar.colPriceOverride}
+                                            </th>
+                                            <th className="py-2 pr-2 font-semibold">
+                                              {tvar.colCostOverride}
+                                            </th>
+                                            <th className="py-2 pr-2 font-semibold">
+                                              {tvar.colStock}
+                                            </th>
+                                            <th className="py-2 font-semibold text-center">
+                                              {tvar.colActive}
+                                            </th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                          {prodMatrix.map((row, idx) => (
+                                            <tr key={row.key}>
+                                              <td className="py-1.5 pr-2 font-semibold text-slate-800 whitespace-nowrap">
+                                                {[row.colorNameEn, row.size]
+                                                  .filter(Boolean)
+                                                  .join(" / ")}
+                                              </td>
+                                              <td className="py-1.5 pr-2">
+                                                <input
+                                                  type="text"
+                                                  value={row.sku}
+                                                  onChange={(e) =>
+                                                    setProdMatrix((prev) =>
+                                                      prev.map((m, i) =>
+                                                        i === idx
+                                                          ? { ...m, sku: e.target.value }
+                                                          : m
+                                                      )
+                                                    )
+                                                  }
+                                                  className="rounded border border-slate-200 bg-white px-2 py-1 text-xs font-mono tabular-nums w-28"
+                                                />
+                                              </td>
+                                              <td className="py-1.5 pr-2">
+                                                <input
+                                                  type="number"
+                                                  min={0}
+                                                  value={row.priceOverride || ""}
+                                                  onChange={(e) =>
+                                                    setProdMatrix((prev) =>
+                                                      prev.map((m, i) =>
+                                                        i === idx
+                                                          ? {
+                                                              ...m,
+                                                              priceOverride: Math.max(
+                                                                0,
+                                                                Number(e.target.value) || 0
+                                                              ),
+                                                            }
+                                                          : m
+                                                      )
+                                                    )
+                                                  }
+                                                  className="rounded border border-slate-200 bg-white px-2 py-1 text-xs font-mono tabular-nums w-20"
+                                                />
+                                              </td>
+                                              <td className="py-1.5 pr-2">
+                                                <input
+                                                  type="number"
+                                                  min={0}
+                                                  value={row.costOverride || ""}
+                                                  onChange={(e) =>
+                                                    setProdMatrix((prev) =>
+                                                      prev.map((m, i) =>
+                                                        i === idx
+                                                          ? {
+                                                              ...m,
+                                                              costOverride: Math.max(
+                                                                0,
+                                                                Number(e.target.value) || 0
+                                                              ),
+                                                            }
+                                                          : m
+                                                      )
+                                                    )
+                                                  }
+                                                  className="rounded border border-slate-200 bg-white px-2 py-1 text-xs font-mono tabular-nums w-20"
+                                                />
+                                              </td>
+                                              <td className="py-1.5 pr-2">
+                                                <input
+                                                  type="number"
+                                                  min={0}
+                                                  value={row.stock}
+                                                  onChange={(e) =>
+                                                    setProdMatrix((prev) =>
+                                                      prev.map((m, i) =>
+                                                        i === idx
+                                                          ? {
+                                                              ...m,
+                                                              stock: Math.max(
+                                                                0,
+                                                                Number(e.target.value) || 0
+                                                              ),
+                                                            }
+                                                          : m
+                                                      )
+                                                    )
+                                                  }
+                                                  className="rounded border border-slate-200 bg-white px-2 py-1 text-xs font-mono tabular-nums w-20"
+                                                />
+                                              </td>
+                                              <td className="py-1.5 text-center">
+                                                <input
+                                                  type="checkbox"
+                                                  checked={row.active}
+                                                  onChange={(e) =>
+                                                    setProdMatrix((prev) =>
+                                                      prev.map((m, i) =>
+                                                        i === idx
+                                                          ? { ...m, active: e.target.checked }
+                                                          : m
+                                                      )
+                                                    )
+                                                  }
+                                                  className="h-4 w-4 rounded border-slate-300 accent-[#0B5336]"
+                                                />
+                                              </td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Section B: Calm Smart Attributes & Filter Tags (Zero Pill Walls) */}
+                          <div className="pt-5 border-t border-slate-200 space-y-4">
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                                  {lang === "bn"
+                                    ? "স্মার্ট অ্যাট্রিবিউট ও সার্চ ট্যাগ"
+                                    : "Smart Attributes & Filter Tags"}
+                                </h4>
+                                <p className="text-[11px] text-slate-500 mt-0.5">
+                                  {lang === "bn"
+                                    ? "ড্রপডাউন থেকে দ্রুত সিলেক্ট করুন অথবা কাস্টম মান লিখুন"
+                                    : "Quick-pick managed presets or enter custom filter values"}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setActiveSection("taxonomy")}
+                                className="text-[11px] font-semibold text-[#0B5336] hover:underline whitespace-nowrap shrink-0"
+                              >
+                                {lang === "bn" ? "+ অ্যাট্রিবিউট এডিট" : "+ Manage Attributes"}
+                              </button>
+                            </div>
+
+                            {/* Segmented Gender Selector */}
+                            <div className="space-y-1.5">
+                              <label className="block text-xs font-semibold text-slate-700">
+                                {lang === "bn" ? "লিঙ্গ / Gender" : "Gender / Target Audience"}
+                              </label>
+                              <div className="inline-flex flex-wrap rounded-xl border border-slate-200 bg-slate-50 p-1 gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setProdGender("")}
+                                  className={`rounded-lg px-3 py-1.5 text-[11px] font-semibold transition-colors ${
+                                    prodGender === ""
+                                      ? "bg-slate-900 text-white"
+                                      : "text-slate-600 hover:text-slate-900 hover:bg-white"
+                                  }`}
+                                >
+                                  {lang === "bn" ? "নির্ধারিত নয়" : "Any / None"}
+                                </button>
+                                {MART_GENDER_OPTIONS.map((gOpt) => {
+                                  const active = prodGender === gOpt.value;
+                                  return (
+                                    <button
+                                      key={gOpt.value}
+                                      type="button"
+                                      onClick={() =>
+                                        setProdGender((prev) =>
+                                          prev === gOpt.value ? "" : gOpt.value
+                                        )
+                                      }
+                                      className={`rounded-lg px-3 py-1.5 text-[11px] font-semibold transition-colors ${
+                                        active
+                                          ? "bg-[#0B5336] text-white"
+                                          : "text-slate-700 hover:text-slate-900 hover:bg-white"
+                                      }`}
+                                    >
+                                      {lang === "bn" ? gOpt.labelBn : gOpt.labelEn}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            {/* Age Group, Brand, Material & Search Tags in a clean 2x2 Grid */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                  {lang === "bn" ? "বয়স সীমা (Age Group)" : "Age Group"}
+                                </label>
+                                <div className="flex gap-2">
+                                  <input
+                                    type="text"
+                                    value={prodAgeGroup}
+                                    onChange={(e) => setProdAgeGroup(e.target.value)}
+                                    placeholder={
+                                      lang === "bn"
+                                        ? "যেমন: 0-6 Months, 3-5 Years"
+                                        : "e.g. 0-6 Months, 3-5 Years, Adult"
+                                    }
+                                    className="input text-xs flex-1"
+                                  />
+                                  {ageGroupAttrOptions.length > 0 && (
+                                    <select
+                                      aria-label="Age group preset"
+                                      value={
+                                        ageGroupAttrOptions.includes(prodAgeGroup)
+                                          ? prodAgeGroup
+                                          : ""
+                                      }
+                                      onChange={(e) => {
+                                        if (e.target.value) setProdAgeGroup(e.target.value);
+                                      }}
+                                      className="input text-xs w-36 bg-slate-50 shrink-0"
+                                    >
+                                      <option value="">
+                                        {lang === "bn" ? "প্রিসেট..." : "Preset..."}
+                                      </option>
+                                      {ageGroupAttrOptions.map((preset) => (
+                                        <option key={preset} value={preset}>
+                                          {preset}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                  {lang === "bn" ? "ব্র্যান্ড (Brand)" : "Brand"}
+                                </label>
+                                <div className="flex gap-2">
+                                  <input
+                                    type="text"
+                                    value={prodBrand}
+                                    onChange={(e) => setProdBrand(e.target.value)}
+                                    placeholder={
+                                      lang === "bn"
+                                        ? "যেমন: Xeetrix, Joykiddy"
+                                        : "e.g. Xeetrix, Joykiddy"
+                                    }
+                                    className="input text-xs flex-1"
+                                  />
+                                  {brandAttrOptions.length > 0 && (
+                                    <select
+                                      aria-label="Brand preset"
+                                      value={
+                                        brandAttrOptions.includes(prodBrand) ? prodBrand : ""
+                                      }
+                                      onChange={(e) => {
+                                        if (e.target.value) setProdBrand(e.target.value);
+                                      }}
+                                      className="input text-xs w-36 bg-slate-50 shrink-0"
+                                    >
+                                      <option value="">
+                                        {lang === "bn" ? "প্রিসেট..." : "Preset..."}
+                                      </option>
+                                      {brandAttrOptions.map((bPreset) => (
+                                        <option key={bPreset} value={bPreset}>
+                                          {bPreset}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                  {lang === "bn"
+                                    ? "ম্যাটেরিয়াল / ফেব্রিক (Material)"
+                                    : "Material / Fabric"}
+                                </label>
+                                <div className="flex gap-2">
+                                  <input
+                                    type="text"
+                                    value={prodMaterial}
+                                    onChange={(e) => setProdMaterial(e.target.value)}
+                                    placeholder={
+                                      lang === "bn"
+                                        ? "যেমন: 100% Cotton, Silk, Denim"
+                                        : "e.g. 100% Cotton, Silk, Denim"
+                                    }
+                                    className="input text-xs flex-1"
+                                  />
+                                  {materialAttrOptions.length > 0 && (
+                                    <select
+                                      aria-label="Material preset"
+                                      value={
+                                        materialAttrOptions.includes(prodMaterial)
+                                          ? prodMaterial
+                                          : ""
+                                      }
+                                      onChange={(e) => {
+                                        if (e.target.value) setProdMaterial(e.target.value);
+                                      }}
+                                      className="input text-xs w-36 bg-slate-50 shrink-0"
+                                    >
+                                      <option value="">
+                                        {lang === "bn" ? "প্রিসেট..." : "Preset..."}
+                                      </option>
+                                      {materialAttrOptions.map((mat) => (
+                                        <option key={mat} value={mat}>
+                                          {mat}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                  {lang === "bn"
+                                    ? "কাস্টম সার্চ ও ফিল্টার ট্যাগ (কমা দিয়ে)"
+                                    : "Custom Search & Filter Tags (Comma-separated)"}
+                                </label>
+                                <div className="flex gap-2">
+                                  <input
+                                    type="text"
+                                    value={prodTags}
+                                    onChange={(e) => setProdTags(e.target.value)}
+                                    placeholder={
+                                      lang === "bn"
+                                        ? "যেমন: Hoodie, Winter Wear, Gift"
+                                        : "e.g. Hoodie, Winter Wear, Gift Idea"
+                                    }
+                                    className="input text-xs flex-1"
+                                  />
+                                  <select
+                                    aria-label="Quick add tag"
+                                    value=""
+                                    onChange={(e) => {
+                                      const tagVal = e.target.value;
+                                      if (!tagVal) return;
+                                      const currentList = parseProductTags(prodTags);
+                                      const exists = currentList.some(
+                                        (tItem) => tItem.toLowerCase() === tagVal.toLowerCase()
+                                      );
+                                      if (!exists) {
+                                        setProdTags([...currentList, tagVal].join(", "));
+                                      }
+                                    }}
+                                    className="input text-xs w-36 bg-slate-50 shrink-0"
+                                  >
+                                    <option value="">
+                                      {lang === "bn" ? "+ ট্যাগ যোগ..." : "+ Add tag..."}
+                                    </option>
+                                    {[
+                                      "Winter Wear",
+                                      "Hoodie",
+                                      "Baby Blanket",
+                                      "Overcoat",
+                                      "Gift Idea",
+                                      "Bestseller",
+                                    ].map((tagPreset) => (
+                                      <option key={tagPreset} value={tagPreset}>
+                                        {tagPreset}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Dynamic Custom Attribute Groups added by Admin in Mart_Attributes */}
+                            {customAttributeGroups.length > 0 && (
+                              <div className="pt-3 border-t border-slate-100 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {customAttributeGroups.map((cAttr) => {
+                                  const opts = parseAttributeOptionsList(cAttr.optionsList);
+                                  const currentVal = prodCustomAttrs[cAttr.slug] || "";
+                                  const groupLabel = pickLocalized(
+                                    cAttr.nameEn,
+                                    cAttr.nameBn,
+                                    lang,
+                                    cAttr.slug
+                                  );
+                                  return (
+                                    <div key={cAttr.id}>
+                                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                        {groupLabel}
+                                      </label>
+                                      <div className="flex gap-2">
+                                        <input
+                                          type="text"
+                                          value={currentVal}
+                                          onChange={(e) => {
+                                            const val = e.target.value;
+                                            setProdCustomAttrs((prev) => ({
+                                              ...prev,
+                                              [cAttr.slug]: val,
+                                            }));
+                                          }}
+                                          placeholder={
+                                            opts.length > 0
+                                              ? `${opts.slice(0, 2).join(", ")}...`
+                                              : groupLabel
+                                          }
+                                          className="input text-xs flex-1"
+                                        />
+                                        {opts.length > 0 && (
+                                          <select
+                                            aria-label={`${groupLabel} preset`}
+                                            value={opts.includes(currentVal) ? currentVal : ""}
+                                            onChange={(e) => {
+                                              if (e.target.value) {
+                                                setProdCustomAttrs((prev) => ({
+                                                  ...prev,
+                                                  [cAttr.slug]: e.target.value,
+                                                }));
+                                              }
+                                            }}
+                                            className="input text-xs w-36 bg-slate-50 shrink-0"
+                                          >
+                                            <option value="">
+                                              {lang === "bn" ? "প্রিসেট..." : "Preset..."}
+                                            </option>
+                                            {opts.map((optVal) => (
+                                              <option key={optVal} value={optVal}>
+                                                {optVal}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Studio Step Navigation Footer */}
+                    <div className="px-4 sm:px-6 py-3.5 bg-slate-50/70 border-t border-slate-200 flex items-center justify-between gap-3">
+                      <div>
+                        {prevTab ? (
+                          <button
+                            type="button"
+                            onClick={() => setProductStudioTab(prevTab.id)}
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:border-slate-400 hover:text-slate-900 whitespace-nowrap"
+                          >
+                            <ArrowLeft className="h-3.5 w-3.5" />
+                            <span>{prevTab.label}</span>
+                          </button>
+                        ) : (
+                          <span className="text-[11px] text-slate-400 hidden sm:inline">
+                            {lang === "bn"
+                              ? "যেকোনো ধাপ থেকেই সেভ করা যাবে"
+                              : "Save or publish from any step"}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="text-[11px] font-mono text-slate-500 tabular-nums">
+                        {lang === "bn"
+                          ? `ধাপ ${toLocalizedDigits(currentTabIndex + 1, lang)} / ৪`
+                          : `Step ${currentTabIndex + 1} of 4`}
+                      </div>
+
+                      <div>
+                        {nextTab ? (
+                          <button
+                            type="button"
+                            onClick={() => setProductStudioTab(nextTab.id)}
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-[#0B5336] bg-white px-4 py-2 text-xs font-semibold text-[#0B5336] hover:bg-brand-50 whitespace-nowrap"
+                          >
+                            <span>{nextTab.label}</span>
+                            <ArrowRight className="h-3.5 w-3.5" />
+                          </button>
+                        ) : (
+                          <button
+                            type="submit"
+                            disabled={savingProduct}
+                            className="btn-primary px-5 py-2 text-xs whitespace-nowrap"
+                          >
+                            {savingProduct
+                              ? t.admin.products.savingProduct
+                              : editingProductId
+                              ? t.admin.products.saveChangesBtn
+                              : t.admin.products.publishProductBtn}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </form>
+                );
+              })()}
 
               {/* Catalog Table Container */}
               <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
@@ -8194,7 +8495,115 @@ export function MartAdminClient() {
                 <p className="text-xs text-slate-500 mt-0.5">{t.admin.settings.subtitle}</p>
               </div>
 
-              <form onSubmit={handleSaveSettings} className="space-y-4">
+              <form onSubmit={handleSaveSettings} className="space-y-5">
+                {/* Global Store Contact & Helpline (Syncs across Header, Footer, PDP, Invoice, SEO & AI Feeds) */}
+                {(() => {
+                  const previewContact = resolveMartContactInfo(settingsForm);
+                  return (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 sm:p-5 space-y-4">
+                      <div className="flex flex-wrap items-start justify-between gap-2 pb-2 border-b border-slate-200/80">
+                        <div>
+                          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                            <Phone className="h-3.5 w-3.5 text-[#0B5336]" />
+                            <span>
+                              {lang === "bn"
+                                ? "স্টোর কন্টাক্ট ও হটলাইন (গ্লোবাল সিঙ্ক)"
+                                : "Store Contact & Helpline (Global Sync)"}
+                            </span>
+                          </h3>
+                          <p className="text-[11px] text-slate-500 mt-0.5">
+                            {lang === "bn"
+                              ? "এখান থেকে পরিবর্তন করে সেভ করলে হেডার, ফুটার, প্রোডাক্ট পেজ, ইনভয়েস, SEO ও সব অ্যালার্টে স্বয়ংক্রিয়ভাবে আপডেট হয়ে যাবে।"
+                              : "Changes saved here automatically update the Header, Footer, Product Pages, Invoices, Alerts, SEO Schema & AI Feeds."}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">
+                            {lang === "bn"
+                              ? "হটলাইন নম্বর (Display & Call)"
+                              : "Hotline Number (Display & Call)"}
+                          </label>
+                          <input
+                            type="text"
+                            value={settingsForm.hotlinePhone}
+                            onChange={(e) =>
+                              setSettingsForm({
+                                ...settingsForm,
+                                hotlinePhone: e.target.value,
+                              })
+                            }
+                            placeholder="+880 965 803 6631"
+                            className="input font-mono text-xs bg-white tabular-nums"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">
+                            {lang === "bn"
+                              ? "WhatsApp সাপোর্ট নম্বর (ঐচ্ছিক)"
+                              : "WhatsApp Support Number (Optional)"}
+                          </label>
+                          <input
+                            type="text"
+                            value={settingsForm.whatsappNumber}
+                            onChange={(e) =>
+                              setSettingsForm({
+                                ...settingsForm,
+                                whatsappNumber: e.target.value,
+                              })
+                            }
+                            placeholder="+880 17XX-XXXXXX"
+                            className="input font-mono text-xs bg-white tabular-nums"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">
+                            {lang === "bn"
+                              ? "সাপোর্ট ইমেইল ঠিকানা"
+                              : "Support Email Address"}
+                          </label>
+                          <input
+                            type="email"
+                            value={settingsForm.supportEmail}
+                            onChange={(e) =>
+                              setSettingsForm({
+                                ...settingsForm,
+                                supportEmail: e.target.value,
+                              })
+                            }
+                            placeholder="mart@xeetrix.com"
+                            className="input text-xs bg-white"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 pt-2 border-t border-slate-200/70 text-[11px] text-slate-600">
+                        <span className="font-semibold text-slate-500">
+                          {lang === "bn" ? "লাইভ প্রিভিউ:" : "Live preview:"}
+                        </span>
+                        <span className="inline-flex items-center gap-1.5 font-mono font-semibold text-[#0B5336] tabular-nums">
+                          <Phone className="h-3 w-3" />
+                          <span>{previewContact.hotlinePhone}</span>
+                        </span>
+                        {previewContact.whatsappHref && (
+                          <span className="inline-flex items-center gap-1.5 font-mono font-semibold text-emerald-700 tabular-nums">
+                            <MessageCircle className="h-3 w-3" />
+                            <span>{previewContact.whatsappNumber}</span>
+                          </span>
+                        )}
+                        <span className="inline-flex items-center gap-1.5 text-slate-700">
+                          <Mail className="h-3 w-3 text-slate-400" />
+                          <span>{previewContact.supportEmail}</span>
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -8771,9 +9180,17 @@ export function MartAdminClient() {
               <div className="flex items-start justify-between border-b border-slate-200 pb-4">
                 <div>
                   <MartLogo />
-                  <div className="text-slate-500 mt-2">
-                    {MART_CONTACT_EMAIL} · {MART_CONTACT_PHONE}
-                  </div>
+                  {(() => {
+                    const invContact = resolveMartContactInfo(data?.settings || settingsForm);
+                    return (
+                      <div className="text-slate-500 mt-2 font-mono tabular-nums">
+                        {invContact.supportEmail} · {invContact.hotlinePhone}
+                        {invContact.whatsappNumber
+                          ? ` · WhatsApp: ${invContact.whatsappNumber}`
+                          : ""}
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div className="text-right">
                   <div className="font-mono text-sm font-bold text-slate-900">

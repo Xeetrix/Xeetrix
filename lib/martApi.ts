@@ -9,6 +9,68 @@ export const MART_CONTACT_PHONE = "+880 965 803 6631";
 export const MART_CONTACT_TEL = "tel:+8809658036631";
 export const MART_CURRENCY = "৳";
 
+export function buildMartTelHref(phone?: string): string {
+  const raw = String(phone || MART_CONTACT_PHONE).trim();
+  const normalized = raw.replace(/[^+\d]/g, "");
+  if (!normalized) return MART_CONTACT_TEL;
+  return `tel:${normalized}`;
+}
+
+export function buildMartWhatsAppHref(phone?: string, prefillText?: string): string {
+  const raw = String(phone || "").trim();
+  if (!raw) return "";
+  let digits = raw.replace(/\D/g, "");
+  if (!digits) return "";
+  // Normalize local Bangladesh 01XXXXXXXXX numbers to international 8801XXXXXXXXX
+  if (digits.length === 11 && digits.startsWith("01")) {
+    digits = `88${digits}`;
+  } else if (digits.length === 10 && digits.startsWith("1")) {
+    digits = `880${digits}`;
+  }
+  const base = `https://wa.me/${digits}`;
+  return prefillText ? `${base}?text=${encodeURIComponent(prefillText)}` : base;
+}
+
+export interface ResolvedMartContactInfo {
+  hotlinePhone: string;
+  hotlineTelHref: string;
+  whatsappNumber: string;
+  whatsappHref: string;
+  supportEmail: string;
+  mailtoHref: string;
+}
+
+export function resolveMartContactInfo(
+  settings?: Partial<MartSettings> | null,
+  whatsappPrefill?: string
+): ResolvedMartContactInfo {
+  const hotlinePhone =
+    String(settings?.hotlinePhone || "").trim() || MART_CONTACT_PHONE;
+  const whatsappNumber = String(settings?.whatsappNumber || "").trim();
+  const supportEmail =
+    String(settings?.supportEmail || "").trim() || MART_CONTACT_EMAIL;
+
+  return {
+    hotlinePhone,
+    hotlineTelHref: buildMartTelHref(hotlinePhone),
+    whatsappNumber,
+    whatsappHref: buildMartWhatsAppHref(whatsappNumber, whatsappPrefill),
+    supportEmail,
+    mailtoHref: `mailto:${supportEmail}`,
+  };
+}
+
+export function formatMartContactText(
+  text: string,
+  settings?: Partial<MartSettings> | null
+): string {
+  if (!text) return text;
+  const contact = resolveMartContactInfo(settings);
+  return text
+    .replace(/\+880\s*965\s*803\s*6631/g, contact.hotlinePhone)
+    .replace(/mart@xeetrix\.com/gi, contact.supportEmail);
+}
+
 export type MartSheetName =
   | "Mart_Products"
   | "Mart_Categories"
@@ -331,6 +393,9 @@ export interface MartSettings {
   promoTextBn: string;
   insideDhakaCharge: string;
   outsideDhakaCharge: string;
+  hotlinePhone: string;
+  whatsappNumber: string;
+  supportEmail: string;
   mobileBankingNumber: string;
   bkashMerchantNumber: string;
   bkashQrUrl: string;
@@ -357,6 +422,9 @@ export const DEFAULT_MART_SETTINGS: MartSettings = {
   promoTextBn: "সারাদেশে ডেলিভারি · ক্যাশ অন ডেলিভারি ও মোবাইল ব্যাংকিং সুবিধা",
   insideDhakaCharge: "70",
   outsideDhakaCharge: "130",
+  hotlinePhone: MART_CONTACT_PHONE,
+  whatsappNumber: "",
+  supportEmail: MART_CONTACT_EMAIL,
   mobileBankingNumber: "",
   bkashMerchantNumber: "",
   bkashQrUrl: "",
@@ -379,6 +447,9 @@ function mergeMartSettings(partial?: Partial<MartSettings>): MartSettings {
     promoTextBn: partial?.promoTextBn || DEFAULT_MART_SETTINGS.promoTextBn,
     insideDhakaCharge: partial?.insideDhakaCharge || DEFAULT_MART_SETTINGS.insideDhakaCharge,
     outsideDhakaCharge: partial?.outsideDhakaCharge || DEFAULT_MART_SETTINGS.outsideDhakaCharge,
+    hotlinePhone: String(partial?.hotlinePhone || "").trim() || DEFAULT_MART_SETTINGS.hotlinePhone,
+    whatsappNumber: String(partial?.whatsappNumber || "").trim(),
+    supportEmail: String(partial?.supportEmail || "").trim() || DEFAULT_MART_SETTINGS.supportEmail,
     mobileBankingNumber: partial?.mobileBankingNumber ?? DEFAULT_MART_SETTINGS.mobileBankingNumber,
     bkashMerchantNumber: partial?.bkashMerchantNumber ?? DEFAULT_MART_SETTINGS.bkashMerchantNumber,
     bkashQrUrl: partial?.bkashQrUrl ?? DEFAULT_MART_SETTINGS.bkashQrUrl,
@@ -2426,15 +2497,32 @@ export async function updateMartStoreSettings(
   return mergeMartSettings(res.settings || settings);
 }
 
+export interface MartDriveOrganizeSummary {
+  productsProcessed: number;
+  organizedFiles: number;
+  movedFiles: number;
+  renamedFiles: number;
+  movedToUnused: number;
+  emptyFoldersCleaned: number;
+}
+
 export async function uploadMartImageToDrive(params: {
   fileName: string;
   mimeType: string;
   base64Data: string;
   folderType: "products" | "categories" | "payment";
-}): Promise<{ fileId: string; url: string; driveViewUrl?: string }> {
+  sku?: string;
+  productId?: string;
+  categoryPath?: string[];
+  imageRole?: "MAIN" | "COLOR" | "GALLERY";
+  colorLabel?: string;
+  galleryIndex?: number;
+}): Promise<{ fileId: string; url: string; fileName?: string; folderName?: string; driveViewUrl?: string }> {
   const res = await postToMartAdminApi<{
     fileId: string;
     url: string;
+    fileName?: string;
+    folderName?: string;
     driveViewUrl?: string;
   }>({
     action: "uploadFile",
@@ -2444,7 +2532,23 @@ export async function uploadMartImageToDrive(params: {
   return {
     fileId: res.fileId,
     url: res.url,
+    fileName: res.fileName,
+    folderName: res.folderName,
     driveViewUrl: res.driveViewUrl,
+  };
+}
+
+export async function organizeMartDriveAssets(): Promise<MartDriveOrganizeSummary> {
+  const res = await postToMartAdminApi<MartDriveOrganizeSummary>({
+    action: "organizeDriveAssets",
+  });
+  return {
+    productsProcessed: Number(res.productsProcessed) || 0,
+    organizedFiles: Number(res.organizedFiles) || 0,
+    movedFiles: Number(res.movedFiles) || 0,
+    renamedFiles: Number(res.renamedFiles) || 0,
+    movedToUnused: Number(res.movedToUnused) || 0,
+    emptyFoldersCleaned: Number(res.emptyFoldersCleaned) || 0,
   };
 }
 

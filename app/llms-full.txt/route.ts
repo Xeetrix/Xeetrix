@@ -19,6 +19,7 @@ import {
   normalizeProductRecord,
   parseProductColors,
   parseProductSizes,
+  resolveMartContactInfo,
 } from "@/lib/martApi";
 import { getEffectiveProductStock, isProductOrderable } from "@/lib/martOps";
 
@@ -29,10 +30,12 @@ export async function GET() {
   let categoriesSummary: string[] = [];
   let insideDhaka = String(DEFAULT_MART_SETTINGS.insideDhakaCharge);
   let outsideDhaka = String(DEFAULT_MART_SETTINGS.outsideDhakaCharge);
+  let martContact = resolveMartContactInfo(DEFAULT_MART_SETTINGS);
 
   try {
     const res = await fetchMartPublicFromScript();
     if (res?.data?.settings) {
+      martContact = resolveMartContactInfo(res.data.settings);
       insideDhaka = String(
         res.data.settings.insideDhakaCharge ||
           DEFAULT_MART_SETTINGS.insideDhakaCharge
@@ -114,13 +117,16 @@ ${p.descriptionBn ? `- **Description (BN)**: ${p.descriptionBn}\n` : ""}`;
 - **Headquarters Address**: ${CONTACT_ADDRESS}
 - **Central 24/7 Helpline**: ${CONTACT_PHONE_DISPLAY}
 - **Corporate Email**: ${CORPORATE_EMAIL}
-- **Xeetrix Mart Email**: ${MART_EMAIL}
+- **Xeetrix Mart Hotline**: ${martContact.hotlinePhone}${martContact.whatsappNumber ? `\n- **Xeetrix Mart WhatsApp**: ${martContact.whatsappNumber}` : ""}
+- **Xeetrix Mart Email**: ${martContact.supportEmail || MART_EMAIL}
 - **Xeetrix Travels Email**: ${CONTACT_EMAIL}
 
 ---
 
 ## 2. Xeetrix Mart (জিট্রিক্স মার্ট) — E-Commerce Storefront & Complete Product Catalog
 - **Storefront URL**: ${SITE_URL}/mart
+- **Store Hotline**: ${martContact.hotlinePhone}${martContact.whatsappNumber ? ` | **WhatsApp**: ${martContact.whatsappNumber}` : ""}
+- **Store Support Email**: ${martContact.supportEmail || MART_EMAIL}
 - **Search Endpoint**: ${SITE_URL}/mart?q={query}
 - **Delivery Charge Inside Dhaka**: ৳${insideDhaka} BDT (24–48 Hours)
 - **Delivery Charge Outside Dhaka (All Bangladesh)**: ৳${outsideDhaka} BDT (2–4 Days)

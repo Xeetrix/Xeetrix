@@ -212,6 +212,9 @@ var MART_DEFAULT_SETTINGS = {
   promoTextBn: "সারাদেশে ডেলিভারি · ক্যাশ অন ডেলিভারি ও মোবাইল ব্যাংকিং সুবিধা",
   insideDhakaCharge: "70",
   outsideDhakaCharge: "130",
+  hotlinePhone: "+880 965 803 6631",
+  whatsappNumber: "",
+  supportEmail: "mart@xeetrix.com",
   mobileBankingNumber: "",
   bkashMerchantNumber: "",
   bkashQrUrl: "",
@@ -343,6 +346,427 @@ function ensureDriveFoldersReady() {
     categoriesFolder: categoriesFolder,
     paymentFolder: paymentFolder
   };
+}
+
+function extractDriveFileId(rawUrl) {
+  var u = String(rawUrl || "").trim();
+  if (!u) return "";
+  var m1 = u.match(/googleusercontent\.com\/d\/([A-Za-z0-9_-]{15,})/);
+  if (m1 && m1[1]) return m1[1];
+  var m2 = u.match(/\/file\/d\/([A-Za-z0-9_-]{15,})/);
+  if (m2 && m2[1]) return m2[1];
+  var m3 = u.match(/[?&]id=([A-Za-z0-9_-]{15,})/);
+  if (m3 && m3[1]) return m3[1];
+  return "";
+}
+
+function sanitizeDriveFolderName(rawName, fallback) {
+  var clean = String(rawName || "")
+    .replace(/[\/\\:*?"<>|#%]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (clean.length > 50) clean = clean.substring(0, 50).trim();
+  return clean || fallback || "Uncategorized";
+}
+
+function sanitizeDriveCodeSegment(rawCode, fallback) {
+  var clean = String(rawCode || "")
+    .toUpperCase()
+    .trim()
+    .replace(/[^A-Z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return clean || fallback || "ITEM";
+}
+
+function deriveColorCodeForDrive(colorName, fallbackIdx) {
+  var raw = String(colorName || "").trim();
+  var lower = raw.toLowerCase();
+  var presets = {
+    black: "BLK",
+    white: "WHT",
+    "off white": "OWH",
+    "off-white": "OWH",
+    red: "RED",
+    blue: "BLU",
+    "light blue": "LIB",
+    "sky blue": "SKB",
+    "royal blue": "RBL",
+    "navy blue": "NVY",
+    navy: "NVY",
+    "cadet blue": "CAB",
+    green: "GRN",
+    "dark green": "DGR",
+    olive: "OLV",
+    maroon: "MRN",
+    burgundy: "BRG",
+    grey: "GRY",
+    gray: "GRY",
+    charcoal: "CHR",
+    pink: "PNK",
+    yellow: "YLW",
+    mustard: "MST",
+    orange: "ORG",
+    purple: "PRP",
+    violet: "VLT",
+    brown: "BRN",
+    coffee: "COF",
+    chocolate: "CHC",
+    camel: "CML",
+    beige: "BGE",
+    cream: "CRM",
+    khaki: "KHK",
+    gold: "GLD",
+    silver: "SLV",
+    teal: "TEL",
+    cyan: "CYN"
+  };
+  if (presets[lower]) return presets[lower];
+  var seg = sanitizeDriveCodeSegment(raw, "C" + (fallbackIdx || 1));
+  return seg.length > 12 ? seg.substring(0, 12) : seg;
+}
+
+function resolveDriveFileExtension(mimeType, origFileName) {
+  var mt = String(mimeType || "").toLowerCase();
+  if (mt.indexOf("png") !== -1) return ".png";
+  if (mt.indexOf("webp") !== -1) return ".webp";
+  if (mt.indexOf("gif") !== -1) return ".gif";
+  if (mt.indexOf("jpeg") !== -1 || mt.indexOf("jpg") !== -1) return ".jpg";
+  var nameMatch = String(origFileName || "").toLowerCase().match(/\.(jpg|jpeg|png|webp|gif)$/);
+  if (nameMatch && nameMatch[1]) {
+    return nameMatch[1] === "jpeg" ? ".jpg" : "." + nameMatch[1];
+  }
+  return ".jpg";
+}
+
+function buildStandardProductImageName(skuCode, role, colorLabel, galleryIdx, mimeType, origFileName) {
+  var cleanSku = sanitizeDriveCodeSegment(skuCode, "ITEM");
+  var ext = resolveDriveFileExtension(mimeType, origFileName);
+  var r = String(role || "MAIN").toUpperCase().trim();
+  if (r === "MAIN") {
+    return cleanSku + "-MAIN" + ext;
+  }
+  if (r === "COLOR") {
+    var cCode = deriveColorCodeForDrive(colorLabel, galleryIdx || 1);
+    return cleanSku + "-COLOR-" + cCode + ext;
+  }
+  if (r === "GALLERY") {
+    var idxNum = Math.max(1, Number(galleryIdx) || 1);
+    var pad = idxNum < 10 ? "0" + idxNum : String(idxNum);
+    return cleanSku + "-GALLERY-" + pad + ext;
+  }
+  return cleanSku + "-ASSET" + ext;
+}
+
+function resolveCategoryFolderSegmentsFromCsv(categoriesCsv, catIndex) {
+  var slugs = String(categoriesCsv || "")
+    .split(",")
+    .map(function (s) {
+      return s.trim();
+    })
+    .filter(function (s) {
+      return Boolean(s);
+    });
+  if (slugs.length === 0 || !catIndex || !catIndex.bySlug) {
+    return ["Uncategorized"];
+  }
+  var primaryCat = catIndex.bySlug[slugs[0]];
+  if (!primaryCat) {
+    return [sanitizeDriveFolderName(slugs[0], "Uncategorized")];
+  }
+  var chain = [primaryCat];
+  var visited = {};
+  visited[primaryCat.slug] = true;
+  var cursor = primaryCat;
+  while (cursor.parentSlug && chain.length < 3) {
+    var ps = String(cursor.parentSlug).trim();
+    if (!ps || visited[ps] || !catIndex.bySlug[ps]) break;
+    visited[ps] = true;
+    chain.unshift(catIndex.bySlug[ps]);
+    cursor = catIndex.bySlug[ps];
+  }
+  var out = [];
+  for (var i = 0; i < chain.length; i++) {
+    var seg = sanitizeDriveFolderName(chain[i].nameEn || chain[i].slug || chain[i].nameBn, "");
+    if (seg) out.push(seg);
+  }
+  return out.length > 0 ? out : ["Uncategorized"];
+}
+
+function getOrCreateNestedSubfolder(rootFolder, segments) {
+  var current = rootFolder;
+  for (var i = 0; i < (segments || []).length; i++) {
+    var seg = sanitizeDriveFolderName(segments[i], "");
+    if (!seg || seg === "_Unused") continue;
+    current = getOrCreateFolderByName(current, seg);
+  }
+  return current;
+}
+
+function resolveProductDriveFolder(folders, categorySegments, sku, productId) {
+  var catSegs = [];
+  if (Array.isArray(categorySegments)) {
+    for (var i = 0; i < categorySegments.length; i++) {
+      var clean = sanitizeDriveFolderName(categorySegments[i], "");
+      if (clean && clean !== "_Unused") catSegs.push(clean);
+    }
+  }
+  if (catSegs.length === 0) {
+    catSegs = ["Uncategorized"];
+  }
+  var skuFolderName = sanitizeDriveCodeSegment(sku || productId, "UNASSIGNED");
+  return getOrCreateNestedSubfolder(folders.productsFolder, catSegs.concat([skuFolderName]));
+}
+
+function isFileInsideFolder(file, targetFolderId) {
+  try {
+    var parents = file.getParents();
+    while (parents.hasNext()) {
+      if (parents.next().getId() === targetFolderId) {
+        return true;
+      }
+    }
+  } catch (e) {}
+  return false;
+}
+
+function moveAndRenameDriveFileSafe(fileId, targetFolder, targetName) {
+  var res = { ok: false, moved: false, renamed: false };
+  if (!fileId || !targetFolder) return res;
+  try {
+    var file = DriveApp.getFileById(fileId);
+    if (!file || file.isTrashed()) return res;
+    var targetFolderId = targetFolder.getId();
+    if (!isFileInsideFolder(file, targetFolderId)) {
+      file.moveTo(targetFolder);
+      res.moved = true;
+    }
+    if (targetName && file.getName() !== targetName) {
+      file.setName(targetName);
+      res.renamed = true;
+    }
+    res.ok = true;
+  } catch (err) {
+    // Non-fatal guard for external or inaccessible Drive file IDs
+  }
+  return res;
+}
+
+function syncSingleProductDriveAssets(folders, productObj, catIndex, globalReferencedIds) {
+  var stats = { organized: 0, moved: 0, renamed: 0 };
+  if (!productObj) return stats;
+
+  var skuCode = sanitizeDriveCodeSegment(productObj.sku || productObj.id, "ITEM");
+  var assignments = [];
+  var assignedInProd = {};
+  var usedColorCodes = {};
+
+  var mainId = extractDriveFileId(productObj.imageUrl);
+  if (mainId) {
+    assignedInProd[mainId] = true;
+    assignments.push({ fileId: mainId, role: "MAIN", colorLabel: "", galleryIdx: 0 });
+  }
+
+  // Color variant photos (Priority 2)
+  if (productObj.colorsJson) {
+    try {
+      var parsedColors = JSON.parse(String(productObj.colorsJson));
+      if (Array.isArray(parsedColors)) {
+        for (var ci = 0; ci < parsedColors.length; ci++) {
+          var colObj = parsedColors[ci];
+          if (!colObj || !colObj.imageUrl) continue;
+          var cFileId = extractDriveFileId(colObj.imageUrl);
+          if (!cFileId || assignedInProd[cFileId]) continue;
+          assignedInProd[cFileId] = true;
+          var baseColorCode = deriveColorCodeForDrive(colObj.nameEn || colObj.nameBn || "", ci + 1);
+          var uniqueColorCode = baseColorCode;
+          if (usedColorCodes[baseColorCode]) {
+            usedColorCodes[baseColorCode] += 1;
+            uniqueColorCode = baseColorCode + "-" + usedColorCodes[baseColorCode];
+          } else {
+            usedColorCodes[baseColorCode] = 1;
+          }
+          assignments.push({
+            fileId: cFileId,
+            role: "COLOR",
+            colorLabel: uniqueColorCode,
+            galleryIdx: ci + 1
+          });
+        }
+      }
+    } catch (e) {}
+  }
+
+  // Additional gallery photos (Priority 3)
+  var rawGallery = String(productObj.galleryUrls || "");
+  if (rawGallery.trim()) {
+    var galleryParts = rawGallery.split(/[\n,]+/);
+    var gCounter = 0;
+    for (var gi = 0; gi < galleryParts.length; gi++) {
+      var gId = extractDriveFileId(galleryParts[gi]);
+      if (!gId || assignedInProd[gId]) continue;
+      assignedInProd[gId] = true;
+      gCounter += 1;
+      assignments.push({ fileId: gId, role: "GALLERY", colorLabel: "", galleryIdx: gCounter });
+    }
+  }
+
+  if (assignments.length === 0) return stats;
+
+  var catSegs = resolveCategoryFolderSegmentsFromCsv(productObj.categories, catIndex);
+  var targetFolder = resolveProductDriveFolder(folders, catSegs, productObj.sku, productObj.id);
+
+  for (var a = 0; a < assignments.length; a++) {
+    var item = assignments[a];
+    if (globalReferencedIds) {
+      globalReferencedIds[item.fileId] = true;
+    }
+    var origName = "";
+    var mime = "image/jpeg";
+    try {
+      var fProbe = DriveApp.getFileById(item.fileId);
+      if (fProbe && !fProbe.isTrashed()) {
+        origName = fProbe.getName();
+        mime = fProbe.getMimeType();
+      }
+    } catch (e) {}
+    var targetName =
+      item.role === "COLOR"
+        ? skuCode + "-COLOR-" + item.colorLabel + resolveDriveFileExtension(mime, origName)
+        : buildStandardProductImageName(skuCode, item.role, item.colorLabel, item.galleryIdx, mime, origName);
+    var res = moveAndRenameDriveFileSafe(item.fileId, targetFolder, targetName);
+    if (res.ok) stats.organized += 1;
+    if (res.moved) stats.moved += 1;
+    if (res.renamed) stats.renamed += 1;
+  }
+
+  return stats;
+}
+
+function quarantineUnusedDriveFilesRecursive(folder, productsRootId, unusedFolder, unusedFolderId, referencedIds, counter) {
+  if (!folder || folder.getId() === unusedFolderId) return;
+
+  var subFolders = folder.getFolders();
+  while (subFolders.hasNext()) {
+    var child = subFolders.next();
+    if (!child || child.isTrashed() || child.getId() === unusedFolderId) continue;
+    quarantineUnusedDriveFilesRecursive(
+      child,
+      productsRootId,
+      unusedFolder,
+      unusedFolderId,
+      referencedIds,
+      counter
+    );
+  }
+
+  var files = folder.getFiles();
+  while (files.hasNext()) {
+    var file = files.next();
+    if (!file || file.isTrashed()) continue;
+    var fid = file.getId();
+    if (!referencedIds[fid]) {
+      try {
+        file.moveTo(unusedFolder);
+        counter.movedToUnused += 1;
+      } catch (e) {}
+    }
+  }
+
+  // Trash empty leftover subfolders (never Products root or _Unused)
+  if (folder.getId() !== productsRootId && folder.getId() !== unusedFolderId) {
+    try {
+      var hasFiles = folder.getFiles().hasNext();
+      var hasSub = folder.getFolders().hasNext();
+      if (!hasFiles && !hasSub) {
+        folder.setTrashed(true);
+        counter.emptyFoldersCleaned += 1;
+      }
+    } catch (e) {}
+  }
+}
+
+/**
+ * Organizes all existing product photos in Google Drive into:
+ *   Xeetrix_Mart_Storage / Products / <CategoryPath> / <SKU> / <SKU>-MAIN|COLOR|GALLERY.jpg
+ * Moves unreferenced/duplicate leftover files safely to Products/_Unused (never deletes).
+ * File IDs remain unchanged so zero live website links break.
+ */
+function organizeProductDriveAssets(ss, silent) {
+  var targetSs = ss || getBoundSpreadsheet();
+  var prodSheet = ensureMartSheet(targetSs, "Mart_Products");
+  var catSheet = ensureMartSheet(targetSs, "Mart_Categories");
+  var allCats = readMartRows(catSheet, "Mart_Categories");
+  var allProds = readMartRows(prodSheet, "Mart_Products", allCats);
+  var catIndex = buildCategoryLookupIndex(allCats);
+  var folders = ensureDriveFoldersReady();
+
+  var referencedIds = {};
+  var productsProcessed = 0;
+  var organizedFiles = 0;
+  var movedFiles = 0;
+  var renamedFiles = 0;
+
+  for (var i = 0; i < allProds.length; i++) {
+    var prod = allProds[i];
+    var pStats = syncSingleProductDriveAssets(folders, prod, catIndex, referencedIds);
+    if (pStats.organized > 0) {
+      productsProcessed += 1;
+      organizedFiles += pStats.organized;
+      movedFiles += pStats.moved;
+      renamedFiles += pStats.renamed;
+    }
+  }
+
+  var unusedFolder = getOrCreateFolderByName(folders.productsFolder, "_Unused");
+  var quarantineCounter = { movedToUnused: 0, emptyFoldersCleaned: 0 };
+  quarantineUnusedDriveFilesRecursive(
+    folders.productsFolder,
+    folders.productsFolder.getId(),
+    unusedFolder,
+    unusedFolder.getId(),
+    referencedIds,
+    quarantineCounter
+  );
+
+  var summary = {
+    ok: true,
+    productsProcessed: productsProcessed,
+    organizedFiles: organizedFiles,
+    movedFiles: movedFiles,
+    renamedFiles: renamedFiles,
+    movedToUnused: quarantineCounter.movedToUnused,
+    emptyFoldersCleaned: quarantineCounter.emptyFoldersCleaned
+  };
+
+  if (!silent) {
+    try {
+      SpreadsheetApp.getUi().alert(
+        "Google Drive Photos Organized!",
+        "Products organized: " +
+          summary.productsProcessed +
+          "\nActive photos checked: " +
+          summary.organizedFiles +
+          " (Moved: " +
+          summary.movedFiles +
+          ", Renamed: " +
+          summary.renamedFiles +
+          ")\nUnused / duplicate files moved safely to _Unused: " +
+          summary.movedToUnused +
+          "\nEmpty folders cleaned: " +
+          summary.emptyFoldersCleaned +
+          "\n\nAll live website image links remain 100% intact.",
+        SpreadsheetApp.getUi().ButtonSet.OK
+      );
+    } catch (e) {}
+  }
+
+  return summary;
+}
+
+function organizeProductDriveAssetsMenuAction() {
+  return organizeProductDriveAssets(getBoundSpreadsheet(), false);
 }
 
 function safeFlushSpreadsheet() {
@@ -589,6 +1013,7 @@ function onOpen() {
     ui.createMenu("🛒 Xeetrix Mart")
       .addItem("🔄 Sync Bulk Rows (Dropdowns, Auto-SKU & Attributes)", "syncMartProductsBulkSheet")
       .addItem("⚙️ Setup / Refresh Columns & Dropdowns", "setupMartBackendMenuAction")
+      .addItem("🗂️ Organize Product Drive Folders (Category/SKU)", "organizeProductDriveAssetsMenuAction")
       .addSeparator()
       .addItem("🔒 Lock Header Rows (Strict — Staff Blocked)", "lockAllHeaderRowsStrictMenuAction")
       .addItem("⚠️ Protect Header Rows (Warning for Owner & All)", "protectAllHeaderRowsWarningMenuAction")
@@ -3067,7 +3492,7 @@ function doPost(e) {
     var token = body.token || "";
     var ss = getBoundSpreadsheet();
 
-    // Upload image straight into cached Xeetrix_Mart_Storage/(Products|Categories|PaymentQR)
+    // Upload image straight into structured Xeetrix_Mart_Storage/(Products/<Cat>/<SKU>|Categories|PaymentQR)
     if (action === "uploadFile") {
       if (!isAuthorizedMartAdmin(token)) {
         return jsonOut({ ok: false, error: "Unauthorized Mart API token." });
@@ -3088,14 +3513,42 @@ function doPost(e) {
 
       var folders = ensureDriveFoldersReady();
       var targetFolder = folders.productsFolder;
+      var finalFileName = fileName;
+
       if (folderType === "categories") {
         targetFolder = folders.categoriesFolder;
       } else if (folderType === "payment") {
         targetFolder = folders.paymentFolder;
+      } else {
+        var uploadSku = String(body.sku || "").trim();
+        var uploadProductId = String(body.productId || "").trim();
+        var uploadCatPath = Array.isArray(body.categoryPath) ? body.categoryPath : [];
+        var uploadRole = String(body.imageRole || "").trim();
+        var uploadColorLabel = String(body.colorLabel || "").trim();
+        var uploadGalleryIdx = Number(body.galleryIndex) || 1;
+
+        if (uploadSku || uploadProductId || uploadCatPath.length > 0) {
+          targetFolder = resolveProductDriveFolder(
+            folders,
+            uploadCatPath,
+            uploadSku,
+            uploadProductId || "DRAFT"
+          );
+          if (uploadSku || uploadProductId) {
+            finalFileName = buildStandardProductImageName(
+              uploadSku || uploadProductId,
+              uploadRole || "MAIN",
+              uploadColorLabel,
+              uploadGalleryIdx,
+              mimeType,
+              fileName
+            );
+          }
+        }
       }
 
       var bytes = Utilities.base64Decode(base64Data);
-      var blob = Utilities.newBlob(bytes, mimeType, fileName);
+      var blob = Utilities.newBlob(bytes, mimeType, finalFileName);
       var driveFile = targetFolder.createFile(blob);
       driveFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
 
@@ -3104,10 +3557,19 @@ function doPost(e) {
         ok: true,
         fileId: fileId,
         fileName: driveFile.getName(),
+        folderName: targetFolder.getName(),
         url: "https://lh3.googleusercontent.com/d/" + fileId,
         driveViewUrl: "https://drive.google.com/uc?export=view&id=" + fileId,
         viewUrl: "https://drive.google.com/file/d/" + fileId + "/view"
       });
+    }
+
+    if (action === "organizeDriveAssets") {
+      if (!isAuthorizedMartAdmin(token)) {
+        return jsonOut({ ok: false, error: "Unauthorized Mart API token." });
+      }
+      var orgSummary = organizeProductDriveAssets(ss, true);
+      return jsonOut(orgSummary);
     }
 
     // Acquire script lock for concurrent Sheet writes
@@ -3245,6 +3707,7 @@ function doPost(e) {
           }
           var appendChain = resolveHelperFieldsToCategoriesCsv(record, appendCatIndex);
           applyRowCascadeValidation(sheet, newRowIdx, appendColMap, appendChain.l1Cat, appendChain.l2Cat, appendCatIndex, null, false);
+          syncSingleProductDriveAssets(ensureDriveFoldersReady(), record, appendCatIndex, null);
         } catch (e) {}
       } else if (sheetName === "Mart_Orders") {
         if (payload.itemsJson) {
@@ -3483,7 +3946,21 @@ function doPost(e) {
         );
       }
 
-      if (updSheetName === "Mart_Attributes") {
+      if (updSheetName === "Mart_Products") {
+        try {
+          var updCatSheet = ensureMartSheet(ss, "Mart_Categories");
+          var updCatIndex = buildCategoryLookupIndex(readMartRows(updCatSheet, "Mart_Categories"));
+          var mergedForDrive = {
+            id: targetId,
+            sku: updates.sku !== undefined ? updates.sku : prevRowObj.sku,
+            categories: updates.categories !== undefined ? updates.categories : prevRowObj.categories,
+            imageUrl: updates.imageUrl !== undefined ? updates.imageUrl : prevRowObj.imageUrl,
+            galleryUrls: updates.galleryUrls !== undefined ? updates.galleryUrls : prevRowObj.galleryUrls,
+            colorsJson: updates.colorsJson !== undefined ? updates.colorsJson : prevRowObj.colorsJson
+          };
+          syncSingleProductDriveAssets(ensureDriveFoldersReady(), mergedForDrive, updCatIndex, null);
+        } catch (driveSyncErr) {}
+      } else if (updSheetName === "Mart_Attributes") {
         syncAttributesBackupToSettings(ss);
         refreshMartProductsColumnValidationsSafe(ss);
       } else if (updSheetName === "Mart_Categories") {

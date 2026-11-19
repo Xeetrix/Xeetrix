@@ -9,13 +9,14 @@ import {
   buildMartProductUrl,
   DEFAULT_MART_SETTINGS,
   findMartProductBySlugOrSku,
-  MART_CONTACT_PHONE,
   MartProduct,
   normalizeMartImageUrl,
   normalizeProductRecord,
   parseGalleryUrls,
   parseProductColors,
   parseProductSizes,
+  ResolvedMartContactInfo,
+  resolveMartContactInfo,
 } from "@/lib/martApi";
 import { getEffectiveProductStock, isProductOrderable } from "@/lib/martOps";
 
@@ -27,10 +28,12 @@ async function resolveServerProductBundle(rawSlug: string): Promise<{
   product: MartProduct | null;
   insideDhaka: number;
   outsideDhaka: number;
+  contact: ResolvedMartContactInfo;
 }> {
   try {
     const res = await fetchMartPublicFromScript();
     const rawList = res?.data?.products;
+    const contact = resolveMartContactInfo(res?.data?.settings);
     const insideDhaka =
       Number(res?.data?.settings?.insideDhakaCharge) ||
       Number(DEFAULT_MART_SETTINGS.insideDhakaCharge) ||
@@ -49,12 +52,14 @@ async function resolveServerProductBundle(rawSlug: string): Promise<{
       product: findMartProductBySlugOrSku(products, rawSlug) || null,
       insideDhaka,
       outsideDhaka,
+      contact,
     };
   } catch {
     return {
       product: null,
       insideDhaka: Number(DEFAULT_MART_SETTINGS.insideDhakaCharge) || 60,
       outsideDhaka: Number(DEFAULT_MART_SETTINGS.outsideDhakaCharge) || 120,
+      contact: resolveMartContactInfo(DEFAULT_MART_SETTINGS),
     };
   }
 }
@@ -138,7 +143,7 @@ export default async function MartProductDetailPage({
 }: ProductPageProps) {
   const resolvedParams = await Promise.resolve(params);
   const slug = decodeURIComponent(resolvedParams.slug || "");
-  const { product, insideDhaka, outsideDhaka } =
+  const { product, insideDhaka, outsideDhaka, contact } =
     await resolveServerProductBundle(slug);
 
   if (product) {
@@ -234,7 +239,8 @@ export default async function MartProductDetailPage({
               seller: {
                 "@type": "OnlineStore",
                 name: "Xeetrix Mart (জিট্রিক্স মার্ট)",
-                telephone: MART_CONTACT_PHONE,
+                telephone: contact.hotlinePhone,
+                email: contact.supportEmail,
                 url: `${SITE_URL}/mart`,
               },
               shippingDetails: [

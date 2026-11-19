@@ -22,11 +22,11 @@ import { MartLogo } from "./MartLogo";
 import { MartLanguageSwitcher } from "./MartLanguageSwitcher";
 import { useMartI18n } from "./MartI18nProvider";
 import {
-  MART_CONTACT_PHONE,
-  MART_CONTACT_TEL,
   MartCategory,
   MartProduct,
+  MartSettings,
   normalizeMartImageUrl,
+  resolveMartContactInfo,
 } from "@/lib/martApi";
 import { formatMartPrice, pickLocalized, toLocalizedDigits } from "@/lib/martI18n";
 import { MartSearchResultBundle } from "@/lib/martSearchEngine";
@@ -50,6 +50,7 @@ interface MartHeaderProps {
   onSelectProductSuggestion?: (product: MartProduct) => void;
   onAddToCartFromSearch?: (product: MartProduct) => void;
   onCommitSearch?: (term: string) => void;
+  settings?: Partial<MartSettings>;
 }
 
 function HeaderCategoryThumb({
@@ -128,6 +129,7 @@ export function MartHeader({
   onSelectProductSuggestion,
   onAddToCartFromSearch,
   onCommitSearch,
+  settings,
 }: MartHeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -141,6 +143,7 @@ export function MartHeader({
   const recognitionRef = useRef<{ stop?: () => void } | null>(null);
 
   const { lang, t } = useMartI18n();
+  const contact = resolveMartContactInfo(settings);
 
   const quickSelectValue =
     selectedCategories.length === 1 ? selectedCategories[0] : "all";
@@ -791,11 +794,11 @@ export function MartHeader({
               </button>
 
               <a
-                href={MART_CONTACT_TEL}
+                href={contact.hotlineTelHref}
                 className="inline-flex items-center gap-1.5 font-mono text-xs font-semibold text-slate-700 tabular-nums min-h-[44px]"
               >
                 <Phone className="h-3.5 w-3.5 text-[#0B5336]" />
-                <span>{MART_CONTACT_PHONE}</span>
+                <span>{contact.hotlinePhone}</span>
               </a>
             </div>
           </div>

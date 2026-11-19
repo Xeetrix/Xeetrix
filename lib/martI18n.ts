@@ -1723,16 +1723,28 @@ export function slugifyTaxonomy(text: string): string {
 export function translateMartError(
   rawMessage: string | undefined,
   lang: MartLang,
-  code?: string
+  code?: string,
+  contact?: { hotlinePhone?: string; supportEmail?: string }
 ): string {
+  const applyContact = (text: string): string => {
+    let out = text;
+    if (contact?.hotlinePhone?.trim()) {
+      out = out.replace(/\+880\s*965\s*803\s*6631/g, contact.hotlinePhone.trim());
+    }
+    if (contact?.supportEmail?.trim()) {
+      out = out.replace(/mart@xeetrix\.com/gi, contact.supportEmail.trim());
+    }
+    return out;
+  };
+
   const dict = MART_DICTIONARY[lang].errors;
   if (code && code in dict) {
-    return dict[code as keyof typeof dict];
+    return applyContact(dict[code as keyof typeof dict]);
   }
   const msg = (rawMessage || "").toLowerCase();
   if (!msg) return MART_DICTIONARY[lang].common.errorFallback;
   if (msg.includes("mart_backend_not_configured") || msg.includes("being connected") || msg.includes("not configured")) {
-    return dict.BACKEND_UNCONFIGURED;
+    return applyContact(dict.BACKEND_UNCONFIGURED);
   }
   if (msg.includes("unauthorized") || msg.includes("passcode")) {
     return dict.UNAUTHORIZED;
@@ -1752,5 +1764,5 @@ export function translateMartError(
   if (msg.includes("duplicate_sku") || msg.includes("duplicate sku")) {
     return dict.DUPLICATE_SKU;
   }
-  return rawMessage || MART_DICTIONARY[lang].common.errorFallback;
+  return applyContact(rawMessage || MART_DICTIONARY[lang].common.errorFallback);
 }

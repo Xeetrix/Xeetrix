@@ -36,6 +36,7 @@ import {
   SlidersHorizontal,
   ChevronLeft,
   ChevronRight,
+  MessageCircle,
 } from "lucide-react";
 import { MartHeader } from "./MartHeader";
 import { MartFooter } from "./MartFooter";
@@ -44,15 +45,13 @@ import { MART_ENTERPRISE_DICTIONARY } from "@/lib/martEnterpriseI18n";
 import {
   buildMartProductSlug,
   buildMartProductUrl,
+  buildMartWhatsAppHref,
   DEFAULT_MART_SETTINGS,
   fetchMartPublicData,
   findMartProductBySlugOrSku,
   findMatchingVariant,
   getCachedMartPublicSnapshot,
   getCategoryHierarchyMeta,
-  MART_CONTACT_EMAIL,
-  MART_CONTACT_PHONE,
-  MART_CONTACT_TEL,
   MART_GENDER_OPTIONS,
   MartApiError,
   MartCategory,
@@ -75,6 +74,7 @@ import {
   parseProductVariants,
   parseVariationMatrix,
   placeMartOrder,
+  resolveMartContactInfo,
   resolveProductPricing,
   trackMartOrder,
   validateMartCoupon,
@@ -1057,6 +1057,7 @@ export function MartStorefront({
   const activeHeroTitle = pickLocalized(settings.heroTitleEn, settings.heroTitleBn, lang);
   const activeHeroSubtitle = pickLocalized(settings.heroSubtitleEn, settings.heroSubtitleBn, lang);
   const activeHeroCta = pickLocalized(settings.heroCtaTextEn, settings.heroCtaTextBn, lang);
+  const liveContact = useMemo(() => resolveMartContactInfo(settings), [settings]);
 
   function addToCart(
     product: MartProduct,
@@ -1338,7 +1339,9 @@ export function MartStorefront({
       setCouponInput(res.coupon?.code || clean);
     } catch (err) {
       const apiErr = err as MartApiError;
-      setCouponError(translateMartError(apiErr?.message, lang, apiErr?.code));
+      setCouponError(
+        translateMartError(apiErr?.message, lang, apiErr?.code, liveContact)
+      );
     } finally {
       setCouponLoading(false);
     }
@@ -1506,7 +1509,8 @@ export function MartStorefront({
     } catch (err) {
       const apiErr = err as MartApiError;
       setCheckoutError(
-        translateMartError(apiErr?.message, lang, apiErr?.code) || t.cart.errOrderFailed
+        translateMartError(apiErr?.message, lang, apiErr?.code, liveContact) ||
+          t.cart.errOrderFailed
       );
     } finally {
       setSubmittingOrder(false);
@@ -1529,7 +1533,8 @@ export function MartStorefront({
     } catch (err) {
       const apiErr = err as MartApiError;
       setTrackingError(
-        translateMartError(apiErr?.message, lang, apiErr?.code) || t.track.errNotFound
+        translateMartError(apiErr?.message, lang, apiErr?.code, liveContact) ||
+          t.track.errNotFound
       );
     } finally {
       setTrackingLoading(false);
@@ -1770,10 +1775,10 @@ export function MartStorefront({
               ·
             </span>
             <a
-              href={MART_CONTACT_TEL}
+              href={liveContact.hotlineTelHref}
               className="font-mono text-gold-400 hover:text-white transition-colors tabular-nums hidden sm:inline"
             >
-              {t.common.helplineLabel}: {MART_CONTACT_PHONE}
+              {t.common.helplineLabel}: {liveContact.hotlinePhone}
             </a>
           </div>
         </div>
@@ -1781,6 +1786,7 @@ export function MartStorefront({
 
       {/* Standalone Mart Header */}
       <MartHeader
+        settings={settings}
         searchQuery={searchQuery}
         onSearchChange={(val) => {
           setSearchQuery(val);
@@ -2358,14 +2364,32 @@ export function MartStorefront({
                                   </span>
                                 </div>
                               </div>
-                              <div className="flex items-center justify-between text-slate-500 pt-1">
+                              <div className="flex flex-wrap items-center justify-between gap-2 text-slate-500 pt-1">
                                 <span>{t.hero.directHelplineLabel}</span>
-                                <a
-                                  href={MART_CONTACT_TEL}
-                                  className="font-mono font-semibold text-[#0B5336] hover:underline tabular-nums"
-                                >
-                                  {MART_CONTACT_PHONE}
-                                </a>
+                                <div className="flex flex-wrap items-center gap-3">
+                                  <a
+                                    href={liveContact.hotlineTelHref}
+                                    className="font-mono font-semibold text-[#0B5336] hover:underline tabular-nums"
+                                  >
+                                    {liveContact.hotlinePhone}
+                                  </a>
+                                  {liveContact.whatsappNumber && (
+                                    <a
+                                      href={buildMartWhatsAppHref(
+                                        liveContact.whatsappNumber,
+                                        lang === "bn"
+                                          ? `আসসালামু আলাইকুম, আমি "${pName}" (SKU: ${focusedProduct.sku || focusedProduct.id}) সম্পর্কে জানতে চাই।`
+                                          : `Hello, I have a question about "${pName}" (SKU: ${focusedProduct.sku || focusedProduct.id}).`
+                                      )}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100 transition-colors"
+                                    >
+                                      <MessageCircle className="h-3 w-3" />
+                                      <span>WhatsApp</span>
+                                    </a>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -2598,10 +2622,10 @@ export function MartStorefront({
                     {t.hero.deliveryCardTitle}
                   </span>
                   <a
-                    href={MART_CONTACT_TEL}
+                    href={liveContact.hotlineTelHref}
                     className="font-mono text-[11px] font-semibold text-emerald-300 hover:text-white tabular-nums"
                   >
-                    {MART_CONTACT_PHONE}
+                    {liveContact.hotlinePhone}
                   </a>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-xs">
@@ -3442,19 +3466,30 @@ export function MartStorefront({
 
                 <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
                   <a
-                    href={`mailto:${MART_CONTACT_EMAIL}`}
+                    href={liveContact.mailtoHref}
                     className="btn-outline px-5 py-2.5 text-xs gap-2"
                   >
                     <Mail className="h-4 w-4 text-[#0B5336]" />
-                    <span>{MART_CONTACT_EMAIL}</span>
+                    <span>{liveContact.supportEmail}</span>
                   </a>
                   <a
-                    href={MART_CONTACT_TEL}
+                    href={liveContact.hotlineTelHref}
                     className="btn-primary px-5 py-2.5 text-xs gap-2 font-mono tabular-nums"
                   >
                     <Phone className="h-4 w-4" />
-                    <span>{MART_CONTACT_PHONE}</span>
+                    <span>{liveContact.hotlinePhone}</span>
                   </a>
+                  {liveContact.whatsappHref && (
+                    <a
+                      href={liveContact.whatsappHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-outline px-5 py-2.5 text-xs gap-2 font-mono tabular-nums border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                    >
+                      <MessageCircle className="h-4 w-4" />
+                      <span>WhatsApp</span>
+                    </a>
+                  )}
                 </div>
               </div>
             ) : filteredProducts.length === 0 ? (
@@ -3515,6 +3550,7 @@ export function MartStorefront({
       </main>
 
       <MartFooter
+        settings={settings}
         onOpenTrackOrder={() => {
           setTrackOpen(true);
           setTrackingError(null);

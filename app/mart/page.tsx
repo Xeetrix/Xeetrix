@@ -6,11 +6,10 @@ import { fetchMartPublicFromScript } from "@/lib/martServer";
 import {
   buildMartProductUrl,
   DEFAULT_MART_SETTINGS,
-  MART_CONTACT_EMAIL,
-  MART_CONTACT_PHONE,
   MartProduct,
   normalizeMartImageUrl,
   normalizeProductRecord,
+  resolveMartContactInfo,
 } from "@/lib/martApi";
 import { getEffectiveProductStock, isProductOrderable } from "@/lib/martOps";
 
@@ -59,10 +58,12 @@ export default async function MartPage() {
   let activeProducts: MartProduct[] = [];
   let insideDhaka = Number(DEFAULT_MART_SETTINGS.insideDhakaCharge) || 60;
   let outsideDhaka = Number(DEFAULT_MART_SETTINGS.outsideDhakaCharge) || 120;
+  let contact = resolveMartContactInfo(DEFAULT_MART_SETTINGS);
 
   try {
     const res = await fetchMartPublicFromScript();
     if (res?.data?.settings) {
+      contact = resolveMartContactInfo(res.data.settings);
       insideDhaka =
         Number(res.data.settings.insideDhakaCharge) ||
         Number(DEFAULT_MART_SETTINGS.insideDhakaCharge) ||
@@ -90,8 +91,8 @@ export default async function MartPage() {
         name: "Xeetrix Mart",
         alternateName: ["জিট্রিক্স মার্ট", "Xeetrix Mart Bangladesh"],
         url: `${SITE_URL}/mart`,
-        telephone: MART_CONTACT_PHONE,
-        email: MART_CONTACT_EMAIL,
+        telephone: contact.hotlinePhone,
+        email: contact.supportEmail,
         currenciesAccepted: "BDT",
         paymentAccepted: "Cash on Delivery, bKash, Bangla QR, Nagad, Rocket",
         priceRange: "৳৳",

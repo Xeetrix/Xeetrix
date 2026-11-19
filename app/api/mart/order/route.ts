@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { callMartScriptPost, getMartScriptUrlServer, MartScriptError } from "@/lib/martServer";
+import { MART_CONTACT_EMAIL, MART_CONTACT_PHONE } from "@/lib/martApi";
 
 export const dynamic = "force-dynamic";
 
@@ -30,8 +31,7 @@ export async function POST(req: NextRequest) {
         {
           ok: false,
           code: "BACKEND_UNCONFIGURED",
-          error:
-            "Store checkout is currently being connected. Please call +880 965 803 6631 or email mart@xeetrix.com to complete your order.",
+          error: `Store checkout is currently being connected. Please call ${MART_CONTACT_PHONE} or email ${MART_CONTACT_EMAIL} to complete your order.`,
         },
         { status: 503 }
       );

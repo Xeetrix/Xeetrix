@@ -14,6 +14,7 @@ import {
   buildMartProductUrl,
   DEFAULT_MART_SETTINGS,
   normalizeProductRecord,
+  resolveMartContactInfo,
 } from "@/lib/martApi";
 
 export const dynamic = "force-dynamic";
@@ -22,10 +23,12 @@ export async function GET() {
   let productLines: string[] = [];
   let insideDhaka = String(DEFAULT_MART_SETTINGS.insideDhakaCharge);
   let outsideDhaka = String(DEFAULT_MART_SETTINGS.outsideDhakaCharge);
+  let martContact = resolveMartContactInfo(DEFAULT_MART_SETTINGS);
 
   try {
     const res = await fetchMartPublicFromScript();
     if (res?.data?.settings) {
+      martContact = resolveMartContactInfo(res.data.settings);
       insideDhaka = String(
         res.data.settings.insideDhakaCharge ||
           DEFAULT_MART_SETTINGS.insideDhakaCharge
@@ -77,9 +80,10 @@ export async function GET() {
 ${productLines.length > 0 ? productLines.join("\n") : `- Browse live catalog at ${SITE_URL}/mart`}
 
 ## Contact & Support
-- **24/7 Helpline**: ${CONTACT_PHONE_DISPLAY}
+- **24/7 Corporate Helpline**: ${CONTACT_PHONE_DISPLAY}
+- **Xeetrix Mart Hotline**: ${martContact.hotlinePhone}${martContact.whatsappNumber ? `\n- **Xeetrix Mart WhatsApp**: ${martContact.whatsappNumber}` : ""}
+- **Xeetrix Mart Support**: ${martContact.supportEmail || MART_EMAIL}
 - **Corporate Email**: ${CORPORATE_EMAIL}
-- **Xeetrix Mart Support**: ${MART_EMAIL}
 - **Xeetrix Travels Desk**: ${CONTACT_EMAIL}
 - **Headquarters**: ${CONTACT_ADDRESS}
 `;

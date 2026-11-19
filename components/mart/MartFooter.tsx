@@ -2,23 +2,21 @@
 
 import React from "react";
 import Link from "next/link";
-import { Mail, Phone, MapPin, Lock, PackageSearch } from "lucide-react";
+import { Mail, Phone, MapPin, Lock, PackageSearch, MessageCircle } from "lucide-react";
 import { MartLogo } from "./MartLogo";
 import { useMartI18n } from "./MartI18nProvider";
-import {
-  MART_CONTACT_EMAIL,
-  MART_CONTACT_PHONE,
-  MART_CONTACT_TEL,
-} from "@/lib/martApi";
+import { MartSettings, resolveMartContactInfo } from "@/lib/martApi";
 import { toLocalizedDigits } from "@/lib/martI18n";
 
 interface MartFooterProps {
   onOpenTrackOrder?: () => void;
+  settings?: Partial<MartSettings>;
 }
 
-export function MartFooter({ onOpenTrackOrder }: MartFooterProps) {
+export function MartFooter({ onOpenTrackOrder, settings }: MartFooterProps) {
   const { lang, t } = useMartI18n();
   const year = toLocalizedDigits(new Date().getFullYear(), lang);
+  const contact = resolveMartContactInfo(settings);
 
   return (
     <footer className="border-t border-slate-200 bg-slate-900 text-slate-300">
@@ -79,22 +77,35 @@ export function MartFooter({ onOpenTrackOrder }: MartFooterProps) {
               </li>
               <li>
                 <a
-                  href={`mailto:${MART_CONTACT_EMAIL}`}
+                  href={contact.mailtoHref}
                   className="inline-flex items-center gap-2.5 text-white hover:text-gold-400 transition-colors"
                 >
                   <Mail className="h-4 w-4 text-gold-400 shrink-0" />
-                  <span>{MART_CONTACT_EMAIL}</span>
+                  <span>{contact.supportEmail}</span>
                 </a>
               </li>
               <li>
                 <a
-                  href={MART_CONTACT_TEL}
+                  href={contact.hotlineTelHref}
                   className="inline-flex items-center gap-2.5 font-mono font-semibold text-white hover:text-gold-400 transition-colors tabular-nums"
                 >
                   <Phone className="h-4 w-4 text-gold-400 shrink-0" />
-                  <span>{MART_CONTACT_PHONE}</span>
+                  <span>{contact.hotlinePhone}</span>
                 </a>
               </li>
+              {contact.whatsappHref && (
+                <li>
+                  <a
+                    href={contact.whatsappHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2.5 font-mono font-semibold text-emerald-300 hover:text-white transition-colors tabular-nums"
+                  >
+                    <MessageCircle className="h-4 w-4 text-emerald-400 shrink-0" />
+                    <span>WhatsApp: {contact.whatsappNumber}</span>
+                  </a>
+                </li>
+              )}
             </ul>
           </div>
         </div>
@@ -105,7 +116,12 @@ export function MartFooter({ onOpenTrackOrder }: MartFooterProps) {
           </p>
           <p>
             {t.footer.helplineLabel}:{" "}
-            <span className="font-mono text-slate-300 tabular-nums">{MART_CONTACT_PHONE}</span>
+            <a
+              href={contact.hotlineTelHref}
+              className="font-mono text-slate-300 hover:text-white transition-colors tabular-nums"
+            >
+              {contact.hotlinePhone}
+            </a>
           </p>
         </div>
       </div>
