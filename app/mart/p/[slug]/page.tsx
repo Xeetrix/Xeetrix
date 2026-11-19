@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { permanentRedirect } from "next/navigation";
 import { MartStorefront } from "@/components/mart/MartStorefront";
 import { SITE_URL } from "@/lib/constants";
 import { fetchMartPublicFromScript } from "@/lib/martServer";
 import {
+  buildMartProductSlug,
   buildMartProductUrl,
   DEFAULT_MART_SETTINGS,
   findMartProductBySlugOrSku,
@@ -138,6 +140,13 @@ export default async function MartProductDetailPage({
   const slug = decodeURIComponent(resolvedParams.slug || "");
   const { product, insideDhaka, outsideDhaka } =
     await resolveServerProductBundle(slug);
+
+  if (product) {
+    const canonicalSlug = buildMartProductSlug(product);
+    if (canonicalSlug && slug !== canonicalSlug) {
+      permanentRedirect(buildMartProductUrl(product));
+    }
+  }
 
   const gallery = product
     ? parseGalleryUrls(product.galleryUrls, product.imageUrl).map((u) =>

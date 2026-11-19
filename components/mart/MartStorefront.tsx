@@ -42,6 +42,7 @@ import { MartFooter } from "./MartFooter";
 import { useMartI18n } from "./MartI18nProvider";
 import { MART_ENTERPRISE_DICTIONARY } from "@/lib/martEnterpriseI18n";
 import {
+  buildMartProductSlug,
   buildMartProductUrl,
   DEFAULT_MART_SETTINGS,
   fetchMartPublicData,
@@ -715,6 +716,15 @@ export function MartStorefront({
     () => findMartProductBySlugOrSku(products, focusedProductSlug),
     [products, focusedProductSlug]
   );
+
+  const canonicalFocusedSlug = focusedProduct ? buildMartProductSlug(focusedProduct) : "";
+  useEffect(() => {
+    if (!focusedProductSlug || !canonicalFocusedSlug) return;
+    if (focusedProductSlug !== canonicalFocusedSlug) {
+      router.replace(`/mart/p/${canonicalFocusedSlug}`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusedProductSlug, canonicalFocusedSlug]);
 
   const lastTrackedPdpIdRef = useRef<string | null>(null);
 

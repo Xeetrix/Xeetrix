@@ -1889,24 +1889,32 @@ function cleanProductUrlToken(text?: string): string {
     .replace(/^-|-$/g, "");
 }
 
+function cleanProductSkuUrlToken(sku?: string): string {
+  if (!sku) return "";
+  return sku
+    .toUpperCase()
+    .trim()
+    .replace(/[^A-Z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
 /**
- * Generates an SEO- and marketing-friendly slug combining SKU and product name:
- * e.g. SKU "XM-KID-001" + Name "Kids Fleece Hoodie" -> "xm-kid-001-kids-fleece-hoodie"
+ * Generates a short, canonical uppercase SKU slug for product URLs:
+ * e.g. SKU "XM-KID-001" -> "XM-KID-001" (/mart/p/XM-KID-001)
+ * Falls back to product name or ID only when SKU is missing.
  */
 export function buildMartProductSlug(
   product: Pick<MartProduct, "id" | "sku" | "nameEn" | "nameBn">
 ): string {
-  const skuPart = cleanProductUrlToken(product.sku);
+  const skuPart = cleanProductSkuUrlToken(product.sku);
+  if (skuPart) {
+    return skuPart;
+  }
   const namePart = cleanProductUrlToken(product.nameEn || product.nameBn);
   const idPart = cleanProductUrlToken(product.id) || encodeURIComponent(product.id || "item");
-
-  if (skuPart && namePart) {
-    if (namePart === skuPart || namePart.startsWith(`${skuPart}-`)) {
-      return namePart;
-    }
-    return `${skuPart}-${namePart}`;
-  }
-  return skuPart || namePart || idPart;
+  return namePart || idPart;
 }
 
 export function buildMartProductUrl(
@@ -1917,9 +1925,9 @@ export function buildMartProductUrl(
 
 /**
  * Resolves a product from /mart/p/[slug] using a resilient 4-tier matching strategy:
- * 1. Exact full slug match (SKU + Name slug)
+ * 1. Exact canonical SKU/slug match (case-insensitive)
  * 2. Exact SKU or Product ID match
- * 3. SKU prefix match (so renaming a product title later never breaks existing ad campaign links)
+ * 3. SKU prefix match (so legacy SKU+Name ad links redirect cleanly to the short SKU URL)
  * 4. Exact Name slug match
  */
 export function findMartProductBySlugOrSku(
@@ -1937,10 +1945,14 @@ export function findMartProductBySlugOrSku(
   const targetToken = cleanProductUrlToken(decoded);
   if (!target) return undefined;
 
-  // 1. Exact canonical slug match
-  const exactSlugMatch = products.find(
-    (p) => buildMartProductSlug(p).toLowerCase() === target || buildMartProductSlug(p) === targetToken
-  );
+  // 1. Exact canonical slug match (case-insensitive)
+  const exactSlugMatch = products.find((p) => {
+    const canonical = buildMartProductSlug(p);
+    return (
+      canonical.toLowerCase() === target ||
+      cleanProductUrlToken(canonical) === targetToken
+    );
+  });
   if (exactSlugMatch) return exactSlugMatch;
 
   // 2. Exact raw SKU, tokenized SKU, or ID match
