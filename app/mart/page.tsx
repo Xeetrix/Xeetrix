@@ -2,13 +2,16 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { MartStorefront } from "@/components/mart/MartStorefront";
 import { SITE_URL } from "@/lib/constants";
-import { fetchMartPublicFromScript } from "@/lib/martServer";
+import {
+  buildClientPublicBundleFromServerPayload,
+  fetchMartPublicFromScript,
+} from "@/lib/martServer";
 import {
   buildMartProductUrl,
   DEFAULT_MART_SETTINGS,
   MartProduct,
+  MartPublicBundle,
   normalizeMartImageUrl,
-  normalizeProductRecord,
   resolveMartContactInfo,
 } from "@/lib/martApi";
 import { getEffectiveProductStock, isProductOrderable } from "@/lib/martOps";
@@ -55,6 +58,7 @@ export const metadata: Metadata = {
 };
 
 export default async function MartPage() {
+  let initialBundle: MartPublicBundle | undefined = undefined;
   let activeProducts: MartProduct[] = [];
   let insideDhaka = Number(DEFAULT_MART_SETTINGS.insideDhakaCharge) || 60;
   let outsideDhaka = Number(DEFAULT_MART_SETTINGS.outsideDhakaCharge) || 120;
@@ -62,21 +66,18 @@ export default async function MartPage() {
 
   try {
     const res = await fetchMartPublicFromScript();
-    if (res?.data?.settings) {
-      contact = resolveMartContactInfo(res.data.settings);
+    if (res?.isLiveBackend && res.data) {
+      initialBundle = buildClientPublicBundleFromServerPayload(res.data, true);
+      contact = resolveMartContactInfo(initialBundle.settings);
       insideDhaka =
-        Number(res.data.settings.insideDhakaCharge) ||
+        Number(initialBundle.settings.insideDhakaCharge) ||
         Number(DEFAULT_MART_SETTINGS.insideDhakaCharge) ||
         60;
       outsideDhaka =
-        Number(res.data.settings.outsideDhakaCharge) ||
+        Number(initialBundle.settings.outsideDhakaCharge) ||
         Number(DEFAULT_MART_SETTINGS.outsideDhakaCharge) ||
         120;
-    }
-    if (Array.isArray(res?.data?.products)) {
-      activeProducts = res.data.products
-        .map((item) => normalizeProductRecord(item as Record<string, unknown>))
-        .filter((p) => p.active);
+      activeProducts = initialBundle.products.filter((p) => p.active);
     }
   } catch {
     // Fallback if live sheet is temporarily unreachable during SSR
@@ -209,7 +210,7 @@ export default async function MartPage() {
           __html: JSON.stringify(martGraphJsonLd).replace(/</g, "\\u003c"),
         }}
       />
-      <MartStorefront />
+      <MartStorefront initialBundle={initialBundle} />
 
       {/* Server-Rendered Crawlable Product Catalog Index for Search Engines & AI Bots */}
       {activeProducts.length > 0 && (

@@ -3,15 +3,18 @@ import Link from "next/link";
 import { permanentRedirect } from "next/navigation";
 import { MartStorefront } from "@/components/mart/MartStorefront";
 import { SITE_URL } from "@/lib/constants";
-import { fetchMartPublicFromScript } from "@/lib/martServer";
+import {
+  buildClientPublicBundleFromServerPayload,
+  fetchMartPublicFromScript,
+} from "@/lib/martServer";
 import {
   buildMartProductSlug,
   buildMartProductUrl,
   DEFAULT_MART_SETTINGS,
   findMartProductBySlugOrSku,
   MartProduct,
+  MartPublicBundle,
   normalizeMartImageUrl,
-  normalizeProductRecord,
   parseGalleryUrls,
   parseProductColors,
   parseProductSizes,
@@ -20,36 +23,45 @@ import {
 } from "@/lib/martApi";
 import { getEffectiveProductStock, isProductOrderable } from "@/lib/martOps";
 
+export const revalidate = 120;
+
 interface ProductPageProps {
   params: { slug: string } | Promise<{ slug: string }>;
 }
 
 async function resolveServerProductBundle(rawSlug: string): Promise<{
   product: MartProduct | null;
+  initialBundle?: MartPublicBundle;
   insideDhaka: number;
   outsideDhaka: number;
   contact: ResolvedMartContactInfo;
 }> {
   try {
     const res = await fetchMartPublicFromScript();
-    const rawList = res?.data?.products;
-    const contact = resolveMartContactInfo(res?.data?.settings);
+    if (!res?.isLiveBackend || !res.data) {
+      return {
+        product: null,
+        insideDhaka: Number(DEFAULT_MART_SETTINGS.insideDhakaCharge) || 60,
+        outsideDhaka: Number(DEFAULT_MART_SETTINGS.outsideDhakaCharge) || 120,
+        contact: resolveMartContactInfo(DEFAULT_MART_SETTINGS),
+      };
+    }
+
+    const initialBundle = buildClientPublicBundleFromServerPayload(res.data, true);
+    const contact = resolveMartContactInfo(initialBundle.settings);
     const insideDhaka =
-      Number(res?.data?.settings?.insideDhakaCharge) ||
+      Number(initialBundle.settings.insideDhakaCharge) ||
       Number(DEFAULT_MART_SETTINGS.insideDhakaCharge) ||
       60;
     const outsideDhaka =
-      Number(res?.data?.settings?.outsideDhakaCharge) ||
+      Number(initialBundle.settings.outsideDhakaCharge) ||
       Number(DEFAULT_MART_SETTINGS.outsideDhakaCharge) ||
       120;
+    const activeProducts = initialBundle.products.filter((p) => p.active);
 
-    const products: MartProduct[] = Array.isArray(rawList)
-      ? rawList
-          .map((item) => normalizeProductRecord(item as Record<string, unknown>))
-          .filter((p) => p.active)
-      : [];
     return {
-      product: findMartProductBySlugOrSku(products, rawSlug) || null,
+      product: findMartProductBySlugOrSku(activeProducts, rawSlug) || null,
+      initialBundle,
       insideDhaka,
       outsideDhaka,
       contact,
@@ -143,7 +155,7 @@ export default async function MartProductDetailPage({
 }: ProductPageProps) {
   const resolvedParams = await Promise.resolve(params);
   const slug = decodeURIComponent(resolvedParams.slug || "");
-  const { product, insideDhaka, outsideDhaka, contact } =
+  const { product, initialBundle, insideDhaka, outsideDhaka, contact } =
     await resolveServerProductBundle(slug);
 
   if (product) {
@@ -314,7 +326,7 @@ export default async function MartProductDetailPage({
         </article>
       )}
 
-      <MartStorefront focusedProductSlug={slug} />
+      <MartStorefront focusedProductSlug={slug} initialBundle={initialBundle} />
     </>
   );
 }

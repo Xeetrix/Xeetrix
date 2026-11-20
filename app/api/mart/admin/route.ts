@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { DEFAULT_MART_SETTINGS } from "@/lib/martApi";
 import {
   callMartScriptPost,
+  fetchMartAdminFromScript,
   getExpectedMartAdminPassword,
-  getMartApiTokenServer,
   getMartScriptUrlServer,
   MartScriptError,
 } from "@/lib/martServer";
@@ -93,80 +93,45 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  try {
-    const token = getMartApiTokenServer();
-    const separator = scriptUrl.includes("?") ? "&" : "?";
-    const tokenQuery = token ? `&token=${encodeURIComponent(token)}` : "";
-    const res = await fetch(`${scriptUrl}${separator}action=martAdmin${tokenQuery}`, {
-      method: "GET",
-      cache: "no-store",
-      redirect: "follow",
-    });
+  const forceFresh = req.nextUrl.searchParams.get("fresh") === "1";
+  const result = await fetchMartAdminFromScript(forceFresh);
 
-    if (!res.ok) {
-      throw new Error(`Store admin HTTP ${res.status}`);
-    }
-
-    const json = (await res.json()) as {
-      ok: boolean;
-      error?: string;
-      data?: {
-        products?: unknown[];
-        categories?: unknown[];
-        labels?: unknown[];
-        attributes?: unknown[];
-        suppliers?: unknown[];
-        coupons?: unknown[];
-        orders?: unknown[];
-        transactions?: unknown[];
-        crmProfiles?: unknown[];
-        crmLogs?: unknown[];
-        settings?: Record<string, string>;
-      };
-    };
-
-    if (!json.ok || !json.data) {
-      throw new Error(json.error || "Failed to load Mart Admin data from Google Sheets.");
-    }
-
-    return NextResponse.json(
-      {
-        ok: true,
-        isLiveBackend: true,
-        data: {
-          products: Array.isArray(json.data.products) ? json.data.products : [],
-          categories: Array.isArray(json.data.categories) ? json.data.categories : [],
-          labels: Array.isArray(json.data.labels) ? json.data.labels : [],
-          attributes: Array.isArray(json.data.attributes) ? json.data.attributes : [],
-          suppliers: Array.isArray(json.data.suppliers) ? json.data.suppliers : [],
-          coupons: Array.isArray(json.data.coupons) ? json.data.coupons : [],
-          orders: Array.isArray(json.data.orders) ? json.data.orders : [],
-          transactions: Array.isArray(json.data.transactions) ? json.data.transactions : [],
-          crmProfiles: Array.isArray(json.data.crmProfiles) ? json.data.crmProfiles : [],
-          crmLogs: Array.isArray(json.data.crmLogs) ? json.data.crmLogs : [],
-          settings: {
-            ...DEFAULT_MART_SETTINGS,
-            ...(json.data.settings || {}),
-          },
-        },
-      },
-      {
-        status: 200,
-        headers: { "Cache-Control": "no-store, max-age=0" },
-      }
-    );
-  } catch (err) {
+  if (!result.isLiveBackend || !result.data) {
     return NextResponse.json(
       {
         ok: false,
-        error:
-          err instanceof Error
-            ? err.message
-            : "Failed to sync store data from Google Sheets.",
+        error: result.error || "Failed to sync store data from Google Sheets.",
       },
       { status: 502 }
     );
   }
+
+  return NextResponse.json(
+    {
+      ok: true,
+      isLiveBackend: true,
+      data: {
+        products: result.data.products,
+        categories: result.data.categories,
+        labels: result.data.labels,
+        attributes: result.data.attributes,
+        suppliers: result.data.suppliers,
+        coupons: result.data.coupons,
+        orders: result.data.orders,
+        transactions: result.data.transactions,
+        crmProfiles: result.data.crmProfiles,
+        crmLogs: result.data.crmLogs,
+        settings: {
+          ...DEFAULT_MART_SETTINGS,
+          ...(result.data.settings || {}),
+        },
+      },
+    },
+    {
+      status: 200,
+      headers: { "Cache-Control": "private, no-store, max-age=0" },
+    }
+  );
 }
 
 export async function POST(req: NextRequest) {

@@ -233,13 +233,104 @@ var PROP_DRIVE_PRODUCTS_ID = "MART_DRIVE_PRODUCTS_ID";
 var PROP_DRIVE_CATEGORIES_ID = "MART_DRIVE_CATEGORIES_ID";
 var PROP_DRIVE_PAYMENT_ID = "MART_DRIVE_PAYMENT_ID";
 
-var CACHE_PUBLIC_KEY = "xeetrix_mart_public_v6";
+var CACHE_PUBLIC_KEY = "xeetrix_mart_public_v7";
+var CACHE_ADMIN_KEY = "xeetrix_mart_admin_v1";
 var CACHE_TTL_SECONDS = 600; // 10 minutes; automatically busted on every mutation
+var CACHE_CHUNK_SIZE = 85000; // Safe margin under CacheService 100KB per-key cap
+var CACHE_MAX_CHUNKS = 12; // Supports payloads up to ~1MB safely
 
 function jsonOut(payload) {
   return ContentService.createTextOutput(JSON.stringify(payload)).setMimeType(
     ContentService.MimeType.JSON
   );
+}
+
+function rawJsonOut(serializedJson) {
+  return ContentService.createTextOutput(serializedJson).setMimeType(
+    ContentService.MimeType.JSON
+  );
+}
+
+function putChunkedScriptCache(baseKey, serialized, ttlSeconds) {
+  try {
+    if (!serialized) return false;
+    var cache = CacheService.getScriptCache();
+    var ttl = ttlSeconds || CACHE_TTL_SECONDS;
+    if (serialized.length <= CACHE_CHUNK_SIZE) {
+      cache.put(baseKey, "S:" + serialized, ttl);
+      return true;
+    }
+    var count = Math.ceil(serialized.length / CACHE_CHUNK_SIZE);
+    if (count > CACHE_MAX_CHUNKS) {
+      return false;
+    }
+    var batch = {};
+    batch[baseKey] = "M:" + count;
+    for (var i = 0; i < count; i++) {
+      batch[baseKey + "_c" + i] = serialized.slice(
+        i * CACHE_CHUNK_SIZE,
+        (i + 1) * CACHE_CHUNK_SIZE
+      );
+    }
+    cache.putAll(batch, ttl);
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+function getChunkedScriptCache(baseKey) {
+  try {
+    var cache = CacheService.getScriptCache();
+    var head = cache.get(baseKey);
+    if (!head) return null;
+    if (head.indexOf("S:") === 0) {
+      return head.slice(2);
+    }
+    if (head.indexOf("M:") === 0) {
+      var count = Number(head.slice(2));
+      if (!count || count < 1 || count > CACHE_MAX_CHUNKS) return null;
+      var keys = [];
+      for (var i = 0; i < count; i++) {
+        keys.push(baseKey + "_c" + i);
+      }
+      var chunks = cache.getAll(keys);
+      var out = "";
+      for (var j = 0; j < keys.length; j++) {
+        var part = chunks[keys[j]];
+        if (typeof part !== "string") {
+          return null;
+        }
+        out += part;
+      }
+      return out;
+    }
+    // Legacy unprefixed JSON string compatibility
+    return head;
+  } catch (err) {
+    return null;
+  }
+}
+
+function removeChunkedScriptCache(baseKey) {
+  try {
+    var cache = CacheService.getScriptCache();
+    var keys = [baseKey];
+    for (var i = 0; i < CACHE_MAX_CHUNKS; i++) {
+      keys.push(baseKey + "_c" + i);
+    }
+    cache.removeAll(keys);
+  } catch (err) {
+    // Ignore cache eviction error
+  }
+}
+
+function getMartSheetFast(ss, sheetName) {
+  var existing = ss.getSheetByName(sheetName);
+  if (existing && existing.getLastColumn() > 0) {
+    return existing;
+  }
+  return ensureMartSheet(ss, sheetName);
 }
 
 function getBoundSpreadsheet() {
@@ -2084,13 +2175,17 @@ function syncMartProductsBulkSheet(silent) {
 
 function invalidateMartCache() {
   try {
+    removeChunkedScriptCache(CACHE_PUBLIC_KEY);
+    removeChunkedScriptCache(CACHE_ADMIN_KEY);
     var cache = CacheService.getScriptCache();
-    cache.remove(CACHE_PUBLIC_KEY);
-    cache.remove("xeetrix_mart_public_v5");
-    cache.remove("xeetrix_mart_public_v4");
-    cache.remove("xeetrix_mart_public_v3");
-    cache.remove("xeetrix_mart_public_v2");
-    cache.remove("xeetrix_mart_public_v1");
+    cache.removeAll([
+      "xeetrix_mart_public_v6",
+      "xeetrix_mart_public_v5",
+      "xeetrix_mart_public_v4",
+      "xeetrix_mart_public_v3",
+      "xeetrix_mart_public_v2",
+      "xeetrix_mart_public_v1"
+    ]);
   } catch (err) {
     // Ignore cache eviction error
   }
@@ -2524,11 +2619,11 @@ function readMartAttributesWithBackup(ss, settingsObj) {
 }
 
 function buildAndCachePublicBundle(ss) {
-  var prodSheet = ensureMartSheet(ss, "Mart_Products");
-  var catSheet = ensureMartSheet(ss, "Mart_Categories");
-  var labelSheet = ensureMartSheet(ss, "Mart_Labels");
-  var supSheet = ensureMartSheet(ss, "Mart_Suppliers");
-  var setSheet = ensureMartSheet(ss, "Mart_Settings");
+  var prodSheet = getMartSheetFast(ss, "Mart_Products");
+  var catSheet = getMartSheetFast(ss, "Mart_Categories");
+  var labelSheet = getMartSheetFast(ss, "Mart_Labels");
+  var supSheet = getMartSheetFast(ss, "Mart_Suppliers");
+  var setSheet = getMartSheetFast(ss, "Mart_Settings");
 
   var suppliers = readMartRows(supSheet, "Mart_Suppliers");
   var supplierActiveMap = {};
@@ -2610,9 +2705,7 @@ function buildAndCachePublicBundle(ss) {
 
   try {
     var serialized = JSON.stringify(payload);
-    if (serialized.length < 95000) {
-      CacheService.getScriptCache().put(CACHE_PUBLIC_KEY, serialized, CACHE_TTL_SECONDS);
-    }
+    putChunkedScriptCache(CACHE_PUBLIC_KEY, serialized, CACHE_TTL_SECONDS);
   } catch (e) {
     // Cache limit exceeded or unavailable; skip gracefully
   }
@@ -3350,9 +3443,74 @@ function doGet(e) {
     var params = (e && e.parameter) || {};
     var action = String(params.action || "martPublic");
     var token = params.token || "";
+    var forceFresh = String(params.fresh || "") === "1";
+
+    // 1. Public Storefront Bundle (Zero-Sheet Hot CacheService Path — returns pre-serialized JSON)
+    if (action === "martPublic") {
+      if (!forceFresh) {
+        var cachedPublic = getChunkedScriptCache(CACHE_PUBLIC_KEY);
+        if (cachedPublic) {
+          return rawJsonOut('{"ok":true,"cached":true,"data":' + cachedPublic + "}");
+        }
+      }
+
+      var ssPublic = getBoundSpreadsheet();
+      var bundle = buildAndCachePublicBundle(ssPublic);
+      return jsonOut({
+        ok: true,
+        cached: false,
+        data: bundle
+      });
+    }
+
+    // 2. Dedicated Mart Enterprise Admin Bundle (Auth + Zero-Sheet Hot CacheService Path)
+    if (action === "martAdmin") {
+      if (!isAuthorizedMartAdmin(token)) {
+        return jsonOut({ ok: false, error: "Unauthorized Mart API token." });
+      }
+      if (!forceFresh) {
+        var cachedAdmin = getChunkedScriptCache(CACHE_ADMIN_KEY);
+        if (cachedAdmin) {
+          return rawJsonOut('{"ok":true,"cached":true,"data":' + cachedAdmin + "}");
+        }
+      }
+
+      var ssAdmin = getBoundSpreadsheet();
+      var prodSheet = getMartSheetFast(ssAdmin, "Mart_Products");
+      var catSheet = getMartSheetFast(ssAdmin, "Mart_Categories");
+      var labelSheet = getMartSheetFast(ssAdmin, "Mart_Labels");
+      var supSheet = getMartSheetFast(ssAdmin, "Mart_Suppliers");
+      var couponSheet = getMartSheetFast(ssAdmin, "Mart_Coupons");
+      var ordAdminSheet = getMartSheetFast(ssAdmin, "Mart_Orders");
+      var txnSheet = getMartSheetFast(ssAdmin, "Mart_Transactions");
+      var crmProfSheet = getMartSheetFast(ssAdmin, "Mart_CRM_Profiles");
+      var crmLogSheet = getMartSheetFast(ssAdmin, "Mart_CRM_Logs");
+      var setSheet = getMartSheetFast(ssAdmin, "Mart_Settings");
+      var mergedSettings = mergeSettings(readSettingsMap(setSheet));
+
+      var catRows = sortTaxonomyByOrder(readMartRows(catSheet, "Mart_Categories"));
+      var adminPayload = {
+        products: readMartRows(prodSheet, "Mart_Products", catRows),
+        categories: catRows,
+        labels: sortTaxonomyByOrder(readMartRows(labelSheet, "Mart_Labels")),
+        attributes: readMartAttributesWithBackup(ssAdmin, mergedSettings),
+        suppliers: readMartRows(supSheet, "Mart_Suppliers"),
+        coupons: readMartRows(couponSheet, "Mart_Coupons"),
+        orders: readMartRows(ordAdminSheet, "Mart_Orders"),
+        transactions: readMartRows(txnSheet, "Mart_Transactions"),
+        crmProfiles: readMartRows(crmProfSheet, "Mart_CRM_Profiles"),
+        crmLogs: readMartRows(crmLogSheet, "Mart_CRM_Logs"),
+        settings: mergedSettings
+      };
+
+      var serializedAdmin = JSON.stringify(adminPayload);
+      putChunkedScriptCache(CACHE_ADMIN_KEY, serializedAdmin, CACHE_TTL_SECONDS);
+      return rawJsonOut('{"ok":true,"cached":false,"data":' + serializedAdmin + "}");
+    }
+
     var ss = getBoundSpreadsheet();
 
-    // Health check endpoint
+    // 3. Health check endpoint
     if (action === "health") {
       var folders = ensureDriveFoldersReady();
       return jsonOut({
@@ -3363,32 +3521,7 @@ function doGet(e) {
       });
     }
 
-    // 1. Public Storefront Bundle (Hot CacheService path — sanitized)
-    if (action === "martPublic") {
-      if (String(params.fresh || "") !== "1") {
-        try {
-          var cached = CacheService.getScriptCache().get(CACHE_PUBLIC_KEY);
-          if (cached) {
-            return jsonOut({
-              ok: true,
-              cached: true,
-              data: JSON.parse(cached)
-            });
-          }
-        } catch (err) {
-          // Proceed to sheet read
-        }
-      }
-
-      var bundle = buildAndCachePublicBundle(ss);
-      return jsonOut({
-        ok: true,
-        cached: false,
-        data: bundle
-      });
-    }
-
-    // 2. Public Coupon Validation Endpoint
+    // 4. Public Coupon Validation Endpoint
     if (action === "checkMartCoupon") {
       var evalRes = evaluateMartCoupon(ss, params.code, params.subtotal);
       return jsonOut({
@@ -3401,7 +3534,7 @@ function doGet(e) {
       });
     }
 
-    // 3. Privacy-Verified Order Tracking (Order ID + Phone required)
+    // 5. Privacy-Verified Order Tracking (Order ID + Phone required)
     if (action === "trackMartOrder") {
       var orderIdQuery = String(params.orderId || "").trim().toUpperCase();
       var phoneQuery = String(params.phone || "").trim();
@@ -3412,7 +3545,7 @@ function doGet(e) {
         });
       }
 
-      var ordSheet = ensureMartSheet(ss, "Mart_Orders");
+      var ordSheet = getMartSheetFast(ss, "Mart_Orders");
       var allOrders = readMartRows(ordSheet, "Mart_Orders");
       for (var o = 0; o < allOrders.length; o++) {
         var ord = allOrders[o];
@@ -3430,43 +3563,6 @@ function doGet(e) {
       return jsonOut({
         ok: false,
         error: "No matching order found. Please verify your Order ID and phone number."
-      });
-    }
-
-    // 4. Dedicated Mart Enterprise Admin Bundle
-    if (action === "martAdmin") {
-      if (!isAuthorizedMartAdmin(token)) {
-        return jsonOut({ ok: false, error: "Unauthorized Mart API token." });
-      }
-      var prodSheet = ensureMartSheet(ss, "Mart_Products");
-      var catSheet = ensureMartSheet(ss, "Mart_Categories");
-      var labelSheet = ensureMartSheet(ss, "Mart_Labels");
-      var supSheet = ensureMartSheet(ss, "Mart_Suppliers");
-      var couponSheet = ensureMartSheet(ss, "Mart_Coupons");
-      var ordAdminSheet = ensureMartSheet(ss, "Mart_Orders");
-      var txnSheet = ensureMartSheet(ss, "Mart_Transactions");
-      var crmProfSheet = ensureMartSheet(ss, "Mart_CRM_Profiles");
-      var crmLogSheet = ensureMartSheet(ss, "Mart_CRM_Logs");
-      var setSheet = ensureMartSheet(ss, "Mart_Settings");
-      var mergedSettings = mergeSettings(readSettingsMap(setSheet));
-
-      var catRows = sortTaxonomyByOrder(readMartRows(catSheet, "Mart_Categories"));
-
-      return jsonOut({
-        ok: true,
-        data: {
-          products: readMartRows(prodSheet, "Mart_Products", catRows),
-          categories: catRows,
-          labels: sortTaxonomyByOrder(readMartRows(labelSheet, "Mart_Labels")),
-          attributes: readMartAttributesWithBackup(ss, mergedSettings),
-          suppliers: readMartRows(supSheet, "Mart_Suppliers"),
-          coupons: readMartRows(couponSheet, "Mart_Coupons"),
-          orders: readMartRows(ordAdminSheet, "Mart_Orders"),
-          transactions: readMartRows(txnSheet, "Mart_Transactions"),
-          crmProfiles: readMartRows(crmProfSheet, "Mart_CRM_Profiles"),
-          crmLogs: readMartRows(crmLogSheet, "Mart_CRM_Logs"),
-          settings: mergedSettings
-        }
       });
     }
 

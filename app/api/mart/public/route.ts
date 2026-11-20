@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DEFAULT_MART_SETTINGS } from "@/lib/martApi";
-import { fetchMartPublicFromScript } from "@/lib/martServer";
+import {
+  fetchMartPublicFromScript,
+  sanitizePublicProductsForClient,
+} from "@/lib/martServer";
 
 export const dynamic = "force-dynamic";
 
@@ -31,34 +34,7 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const sanitizedProducts = Array.isArray(result.data.products)
-    ? result.data.products.map((raw) => {
-        if (!raw || typeof raw !== "object") return raw;
-        const p = { ...(raw as Record<string, unknown>) };
-        delete p.costPrice;
-        delete p.supplierId;
-        delete p.sourceName;
-        delete p.collectionMode;
-        if (typeof p.variationMatrixJson === "string" && p.variationMatrixJson.trim()) {
-          try {
-            const matrix = JSON.parse(p.variationMatrixJson);
-            if (Array.isArray(matrix)) {
-              p.variationMatrixJson = JSON.stringify(
-                matrix.map((cell) => {
-                  if (!cell || typeof cell !== "object") return cell;
-                  const cleanCell = { ...(cell as Record<string, unknown>) };
-                  delete cleanCell.costOverride;
-                  return cleanCell;
-                })
-              );
-            }
-          } catch {
-            // Keep existing value if unparseable
-          }
-        }
-        return p;
-      })
-    : [];
+  const sanitizedProducts = sanitizePublicProductsForClient(result.data.products);
 
   return NextResponse.json(
     {
@@ -78,7 +54,9 @@ export async function GET(req: NextRequest) {
     {
       status: 200,
       headers: {
-        "Cache-Control": "no-store, max-age=0",
+        "Cache-Control": forceFresh
+          ? "no-store, max-age=0"
+          : "public, s-maxage=30, stale-while-revalidate=300",
       },
     }
   );

@@ -63,6 +63,7 @@ import {
   MartPaymentMethod,
   MartProduct,
   MartProductColor,
+  MartPublicBundle,
   MartSettings,
   normalizeMartImageUrl,
   parseGalleryUrls,
@@ -76,6 +77,7 @@ import {
   placeMartOrder,
   resolveMartContactInfo,
   resolveProductPricing,
+  setCachedMartPublicSnapshot,
   trackMartOrder,
   validateMartCoupon,
 } from "@/lib/martApi";
@@ -218,8 +220,10 @@ const ORDER_STEPS: MartOrderStatus[] = [
 
 export function MartStorefront({
   focusedProductSlug,
+  initialBundle,
 }: {
   focusedProductSlug?: string;
+  initialBundle?: MartPublicBundle;
 } = {}) {
   const router = useRouter();
   const { lang, t } = useMartI18n();
@@ -228,11 +232,18 @@ export function MartStorefront({
   const tcop = ent.coupons;
   const tqr = ent.qrPayment;
 
-  const [products, setProducts] = useState<MartProduct[]>([]);
-  const [categories, setCategories] = useState<MartCategory[]>([]);
-  const [labels, setLabels] = useState<MartLabel[]>([]);
-  const [settings, setSettings] = useState<MartSettings>(DEFAULT_MART_SETTINGS);
-  const [loading, setLoading] = useState(true);
+  const hasInitialLive = Boolean(initialBundle?.isLiveBackend);
+  const [products, setProducts] = useState<MartProduct[]>(
+    () => initialBundle?.products || []
+  );
+  const [categories, setCategories] = useState<MartCategory[]>(
+    () => initialBundle?.categories || []
+  );
+  const [labels, setLabels] = useState<MartLabel[]>(() => initialBundle?.labels || []);
+  const [settings, setSettings] = useState<MartSettings>(
+    () => initialBundle?.settings || DEFAULT_MART_SETTINGS
+  );
+  const [loading, setLoading] = useState(!hasInitialLive);
 
   // Multi-Category, Label, Smart Attribute, Tag & Price Filter State
   const [searchQuery, setSearchQuery] = useState("");
@@ -343,9 +354,29 @@ export function MartStorefront({
     }
   }, []);
 
-  // Hydrate Storefront Live Data (Instant SWR Snapshot Cache + Proxy Revalidation, Zero Dummy Data)
+  // Hydrate Storefront Live Data (Instant SSR + Session SWR Snapshot + Silent Background Revalidation)
   useEffect(() => {
     let mounted = true;
+    if (hasInitialLive && initialBundle) {
+      // Seed session snapshot from SSR so client-side transitions are instant
+      setCachedMartPublicSnapshot(initialBundle);
+      // Silent background sync after paint (non-blocking) to pick up any fresh stock changes
+      fetchMartPublicData()
+        .then((res) => {
+          if (!mounted || !res.isLiveBackend) return;
+          setProducts(res.products);
+          setCategories(res.categories);
+          setLabels(res.labels || []);
+          setSettings(res.settings);
+        })
+        .catch(() => {
+          // Keep SSR data silently if background check fails
+        });
+      return () => {
+        mounted = false;
+      };
+    }
+
     const cached = getCachedMartPublicSnapshot();
     if (cached) {
       setProducts(cached.products);
@@ -358,10 +389,12 @@ export function MartStorefront({
     fetchMartPublicData()
       .then((res) => {
         if (!mounted) return;
-        setProducts(res.products);
-        setCategories(res.categories);
-        setLabels(res.labels || []);
-        setSettings(res.settings);
+        if (res.isLiveBackend || !cached) {
+          setProducts(res.products);
+          setCategories(res.categories);
+          setLabels(res.labels || []);
+          setSettings(res.settings);
+        }
       })
       .finally(() => {
         if (mounted) setLoading(false);
@@ -369,7 +402,8 @@ export function MartStorefront({
     return () => {
       mounted = false;
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasInitialLive]);
 
   // Hydrate Local Cart & Saved Delivery Details
   useEffect(() => {

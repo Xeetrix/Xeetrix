@@ -719,7 +719,7 @@ export function normalizeCouponRecord(raw: Partial<MartCoupon>): MartCoupon {
   };
 }
 
-function normalizeCategoryRecord(raw: Partial<MartCategory>): MartCategory {
+export function normalizeCategoryRecord(raw: Partial<MartCategory>): MartCategory {
   const nameEn = String(raw.nameEn || raw.name || "");
   const nameBn = String(raw.nameBn || "");
   const slug = String(raw.slug || slugifyTaxonomy(nameEn || nameBn || raw.id || ""));
@@ -740,7 +740,7 @@ function normalizeCategoryRecord(raw: Partial<MartCategory>): MartCategory {
   };
 }
 
-function normalizeLabelRecord(raw: Partial<MartLabel>): MartLabel {
+export function normalizeLabelRecord(raw: Partial<MartLabel>): MartLabel {
   const nameEn = String(raw.nameEn || "");
   const nameBn = String(raw.nameBn || "");
   return {
@@ -2055,6 +2055,7 @@ export function findMartProductBySlugOrSku(
 }
 
 const MART_PUBLIC_CACHE_KEY = "xeetrix_mart_public_snapshot_v4";
+const MART_ADMIN_CACHE_KEY = "xeetrix_mart_admin_snapshot_v1";
 const MART_ADMIN_PASS_KEY = "xeetrix_mart_admin_pass_v1";
 
 export function getCachedMartPublicSnapshot(): MartPublicBundle | null {
@@ -2098,6 +2099,61 @@ export function clearMartPublicSnapshot(): void {
   }
 }
 
+export function getCachedMartAdminSnapshot(): MartAdminBundle | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(MART_ADMIN_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<MartAdminBundle>;
+    if (!parsed || !Array.isArray(parsed.products) || !Array.isArray(parsed.orders)) {
+      return null;
+    }
+    const settingsMerged = mergeMartSettings(parsed.settings);
+    return {
+      products: parsed.products.map(normalizeProductRecord),
+      categories: Array.isArray(parsed.categories)
+        ? parsed.categories.map(normalizeCategoryRecord)
+        : [],
+      labels: Array.isArray(parsed.labels) ? parsed.labels.map(normalizeLabelRecord) : [],
+      attributes: resolveAttributesFromBundle(parsed.attributes, settingsMerged),
+      suppliers: Array.isArray(parsed.suppliers)
+        ? parsed.suppliers.map(normalizeSupplierRecord)
+        : [],
+      coupons: Array.isArray(parsed.coupons) ? parsed.coupons.map(normalizeCouponRecord) : [],
+      orders: Array.isArray(parsed.orders) ? parsed.orders : [],
+      transactions: Array.isArray(parsed.transactions)
+        ? parsed.transactions.map(normalizeTransactionRecord)
+        : [],
+      crmProfiles: Array.isArray(parsed.crmProfiles)
+        ? parsed.crmProfiles.map(normalizeCrmProfileRecord)
+        : [],
+      crmLogs: Array.isArray(parsed.crmLogs) ? parsed.crmLogs.map(normalizeCrmLogRecord) : [],
+      settings: settingsMerged,
+      isLiveBackend: Boolean(parsed.isLiveBackend),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function setCachedMartAdminSnapshot(bundle: MartAdminBundle): void {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.setItem(MART_ADMIN_CACHE_KEY, JSON.stringify(bundle));
+  } catch {
+    // Ignore storage quota restrictions
+  }
+}
+
+export function clearMartAdminSnapshot(): void {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.removeItem(MART_ADMIN_CACHE_KEY);
+  } catch {
+    // Ignore storage restrictions
+  }
+}
+
 export function getStoredMartAdminPass(): string {
   if (typeof window === "undefined") return "";
   try {
@@ -2111,6 +2167,7 @@ export function clearStoredMartAdminPass(): void {
   if (typeof window === "undefined") return;
   try {
     sessionStorage.removeItem(MART_ADMIN_PASS_KEY);
+    sessionStorage.removeItem(MART_ADMIN_CACHE_KEY);
   } catch {
     // Ignore
   }
@@ -2191,6 +2248,7 @@ async function postToMartAdminApi<T = Record<string, unknown>>(
   }
 
   clearMartPublicSnapshot();
+  clearMartAdminSnapshot();
   return json;
 }
 
@@ -2361,12 +2419,14 @@ export async function placeMartOrder(payload: {
   }
 
   clearMartPublicSnapshot();
+  clearMartAdminSnapshot();
   return { id: json.id, record: json.record };
 }
 
-export async function fetchMartAdminData(): Promise<MartAdminBundle> {
+export async function fetchMartAdminData(forceFresh = false): Promise<MartAdminBundle> {
   const pass = getStoredMartAdminPass();
-  const res = await fetch("/api/mart/admin", {
+  const endpoint = forceFresh ? "/api/mart/admin?fresh=1" : "/api/mart/admin";
+  const res = await fetch(endpoint, {
     method: "GET",
     headers: {
       "x-mart-admin-pass": pass,
@@ -2406,7 +2466,7 @@ export async function fetchMartAdminData(): Promise<MartAdminBundle> {
   }
 
   const settingsMerged = mergeMartSettings(json.data.settings);
-  return {
+  const bundle: MartAdminBundle = {
     products: Array.isArray(json.data.products)
       ? json.data.products.map(normalizeProductRecord)
       : [],
@@ -2436,6 +2496,11 @@ export async function fetchMartAdminData(): Promise<MartAdminBundle> {
     settings: settingsMerged,
     isLiveBackend: Boolean(json.isLiveBackend),
   };
+
+  if (bundle.isLiveBackend) {
+    setCachedMartAdminSnapshot(bundle);
+  }
+  return bundle;
 }
 
 export async function createMartRecord<T extends Record<string, unknown>>(

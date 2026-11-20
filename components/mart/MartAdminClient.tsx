@@ -67,6 +67,7 @@ import {
   findDuplicateProductSku,
   generateProductSkuFromCategories,
   generateVariantSubSku,
+  getCachedMartAdminSnapshot,
   getCategoryHierarchyMeta,
   getStoredMartAdminPass,
   MART_GENDER_OPTIONS,
@@ -213,6 +214,7 @@ export function MartAdminClient() {
   const mainScrollRef = useRef<HTMLDivElement>(null);
   const [data, setData] = useState<MartAdminBundle | null>(null);
   const [loading, setLoading] = useState(false);
+  const [bgSyncing, setBgSyncing] = useState(false);
   const [toast, setToast] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   function scrollWorkspaceToTop() {
@@ -291,6 +293,13 @@ export function MartAdminClient() {
   const [prodGalleryUrls, setProdGalleryUrls] = useState<string[]>([]);
   const [extraImgInput, setExtraImgInput] = useState("");
   const [uploadingGalleryImg, setUploadingGalleryImg] = useState(false);
+  const [galleryUploadProgress, setGalleryUploadProgress] = useState<{
+    completed: number;
+    total: number;
+    currentFile: string;
+    failedCount: number;
+  } | null>(null);
+  const [galleryDragActive, setGalleryDragActive] = useState(false);
   const [prodColors, setProdColors] = useState<MartProductColor[]>([]);
   const [prodSizesInput, setProdSizesInput] = useState("");
   const [prodMatrix, setProdMatrix] = useState<MartVariationVariant[]>([]);
@@ -389,10 +398,19 @@ export function MartAdminClient() {
     setAuthReady(true);
   }, []);
 
-  async function loadMartDashboard() {
-    setLoading(true);
+  async function loadMartDashboard(options?: {
+    forceFresh?: boolean;
+    silent?: boolean;
+  }) {
+    const forceFresh = Boolean(options?.forceFresh);
+    const silent = Boolean(options?.silent);
+    if (silent) {
+      setBgSyncing(true);
+    } else {
+      setLoading(true);
+    }
     try {
-      const res = await fetchMartAdminData();
+      const res = await fetchMartAdminData(forceFresh);
       setData(res);
       setSettingsForm(res.settings);
     } catch (err) {
@@ -400,17 +418,28 @@ export function MartAdminClient() {
       if (apiErr?.code === "UNAUTHORIZED") {
         handleLogout();
         setAuthError(t.admin.sessionExpired);
-      } else {
+      } else if (!silent) {
         showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
       }
     } finally {
-      setLoading(false);
+      if (silent) {
+        setBgSyncing(false);
+      } else {
+        setLoading(false);
+      }
     }
   }
 
   useEffect(() => {
-    if (authenticated) {
-      loadMartDashboard();
+    if (!authenticated) return;
+    const cached = getCachedMartAdminSnapshot();
+    if (cached && cached.isLiveBackend) {
+      setData(cached);
+      setSettingsForm(cached.settings);
+      // Paint instantly from session snapshot, then refresh silently in background
+      void loadMartDashboard({ silent: true });
+    } else {
+      void loadMartDashboard();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authenticated]);
@@ -861,50 +890,174 @@ export function MartAdminClient() {
     }
   }
 
-  async function handleGalleryImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  async function uploadMultipleGalleryFiles(rawFiles: File[]) {
+    const imageFiles = rawFiles.filter(
+      (f) =>
+        f &&
+        (f.type.startsWith("image/") ||
+          /\.(png|jpe?g|webp|gif|avif|bmp)$/i.test(f.name || ""))
+    );
+    if (imageFiles.length === 0) {
+      if (rawFiles.length > 0) {
+        showNotice(
+          "error",
+          lang === "bn"
+            ? "অনুগ্রহ করে শুধুমাত্র ইমেজ ফাইল (JPG, PNG, WEBP) সিলেক্ট করুন।"
+            : "Please select valid image files (JPG, PNG, WEBP)."
+        );
+      }
+      return;
+    }
     if (!data?.isLiveBackend) {
       showNotice("error", t.admin.products.errConnectBackend);
-      e.target.value = "";
       return;
     }
 
+    const total = imageFiles.length;
+    const baseGalleryIndex = prodGalleryUrls.length;
+    const effectiveSku = (prodSku || liveSkuPreview.sku || "").trim().toUpperCase();
+    const driveCategoryPath = resolveCategoryDrivePath(prodCategories);
+
     setUploadingGalleryImg(true);
+    setGalleryUploadProgress({
+      completed: 0,
+      total,
+      currentFile: imageFiles[0]?.name || "",
+      failedCount: 0,
+    });
+
+    let completed = 0;
+    let succeeded = 0;
+    let failedCount = 0;
+    let lastErrorMsg = "";
+    let lastSingleTag = "";
+    let cursor = 0;
+
+    // 2-worker concurrent queue for fast batch upload without hitting Apps Script Lock contention
+    const workerCount = Math.min(2, total);
+    const runWorker = async () => {
+      while (cursor < total) {
+        const idx = cursor;
+        cursor += 1;
+        const file = imageFiles[idx];
+        const galleryIndex = baseGalleryIndex + idx + 1;
+
+        setGalleryUploadProgress({
+          completed,
+          total,
+          currentFile: file.name,
+          failedCount,
+        });
+
+        try {
+          const prepared = await prepareMartProductImageUpload(file, {
+            autoSquarePad,
+            targetSize: 1000,
+            quality: 0.9,
+          });
+          const uploaded = await uploadMartImageToDrive({
+            fileName: prepared.fileName,
+            mimeType: prepared.mimeType,
+            base64Data: prepared.base64Data,
+            folderType: "products",
+            sku: effectiveSku,
+            productId: editingProductId || undefined,
+            categoryPath: driveCategoryPath,
+            imageRole: "GALLERY",
+            galleryIndex,
+          });
+          setProdGalleryUrls((prev) =>
+            prev.includes(uploaded.url) ? prev : [...prev, uploaded.url]
+          );
+          succeeded += 1;
+          if (total === 1) {
+            const dimTag =
+              prepared.outputWidth > 0 && prepared.outputHeight > 0
+                ? `${prepared.outputWidth}×${prepared.outputHeight} · `
+                : "";
+            const savedNameTag = uploaded.fileName ? `${uploaded.fileName}` : uploaded.fileId;
+            lastSingleTag = `${dimTag}${savedNameTag}`;
+          }
+        } catch (err) {
+          failedCount += 1;
+          const apiErr = err as MartApiError;
+          lastErrorMsg = translateMartError(apiErr?.message, lang, apiErr?.code);
+        } finally {
+          completed += 1;
+          setGalleryUploadProgress({
+            completed,
+            total,
+            currentFile: file.name,
+            failedCount,
+          });
+        }
+      }
+    };
+
     try {
-      const prepared = await prepareMartProductImageUpload(file, {
-        autoSquarePad,
-        targetSize: 1000,
-        quality: 0.9,
-      });
-      const effectiveSku = (prodSku || liveSkuPreview.sku || "").trim().toUpperCase();
-      const uploaded = await uploadMartImageToDrive({
-        fileName: prepared.fileName,
-        mimeType: prepared.mimeType,
-        base64Data: prepared.base64Data,
-        folderType: "products",
-        sku: effectiveSku,
-        productId: editingProductId || undefined,
-        categoryPath: resolveCategoryDrivePath(prodCategories),
-        imageRole: "GALLERY",
-        galleryIndex: prodGalleryUrls.length + 1,
-      });
-      setProdGalleryUrls((prev) =>
-        prev.includes(uploaded.url) ? prev : [...prev, uploaded.url]
-      );
-      const dimTag =
-        prepared.outputWidth > 0 && prepared.outputHeight > 0
-          ? `${prepared.outputWidth}×${prepared.outputHeight} · `
-          : "";
-      const savedNameTag = uploaded.fileName ? `${uploaded.fileName}` : uploaded.fileId;
-      showNotice("success", `${t.admin.products.msgImageUploaded} (${dimTag}${savedNameTag})`);
-    } catch (err) {
-      const apiErr = err as MartApiError;
-      showNotice("error", translateMartError(apiErr?.message, lang, apiErr?.code));
+      await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+      if (succeeded === total) {
+        if (total === 1 && lastSingleTag) {
+          showNotice("success", `${t.admin.products.msgImageUploaded} (${lastSingleTag})`);
+        } else {
+          showNotice(
+            "success",
+            lang === "bn"
+              ? `${toLocalizedDigits(succeeded, lang)}টি গ্যালারি ছবি সফলভাবে Google Drive-এ আপলোড হয়েছে।`
+              : `${succeeded} gallery photos uploaded to Google Drive successfully.`
+          );
+        }
+      } else if (succeeded > 0) {
+        showNotice(
+          "error",
+          lang === "bn"
+            ? `${toLocalizedDigits(succeeded, lang)}টি ছবি আপলোড হয়েছে, ${toLocalizedDigits(failedCount, lang)}টি ব্যর্থ হয়েছে। ${lastErrorMsg}`
+            : `${succeeded} uploaded, ${failedCount} failed. ${lastErrorMsg}`
+        );
+      } else {
+        showNotice(
+          "error",
+          lastErrorMsg ||
+            (lang === "bn"
+              ? "গ্যালারি ছবি আপলোড ব্যর্থ হয়েছে।"
+              : "Failed to upload gallery images.")
+        );
+      }
     } finally {
       setUploadingGalleryImg(false);
-      e.target.value = "";
+      setGalleryUploadProgress(null);
     }
+  }
+
+  async function handleGalleryImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const selected = Array.from(e.target.files || []);
+    e.target.value = "";
+    if (selected.length === 0) return;
+    await uploadMultipleGalleryFiles(selected);
+  }
+
+  function handleGalleryDragOver(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!uploadingGalleryImg) {
+      setGalleryDragActive(true);
+    }
+  }
+
+  function handleGalleryDragLeave(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    setGalleryDragActive(false);
+  }
+
+  async function handleGalleryDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    setGalleryDragActive(false);
+    if (uploadingGalleryImg) return;
+    const dropped = Array.from(e.dataTransfer?.files || []);
+    if (dropped.length === 0) return;
+    await uploadMultipleGalleryFiles(dropped);
   }
 
   function handleAddExtraGalleryUrl() {
@@ -3253,14 +3406,16 @@ export function MartAdminClient() {
 
             <button
               type="button"
-              onClick={loadMartDashboard}
-              disabled={loading}
+              onClick={() => loadMartDashboard({ forceFresh: true })}
+              disabled={loading || bgSyncing}
               aria-label={t.admin.refreshStore}
               className="btn-primary min-h-[40px] px-3 sm:px-4 py-2 text-xs gap-1.5"
             >
-              <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+              <RefreshCw
+                className={`h-3.5 w-3.5 ${loading || bgSyncing ? "animate-spin" : ""}`}
+              />
               <span className="hidden sm:inline">
-                {loading ? t.admin.syncing : t.admin.refreshStore}
+                {loading || bgSyncing ? t.admin.syncing : t.admin.refreshStore}
               </span>
             </button>
           </div>
@@ -5397,26 +5552,121 @@ export function MartAdminClient() {
                               <div>
                                 <div className="text-xs font-bold text-slate-800">
                                   {tvar.galleryTitle}
+                                  {prodGalleryUrls.length > 0 && (
+                                    <span className="ml-2 font-mono text-[11px] font-semibold text-slate-500 tabular-nums">
+                                      ({toLocalizedDigits(prodGalleryUrls.length, lang)})
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="text-[11px] text-slate-500">
                                   {tvar.galleryHint}
                                 </div>
                               </div>
-                              <label className="rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap">
+                              <label
+                                className={`rounded-lg border px-3.5 py-2 text-xs font-semibold inline-flex items-center gap-1.5 whitespace-nowrap transition-colors ${
+                                  uploadingGalleryImg
+                                    ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                                    : "border-slate-300 bg-white text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] cursor-pointer"
+                                }`}
+                              >
                                 <ImagePlus className="h-3.5 w-3.5 text-[#0B5336]" />
                                 <span>
                                   {uploadingGalleryImg
                                     ? t.admin.products.uploading
-                                    : tvar.uploadGalleryBtn}
+                                    : lang === "bn"
+                                    ? "একাধিক ছবি সিলেক্ট করুন"
+                                    : "Select Multiple Photos"}
                                 </span>
                                 <input
                                   type="file"
                                   accept="image/*"
+                                  multiple
                                   disabled={uploadingGalleryImg}
                                   onChange={handleGalleryImageUpload}
                                   className="sr-only"
                                 />
                               </label>
+                            </div>
+
+                            {/* Multi-Image Drag & Drop Zone + Live Progress */}
+                            <div
+                              onDragOver={handleGalleryDragOver}
+                              onDragEnter={handleGalleryDragOver}
+                              onDragLeave={handleGalleryDragLeave}
+                              onDrop={handleGalleryDrop}
+                              className={`rounded-xl border-2 border-dashed p-4 transition-colors ${
+                                galleryDragActive
+                                  ? "border-[#0B5336] bg-emerald-50/70"
+                                  : "border-slate-200 bg-slate-50/70 hover:border-slate-300"
+                              }`}
+                            >
+                              {galleryUploadProgress ? (
+                                <div className="space-y-2">
+                                  <div className="flex items-center justify-between gap-2 text-xs">
+                                    <div className="flex items-center gap-2 min-w-0 font-semibold text-slate-800">
+                                      <RefreshCw className="h-3.5 w-3.5 text-[#0B5336] animate-spin shrink-0" />
+                                      <span className="truncate">
+                                        {lang === "bn" ? "আপলোড হচ্ছে:" : "Uploading:"}{" "}
+                                        {galleryUploadProgress.currentFile}
+                                      </span>
+                                    </div>
+                                    <span className="font-mono text-xs font-bold text-[#0B5336] tabular-nums shrink-0">
+                                      {toLocalizedDigits(galleryUploadProgress.completed, lang)} /{" "}
+                                      {toLocalizedDigits(galleryUploadProgress.total, lang)}
+                                    </span>
+                                  </div>
+                                  <div className="h-2 w-full rounded-full bg-slate-200 overflow-hidden">
+                                    <div
+                                      className="h-full bg-[#0B5336] transition-all duration-300"
+                                      style={{
+                                        width: `${Math.max(
+                                          6,
+                                          Math.round(
+                                            (galleryUploadProgress.completed /
+                                              Math.max(1, galleryUploadProgress.total)) *
+                                              100
+                                          )
+                                        )}%`,
+                                      }}
+                                    />
+                                  </div>
+                                </div>
+                              ) : (
+                                <label className="flex flex-col sm:flex-row items-center justify-between gap-3 cursor-pointer">
+                                  <div className="flex items-center gap-3">
+                                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-[#0B5336]">
+                                      <Upload className="h-4 w-4" />
+                                    </div>
+                                    <div>
+                                      <div className="text-xs font-semibold text-slate-800">
+                                        {galleryDragActive
+                                          ? lang === "bn"
+                                            ? "এখানে ছবিগুলো ছেড়ে দিন..."
+                                            : "Drop images here to upload..."
+                                          : lang === "bn"
+                                          ? "একসাথে একাধিক ছবি ড্র্যাগ-ড্রপ করুন অথবা ক্লিক করে সিলেক্ট করুন"
+                                          : "Drag & drop multiple images here, or click to browse"}
+                                      </div>
+                                      <div className="text-[11px] text-slate-500">
+                                        {lang === "bn"
+                                          ? "সবগুলো ছবি অটোমেটিক রিনেম (SKU-GALLERY-01, 02...) হয়ে Google Drive-এ সেভ হবে।"
+                                          : "Each image auto-renames (SKU-GALLERY-01, 02...) and saves inside your product Drive folder."}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <span className="text-[11px] font-semibold text-[#0B5336] whitespace-nowrap">
+                                    {lang === "bn" ? "ব্রাউজ করুন" : "Browse Files"}
+                                  </span>
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    multiple
+                                    disabled={uploadingGalleryImg}
+                                    onChange={handleGalleryImageUpload}
+                                    className="sr-only"
+                                  />
+                                </label>
+                              )}
                             </div>
 
                             <div className="flex flex-col sm:flex-row gap-2">
