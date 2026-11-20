@@ -1618,8 +1618,39 @@ export function MartAdminClient() {
   async function handleOrderStatusChange(orderId: string, status: MartOrderStatus) {
     if (!data?.isLiveBackend) return;
     const prevOrder = orders.find((o) => o.id === orderId);
+    const matchedCrmProfile = prevOrder
+      ? crmProfiles.find(
+          (p) =>
+            p.entityType === "customer" &&
+            normalizePhoneKey(p.entityKey || p.phone) ===
+              normalizePhoneKey(prevOrder.phone)
+        )
+      : undefined;
     try {
-      await updateMartRecord("Mart_Orders", orderId, { status });
+      await updateMartRecord(
+        "Mart_Orders",
+        orderId,
+        { status },
+        prevOrder
+          ? {
+              kind: "order_status",
+              orderId: prevOrder.id,
+              previousStatus: prevOrder.status,
+              nextStatus: status,
+              totalAmount: Number(prevOrder.totalAmount) || 0,
+              itemsSummary: prevOrder.itemsSummary || "",
+              customerName: prevOrder.customerName || matchedCrmProfile?.name || "",
+              phone: prevOrder.phone || matchedCrmProfile?.phone || "",
+              email: matchedCrmProfile?.email || "",
+              address: prevOrder.address || matchedCrmProfile?.address || "",
+              deliveryArea: prevOrder.deliveryArea || "",
+              tags: matchedCrmProfile?.tags || "",
+              notes: [prevOrder.notes, matchedCrmProfile?.notes]
+                .filter(Boolean)
+                .join(" | "),
+            }
+          : undefined
+      );
       const deltas = prevOrder
         ? parseOrderItems(prevOrder.itemsJson).map((it) => {
             const wasDeducted = isOrderItemStockDeducted(prevOrder.status, it.itemStatus);

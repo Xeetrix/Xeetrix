@@ -2523,14 +2523,37 @@ export async function fetchMartAdminData(forceFresh = false): Promise<MartAdminB
   return bundle;
 }
 
+export interface MartMetaCrmDispatchContext {
+  kind: "order_status" | "crm_profile" | "crm_log";
+  orderId?: string;
+  previousStatus?: string;
+  nextStatus?: string;
+  totalAmount?: number;
+  itemsSummary?: string;
+  customerName?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  deliveryArea?: string;
+  leadId?: string;
+  tags?: string;
+  notes?: string;
+  tier?: string;
+  channel?: string;
+  outcome?: string;
+  isNew?: boolean;
+}
+
 export async function createMartRecord<T extends Record<string, unknown>>(
   sheet: Exclude<MartSheetName, "Mart_Settings">,
-  data: T
+  data: T,
+  metaCrmContext?: MartMetaCrmDispatchContext
 ): Promise<{ id: string; record?: Record<string, unknown> }> {
   const res = await postToMartAdminApi<{ id: string; record?: Record<string, unknown> }>({
     action: "createRecord",
     sheet,
     data,
+    ...(metaCrmContext ? { metaCrmContext } : {}),
   });
   return { id: res.id, record: res.record };
 }
@@ -2550,13 +2573,15 @@ export async function batchCreateMartRecords<T extends Record<string, unknown>>(
 export async function updateMartRecord(
   sheet: Exclude<MartSheetName, "Mart_Settings">,
   id: string,
-  updates: Record<string, unknown>
+  updates: Record<string, unknown>,
+  metaCrmContext?: MartMetaCrmDispatchContext
 ): Promise<{ id: string }> {
   const res = await postToMartAdminApi<{ id?: string }>({
     action: "updateRecord",
     sheet,
     id,
     updates,
+    ...(metaCrmContext ? { metaCrmContext } : {}),
   });
   return { id: res.id || id };
 }

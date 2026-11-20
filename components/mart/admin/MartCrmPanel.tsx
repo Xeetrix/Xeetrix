@@ -189,7 +189,8 @@ export function MartCrmPanel({
     payload: Omit<
       MartCrmProfile,
       "id" | "entityType" | "entityKey" | "createdAt" | "updatedAt"
-    >
+    >,
+    skipMetaCrmEvent = false
   ) {
     const existing = crmProfiles.find(
       (p) =>
@@ -198,10 +199,27 @@ export function MartCrmPanel({
     );
     const nowIso = new Date().toISOString();
     if (existing) {
-      await updateMartRecord("Mart_CRM_Profiles", existing.id, {
-        ...payload,
-        updatedAt: nowIso,
-      });
+      await updateMartRecord(
+        "Mart_CRM_Profiles",
+        existing.id,
+        {
+          ...payload,
+          updatedAt: nowIso,
+        },
+        skipMetaCrmEvent
+          ? undefined
+          : {
+              kind: "crm_profile",
+              isNew: false,
+              customerName: payload.name,
+              phone: payload.phone,
+              email: payload.email,
+              address: payload.address,
+              tags: payload.tags,
+              notes: payload.notes,
+              tier: payload.tierOverride,
+            }
+      );
       onProfileSaved(
         {
           ...existing,
@@ -217,7 +235,23 @@ export function MartCrmPanel({
         ...payload,
         updatedAt: nowIso,
       };
-      const res = await createMartRecord("Mart_CRM_Profiles", fullPayload);
+      const res = await createMartRecord(
+        "Mart_CRM_Profiles",
+        fullPayload,
+        skipMetaCrmEvent
+          ? undefined
+          : {
+              kind: "crm_profile",
+              isNew: true,
+              customerName: payload.name,
+              phone: payload.phone,
+              email: payload.email,
+              address: payload.address,
+              tags: payload.tags,
+              notes: payload.notes,
+              tier: payload.tierOverride,
+            }
+      );
       onProfileSaved(
         {
           id: res.id,
@@ -346,20 +380,35 @@ export function MartCrmPanel({
 
     setSavingLog(true);
     try {
-      const res = await createMartRecord("Mart_CRM_Logs", logPayload);
-      await upsertCustomerProfile(activeClient.entityKey, {
-        name: profName.trim() || activeClient.name,
+      const res = await createMartRecord("Mart_CRM_Logs", logPayload, {
+        kind: "crm_log",
+        customerName: profName.trim() || activeClient.name,
         phone: activeClient.phone,
-        altPhone: activeClient.altPhone,
-        email: profEmail.trim(),
-        address: profAddress.trim(),
-        tierOverride: profTier,
-        tags: profTags.trim(),
-        notes: profNotes.trim(),
-        nextFollowUpDate: logNextFollowUp.trim() || profFollowUpDate.trim(),
-        followUpTask: profFollowUpTask.trim(),
-        lastContactedAt: nowIso,
+        email: profEmail.trim() || activeClient.email,
+        address: profAddress.trim() || activeClient.address,
+        tags: profTags.trim() || activeClient.tags.join(", "),
+        notes: profNotes.trim() || activeClient.notes,
+        channel: logChannel,
+        outcome: logOutcome,
+        orderId: logRelatedOrder.trim(),
       });
+      await upsertCustomerProfile(
+        activeClient.entityKey,
+        {
+          name: profName.trim() || activeClient.name,
+          phone: activeClient.phone,
+          altPhone: activeClient.altPhone,
+          email: profEmail.trim(),
+          address: profAddress.trim(),
+          tierOverride: profTier,
+          tags: profTags.trim(),
+          notes: profNotes.trim(),
+          nextFollowUpDate: logNextFollowUp.trim() || profFollowUpDate.trim(),
+          followUpTask: profFollowUpTask.trim(),
+          lastContactedAt: nowIso,
+        },
+        true
+      );
       onLogCreated({
         id: res.id,
         ...logPayload,

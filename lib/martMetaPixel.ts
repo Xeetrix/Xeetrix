@@ -9,14 +9,17 @@
 export const MART_META_PIXEL_ID = "1737437691431259";
 
 const FBC_STORAGE_KEY = "xeetrix_mart_meta_fbc_v1";
+const LEAD_ID_STORAGE_KEY = "xeetrix_mart_meta_lead_id_v1";
 const CUSTOMER_PREF_STORAGE_KEY = "xeetrix_mart_customer_pref_v1";
 
 export interface MartMetaCustomerContext {
   name?: string;
   phone?: string;
+  email?: string;
   address?: string;
   deliveryArea?: string;
   externalId?: string;
+  leadId?: string;
 }
 
 declare global {
@@ -78,6 +81,39 @@ export function captureMartMetaClickIdFromUrl(): string {
   }
 }
 
+/**
+ * Captures a 15- to 17-digit Meta `lead_id` from landing URL query parameters
+ * (if coming from a Meta Instant Form / Lead Ad redirect) and persists it locally.
+ */
+export function captureMartMetaLeadIdFromUrl(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const rawLeadId = (
+      params.get("lead_id") ||
+      params.get("meta_lead_id") ||
+      params.get("leadId") ||
+      ""
+    )
+      .trim()
+      .replace(/\D/g, "");
+    if (/^\d{15,17}$/.test(rawLeadId)) {
+      try {
+        window.localStorage.setItem(LEAD_ID_STORAGE_KEY, rawLeadId);
+      } catch {
+        // Ignore storage quota errors
+      }
+      return rawLeadId;
+    }
+    const stored = (window.localStorage.getItem(LEAD_ID_STORAGE_KEY) || "")
+      .trim()
+      .replace(/\D/g, "");
+    return /^\d{15,17}$/.test(stored) ? stored : "";
+  } catch {
+    return "";
+  }
+}
+
 function resolveSavedCustomerContext(
   explicit?: MartMetaCustomerContext
 ): MartMetaCustomerContext {
@@ -90,8 +126,10 @@ function resolveSavedCustomerContext(
       const parsed = JSON.parse(raw) as {
         customerName?: string;
         phone?: string;
+        email?: string;
         address?: string;
         deliveryArea?: string;
+        leadId?: string;
       };
       if (!merged.name && parsed.customerName) {
         merged.name = parsed.customerName;
@@ -99,15 +137,28 @@ function resolveSavedCustomerContext(
       if (!merged.phone && parsed.phone) {
         merged.phone = parsed.phone;
       }
+      if (!merged.email && parsed.email) {
+        merged.email = parsed.email;
+      }
       if (!merged.address && parsed.address) {
         merged.address = parsed.address;
       }
       if (!merged.deliveryArea && parsed.deliveryArea) {
         merged.deliveryArea = parsed.deliveryArea;
       }
+      if (!merged.leadId && parsed.leadId) {
+        merged.leadId = parsed.leadId;
+      }
     }
   } catch {
     // Ignore storage read errors
+  }
+
+  if (!merged.leadId) {
+    const capturedLeadId = captureMartMetaLeadIdFromUrl();
+    if (capturedLeadId) {
+      merged.leadId = capturedLeadId;
+    }
   }
 
   return merged;

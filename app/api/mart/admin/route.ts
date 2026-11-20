@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { DEFAULT_MART_SETTINGS } from "@/lib/martApi";
+import { DEFAULT_MART_SETTINGS, type MartMetaCrmDispatchContext } from "@/lib/martApi";
+import {
+  extractMetaLeadIdFromText,
+  getMetaCapiAccessToken,
+  mapCrmOutcomeToMetaCrmEventName,
+  mapOrderStatusToMetaCrmEventName,
+  sendMartMetaCapiEvent,
+} from "@/lib/martMetaCapiServer";
 import {
   callMartScriptPost,
   fetchMartAdminFromScript,
@@ -55,6 +62,184 @@ function clampProductNumerics(obj: Record<string, unknown> | undefined) {
       const parsed = Number(obj[key]);
       obj[key] = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
     }
+  }
+}
+
+async function dispatchAdminMetaCrmEventIfApplicable(params: {
+  action: string;
+  sheet: string;
+  recordId: string;
+  data?: Record<string, unknown>;
+  updates?: Record<string, unknown>;
+  metaCrmContext: MartMetaCrmDispatchContext | null;
+}): Promise<void> {
+  const { action, sheet, recordId, data, updates, metaCrmContext } = params;
+  const ctx = metaCrmContext || undefined;
+
+  // 1. Order status change on Mart_Orders -> Meta CRM stage conversion event
+  if (
+    sheet === "Mart_Orders" &&
+    (action === "updateRecord" || action === "updateStatus")
+  ) {
+    const nextStatus = String(
+      ctx?.nextStatus || updates?.status || ""
+    ).trim();
+    const prevStatus = String(ctx?.previousStatus || "").trim();
+    if (!nextStatus || (prevStatus && prevStatus === nextStatus)) return;
+
+    const eventName = mapOrderStatusToMetaCrmEventName(nextStatus);
+    if (!eventName) return;
+
+    const orderId = String(ctx?.orderId || recordId || "").trim();
+    const phone = String(ctx?.phone || updates?.phone || "").trim();
+    const email = String(ctx?.email || "").trim();
+    const customerName = String(
+      ctx?.customerName || updates?.customerName || ""
+    ).trim();
+    const address = String(ctx?.address || updates?.address || "").trim();
+    const deliveryArea = String(
+      ctx?.deliveryArea || updates?.deliveryArea || ""
+    ).trim();
+    const leadId = extractMetaLeadIdFromText(
+      ctx?.leadId,
+      ctx?.tags,
+      ctx?.notes,
+      typeof updates?.notes === "string" ? updates.notes : undefined
+    );
+
+    // Require at least one strong customer identifier before sending CRM event
+    if (!phone && !email && !leadId) return;
+
+    const totalAmount = Math.max(
+      0,
+      Number(ctx?.totalAmount ?? updates?.totalAmount ?? 0) || 0
+    );
+
+    await sendMartMetaCapiEvent({
+      eventName,
+      eventId: orderId
+        ? `xm_crm_ord_${orderId}_${nextStatus.toLowerCase()}_${Math.floor(Date.now() / 1000)}`
+        : undefined,
+      actionSource: "system_generated",
+      customer: {
+        name: customerName || undefined,
+        phone: phone || undefined,
+        email: email || undefined,
+        address: address || undefined,
+        deliveryArea: deliveryArea || undefined,
+        externalId: phone || orderId || undefined,
+        leadId: leadId || undefined,
+      },
+      customData: {
+        currency: "BDT",
+        value: totalAmount,
+        ...(orderId ? { order_id: orderId } : {}),
+        order_status: nextStatus,
+        ...(prevStatus ? { previous_order_status: prevStatus } : {}),
+        ...(ctx?.itemsSummary ? { content_name: ctx.itemsSummary } : {}),
+      },
+      timeoutMs: 2200,
+    });
+    return;
+  }
+
+  // 2. Customer CRM interaction log on Mart_CRM_Logs -> Meta CRM funnel stage event
+  if (
+    sheet === "Mart_CRM_Logs" &&
+    (action === "createRecord" || action === "updateRecord")
+  ) {
+    const entityType = String(data?.entityType || updates?.entityType || "customer")
+      .trim()
+      .toLowerCase();
+    if (entityType !== "customer") return;
+
+    const outcome = String(ctx?.outcome || data?.outcome || updates?.outcome || "").trim();
+    const eventName = mapCrmOutcomeToMetaCrmEventName(outcome);
+    const phone = String(ctx?.phone || data?.entityKey || "").trim();
+    const email = String(ctx?.email || "").trim();
+    const customerName = String(
+      ctx?.customerName || data?.entityName || ""
+    ).trim();
+    const address = String(ctx?.address || "").trim();
+    const leadId = extractMetaLeadIdFromText(
+      ctx?.leadId,
+      ctx?.tags,
+      ctx?.notes,
+      typeof data?.summary === "string" ? data.summary : undefined
+    );
+
+    if (!phone && !email && !leadId) return;
+
+    const relatedOrderId = String(
+      ctx?.orderId || data?.relatedOrderId || updates?.relatedOrderId || ""
+    ).trim();
+
+    await sendMartMetaCapiEvent({
+      eventName,
+      eventId: `xm_crm_log_${recordId || Date.now()}_${Math.floor(Date.now() / 1000)}`,
+      actionSource: "system_generated",
+      customer: {
+        name: customerName || undefined,
+        phone: phone || undefined,
+        email: email || undefined,
+        address: address || undefined,
+        externalId: phone || email || undefined,
+        leadId: leadId || undefined,
+      },
+      customData: {
+        crm_outcome: outcome || "updated",
+        ...(ctx?.channel || data?.channel
+          ? { crm_channel: String(ctx?.channel || data?.channel) }
+          : {}),
+        ...(relatedOrderId ? { order_id: relatedOrderId } : {}),
+      },
+      timeoutMs: 2200,
+    });
+    return;
+  }
+
+  // 3. Customer CRM profile create/update on Mart_CRM_Profiles -> Meta CRM lead sync
+  if (
+    sheet === "Mart_CRM_Profiles" &&
+    (action === "createRecord" || action === "updateRecord")
+  ) {
+    const entityType = String(data?.entityType || "customer")
+      .trim()
+      .toLowerCase();
+    if (entityType !== "customer") return;
+
+    const source = data || updates || {};
+    const phone = String(ctx?.phone || source.phone || source.entityKey || "").trim();
+    const email = String(ctx?.email || source.email || "").trim();
+    const customerName = String(ctx?.customerName || source.name || "").trim();
+    const address = String(ctx?.address || source.address || "").trim();
+    const tags = String(ctx?.tags || source.tags || "").trim();
+    const notes = String(ctx?.notes || source.notes || "").trim();
+    const leadId = extractMetaLeadIdFromText(ctx?.leadId, tags, notes);
+
+    if (!phone && !email && !leadId) return;
+
+    const isNew = ctx?.isNew ?? action === "createRecord";
+    const tier = String(ctx?.tier || source.tierOverride || "auto").trim();
+
+    await sendMartMetaCapiEvent({
+      eventName: isNew ? "Lead" : "CRMProfileUpdated",
+      eventId: `xm_crm_prof_${recordId || Date.now()}_${Math.floor(Date.now() / 1000)}`,
+      actionSource: "system_generated",
+      customer: {
+        name: customerName || undefined,
+        phone: phone || undefined,
+        email: email || undefined,
+        address: address || undefined,
+        externalId: phone || email || undefined,
+        leadId: leadId || undefined,
+      },
+      customData: {
+        crm_tier: tier,
+        ...(tags ? { crm_tags: tags } : {}),
+      },
+      timeoutMs: 2200,
+    });
   }
 }
 
@@ -203,7 +388,35 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const result = await callMartScriptPost(body, true);
+    const rawMetaCrmContext =
+      body.metaCrmContext && typeof body.metaCrmContext === "object"
+        ? (body.metaCrmContext as MartMetaCrmDispatchContext)
+        : null;
+
+    // Strip internal Meta CRM metadata before forwarding payload to Google Apps Script
+    const scriptPayload: Record<string, unknown> = { ...body };
+    delete scriptPayload.metaCrmContext;
+
+    const result = await callMartScriptPost(scriptPayload, true);
+
+    // Background-safe Meta CRM Conversions API (v27.0) dispatch after confirmed Admin write
+    if (getMetaCapiAccessToken()) {
+      await dispatchAdminMetaCrmEventIfApplicable({
+        action,
+        sheet: String(body.sheet || ""),
+        recordId: String(body.id || (result as { id?: string })?.id || ""),
+        data:
+          body.data && typeof body.data === "object"
+            ? (body.data as Record<string, unknown>)
+            : undefined,
+        updates:
+          body.updates && typeof body.updates === "object"
+            ? (body.updates as Record<string, unknown>)
+            : undefined,
+        metaCrmContext: rawMetaCrmContext,
+      }).catch(() => {});
+    }
+
     return NextResponse.json(result);
   } catch (err) {
     const scriptErr = err instanceof MartScriptError ? err : null;
