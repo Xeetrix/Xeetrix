@@ -1,3 +1,4 @@
+import { cache } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { permanentRedirect } from "next/navigation";
@@ -29,16 +30,47 @@ interface ProductPageProps {
   params: { slug: string } | Promise<{ slug: string }>;
 }
 
-async function resolveServerProductBundle(rawSlug: string): Promise<{
-  product: MartProduct | null;
-  initialBundle?: MartPublicBundle;
-  insideDhaka: number;
-  outsideDhaka: number;
-  contact: ResolvedMartContactInfo;
-}> {
-  try {
-    const res = await fetchMartPublicFromScript();
-    if (!res?.isLiveBackend || !res.data) {
+const resolveServerProductBundle = cache(
+  async (
+    rawSlug: string
+  ): Promise<{
+    product: MartProduct | null;
+    initialBundle?: MartPublicBundle;
+    insideDhaka: number;
+    outsideDhaka: number;
+    contact: ResolvedMartContactInfo;
+  }> => {
+    try {
+      const res = await fetchMartPublicFromScript();
+      if (!res?.isLiveBackend || !res.data) {
+        return {
+          product: null,
+          insideDhaka: Number(DEFAULT_MART_SETTINGS.insideDhakaCharge) || 60,
+          outsideDhaka: Number(DEFAULT_MART_SETTINGS.outsideDhakaCharge) || 120,
+          contact: resolveMartContactInfo(DEFAULT_MART_SETTINGS),
+        };
+      }
+
+      const initialBundle = buildClientPublicBundleFromServerPayload(res.data, true);
+      const contact = resolveMartContactInfo(initialBundle.settings);
+      const insideDhaka =
+        Number(initialBundle.settings.insideDhakaCharge) ||
+        Number(DEFAULT_MART_SETTINGS.insideDhakaCharge) ||
+        60;
+      const outsideDhaka =
+        Number(initialBundle.settings.outsideDhakaCharge) ||
+        Number(DEFAULT_MART_SETTINGS.outsideDhakaCharge) ||
+        120;
+      const activeProducts = initialBundle.products.filter((p) => p.active);
+
+      return {
+        product: findMartProductBySlugOrSku(activeProducts, rawSlug) || null,
+        initialBundle,
+        insideDhaka,
+        outsideDhaka,
+        contact,
+      };
+    } catch {
       return {
         product: null,
         insideDhaka: Number(DEFAULT_MART_SETTINGS.insideDhakaCharge) || 60,
@@ -46,35 +78,8 @@ async function resolveServerProductBundle(rawSlug: string): Promise<{
         contact: resolveMartContactInfo(DEFAULT_MART_SETTINGS),
       };
     }
-
-    const initialBundle = buildClientPublicBundleFromServerPayload(res.data, true);
-    const contact = resolveMartContactInfo(initialBundle.settings);
-    const insideDhaka =
-      Number(initialBundle.settings.insideDhakaCharge) ||
-      Number(DEFAULT_MART_SETTINGS.insideDhakaCharge) ||
-      60;
-    const outsideDhaka =
-      Number(initialBundle.settings.outsideDhakaCharge) ||
-      Number(DEFAULT_MART_SETTINGS.outsideDhakaCharge) ||
-      120;
-    const activeProducts = initialBundle.products.filter((p) => p.active);
-
-    return {
-      product: findMartProductBySlugOrSku(activeProducts, rawSlug) || null,
-      initialBundle,
-      insideDhaka,
-      outsideDhaka,
-      contact,
-    };
-  } catch {
-    return {
-      product: null,
-      insideDhaka: Number(DEFAULT_MART_SETTINGS.insideDhakaCharge) || 60,
-      outsideDhaka: Number(DEFAULT_MART_SETTINGS.outsideDhakaCharge) || 120,
-      contact: resolveMartContactInfo(DEFAULT_MART_SETTINGS),
-    };
   }
-}
+);
 
 export async function generateMetadata({
   params,

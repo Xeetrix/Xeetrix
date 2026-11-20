@@ -50,6 +50,7 @@ interface MartHeaderProps {
   onSelectProductSuggestion?: (product: MartProduct) => void;
   onAddToCartFromSearch?: (product: MartProduct) => void;
   onCommitSearch?: (term: string) => void;
+  onNavigateHome?: () => void;
   settings?: Partial<MartSettings>;
 }
 
@@ -63,7 +64,7 @@ function HeaderCategoryThumb({
   active: boolean;
 }) {
   const [failed, setFailed] = useState(false);
-  const resolved = normalizeMartImageUrl(src);
+  const resolved = normalizeMartImageUrl(src, 120);
   if (!resolved || failed) {
     return (
       <span
@@ -81,6 +82,8 @@ function HeaderCategoryThumb({
       <img
         src={resolved}
         alt={alt}
+        loading="lazy"
+        decoding="async"
         referrerPolicy="no-referrer"
         onError={() => setFailed(true)}
         className="h-full w-full object-cover"
@@ -91,7 +94,7 @@ function HeaderCategoryThumb({
 
 function SearchProductThumb({ src, alt }: { src: string; alt: string }) {
   const [failed, setFailed] = useState(false);
-  const resolved = normalizeMartImageUrl(src);
+  const resolved = normalizeMartImageUrl(src, 160);
   if (!resolved || failed) {
     return (
       <span className="flex h-12 w-12 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-300 shrink-0">
@@ -105,6 +108,8 @@ function SearchProductThumb({ src, alt }: { src: string; alt: string }) {
       <img
         src={resolved}
         alt={alt}
+        loading="lazy"
+        decoding="async"
         referrerPolicy="no-referrer"
         onError={() => setFailed(true)}
         className="h-full w-full object-contain"
@@ -129,6 +134,7 @@ export function MartHeader({
   onSelectProductSuggestion,
   onAddToCartFromSearch,
   onCommitSearch,
+  onNavigateHome,
   settings,
 }: MartHeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -574,7 +580,20 @@ export function MartHeader({
           <Link
             href="/mart"
             aria-label={t.common.brandHomeAria}
-            className="shrink-0 rounded-lg focus-visible:outline-brand-700"
+            onClick={(e) => {
+              if (
+                onNavigateHome &&
+                !e.metaKey &&
+                !e.ctrlKey &&
+                !e.shiftKey &&
+                !e.altKey &&
+                e.button === 0
+              ) {
+                e.preventDefault();
+                onNavigateHome();
+              }
+            }}
+            className="shrink-0 rounded-lg touch-manipulation focus-visible:outline-brand-700"
           >
             <MartLogo />
           </Link>

@@ -129,9 +129,21 @@ interface CartItem {
 type SortOption = "featured" | "price_asc" | "price_desc" | "newest";
 type OnlineChannel = "bkash_qr" | "bangla_qr" | "manual";
 
-function ProductMedia({ src, alt, className = "" }: { src: string; alt: string; className?: string }) {
+function ProductMedia({
+  src,
+  alt,
+  className = "",
+  width = 480,
+  priority = false,
+}: {
+  src: string;
+  alt: string;
+  className?: string;
+  width?: number;
+  priority?: boolean;
+}) {
   const [failed, setFailed] = useState(false);
-  const resolved = normalizeMartImageUrl(src);
+  const resolved = normalizeMartImageUrl(src, width);
 
   useEffect(() => {
     setFailed(false);
@@ -153,6 +165,9 @@ function ProductMedia({ src, alt, className = "" }: { src: string; alt: string; 
     <img
       src={resolved}
       alt={alt}
+      loading={priority ? "eager" : "lazy"}
+      decoding="async"
+      fetchPriority={priority ? "high" : "auto"}
       referrerPolicy="no-referrer"
       onError={() => setFailed(true)}
       className={`h-full w-full object-contain ${className}`}
@@ -174,7 +189,7 @@ function CategoryMedia({
   iconClass?: string;
 }) {
   const [failed, setFailed] = useState(false);
-  const resolved = normalizeMartImageUrl(src);
+  const resolved = normalizeMartImageUrl(src, 160);
 
   useEffect(() => {
     setFailed(false);
@@ -202,6 +217,8 @@ function CategoryMedia({
       <img
         src={resolved}
         alt={alt}
+        loading="lazy"
+        decoding="async"
         referrerPolicy="no-referrer"
         onError={() => setFailed(true)}
         className="h-full w-full object-cover"
@@ -280,7 +297,13 @@ export function MartStorefront({
   const [quickViewVariant, setQuickViewVariant] = useState("");
   const [quickViewQty, setQuickViewQty] = useState(1);
 
-  // Dedicated Product Detail Page (PDP) State
+  // Dedicated Product Detail Page (PDP) Instant 0ms Client State + URL Sync
+  const [activeSlug, setActiveSlug] = useState<string | null>(() =>
+    focusedProductSlug ? focusedProductSlug : null
+  );
+  const catalogScrollYRef = useRef<number>(0);
+  const pendingCardColorRef = useRef<MartProductColor | null>(null);
+  const preloadedImageUrlsRef = useRef<Set<string>>(new Set());
   const [pdpActiveImage, setPdpActiveImage] = useState("");
   const [pdpSelectedColor, setPdpSelectedColor] = useState<MartProductColor | null>(null);
   const [pdpSelectedSize, setPdpSelectedSize] = useState("");
@@ -340,7 +363,7 @@ export function MartStorefront({
   const [trackingError, setTrackingError] = useState<string | null>(null);
   const [trackedOrder, setTrackedOrder] = useState<MartOrder | null>(null);
 
-  // Hydrate initial ?q= search query parameter if present (supports Schema.org SearchAction & shared search links)
+  // Hydrate initial ?q= search query parameter & preconnect Google Drive image CDN for Mart
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
@@ -349,9 +372,44 @@ export function MartStorefront({
       if (qParam && qParam.trim()) {
         setSearchQuery(qParam.trim());
       }
+      // Inject preconnect for Google Drive image CDN once (Mart-only)
+      if (!document.querySelector('link[data-mart-cdn-preconnect="1"]')) {
+        const preconnect = document.createElement("link");
+        preconnect.rel = "preconnect";
+        preconnect.href = "https://lh3.googleusercontent.com";
+        preconnect.crossOrigin = "anonymous";
+        preconnect.setAttribute("data-mart-cdn-preconnect", "1");
+        document.head.appendChild(preconnect);
+      }
     } catch {
-      // Ignore URLSearchParams errors
+      // Ignore DOM/URLSearchParams errors
     }
+  }, []);
+
+  // Sync activeSlug if server prop changes (e.g., direct external route navigation)
+  useEffect(() => {
+    setActiveSlug(focusedProductSlug ? focusedProductSlug : null);
+  }, [focusedProductSlug]);
+
+  // Listen to native browser Back / Forward buttons for 0ms instant navigation
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handlePopState = () => {
+      const pathname = window.location.pathname || "";
+      const match = pathname.match(/^\/mart\/p\/([^/]+)/i);
+      if (match && match[1]) {
+        setActiveSlug(decodeURIComponent(match[1]));
+        window.scrollTo({ top: 0, behavior: "auto" });
+      } else if (/^\/mart\/?$/i.test(pathname)) {
+        setActiveSlug(null);
+        const savedY = catalogScrollYRef.current;
+        requestAnimationFrame(() => {
+          window.scrollTo({ top: savedY, behavior: "auto" });
+        });
+      }
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
   // Hydrate Storefront Live Data (Instant SSR + Session SWR Snapshot + Silent Background Revalidation)
@@ -684,13 +742,12 @@ export function MartStorefront({
   }, [selectedCategories, visibleCategories]);
 
   function toggleCategoryFilter(slug: string) {
-    if (focusedProductSlug) {
-      router.push("/mart");
-      return;
-    }
     setSelectedCategories((prev) =>
       prev.includes(slug) ? prev.filter((s) => s !== slug) : [...prev, slug]
     );
+    if (activeSlug) {
+      navigateToCatalog({ preserveScroll: false });
+    }
   }
 
   function toggleLabelFilter(slug: string) {
@@ -747,18 +804,40 @@ export function MartStorefront({
   }, [products]);
 
   const focusedProduct = useMemo(
-    () => findMartProductBySlugOrSku(products, focusedProductSlug),
-    [products, focusedProductSlug]
+    () => findMartProductBySlugOrSku(products, activeSlug || undefined),
+    [products, activeSlug]
   );
 
   const canonicalFocusedSlug = focusedProduct ? buildMartProductSlug(focusedProduct) : "";
   useEffect(() => {
-    if (!focusedProductSlug || !canonicalFocusedSlug) return;
-    if (focusedProductSlug !== canonicalFocusedSlug) {
-      router.replace(`/mart/p/${canonicalFocusedSlug}`);
+    if (!activeSlug || !canonicalFocusedSlug) return;
+    if (activeSlug !== canonicalFocusedSlug) {
+      setActiveSlug(canonicalFocusedSlug);
+      if (typeof window !== "undefined") {
+        window.history.replaceState(
+          { martSlug: canonicalFocusedSlug },
+          "",
+          `/mart/p/${canonicalFocusedSlug}`
+        );
+      }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusedProductSlug, canonicalFocusedSlug]);
+  }, [activeSlug, canonicalFocusedSlug]);
+
+  // Keep browser tab title synced on instant 0ms Catalog <-> PDP switches
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    if (focusedProduct) {
+      const titleName =
+        focusedProduct.nameBn && focusedProduct.nameEn
+          ? `${focusedProduct.nameEn} (${focusedProduct.nameBn})`
+          : focusedProduct.nameEn || focusedProduct.nameBn || focusedProduct.sku;
+      const priceText = `৳${Number(focusedProduct.price || 0).toLocaleString("en-BD")}`;
+      document.title = `${titleName} — ${priceText} | Xeetrix Mart`;
+    } else if (!activeSlug) {
+      document.title =
+        "Xeetrix Mart (জিট্রিক্স মার্ট) | Online Shopping, Electronics & Essentials in Bangladesh";
+    }
+  }, [focusedProduct, activeSlug]);
 
   const lastTrackedPdpIdRef = useRef<string | null>(null);
 
@@ -770,7 +849,11 @@ export function MartStorefront({
     const legacyVariants = parseProductVariants(
       pickLocalized(focusedProduct.variantsEn, focusedProduct.variantsBn, lang)
     );
-    const firstColor = colors[0] || null;
+    const preselectedColor = pendingCardColorRef.current;
+    pendingCardColorRef.current = null;
+    const matchedPreselected =
+      preselectedColor && colors.find((c) => c.id === preselectedColor.id);
+    const firstColor = matchedPreselected || colors[0] || null;
     setPdpSelectedColor(firstColor);
     setPdpSelectedSize(sizes[0] || "");
     setPdpActiveImage(firstColor?.imageUrl || gallery[0] || focusedProduct.imageUrl || "");
@@ -792,7 +875,7 @@ export function MartStorefront({
       });
     }
     if (typeof window !== "undefined") {
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      window.scrollTo({ top: 0, behavior: "auto" });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusedProduct?.id, lang]);
@@ -819,8 +902,61 @@ export function MartStorefront({
     return scored.slice(0, 6).map((s) => s.product);
   }, [focusedProduct, products]);
 
-  function navigateToProductPage(product: MartProduct) {
-    router.push(buildMartProductUrl(product));
+  function preloadProductHeroImage(product: MartProduct, activeColor?: MartProductColor | null) {
+    if (typeof window === "undefined") return;
+    const rawUrl = activeColor?.imageUrl || product.imageUrl;
+    const hdUrl = normalizeMartImageUrl(rawUrl, 1000);
+    if (!hdUrl || preloadedImageUrlsRef.current.has(hdUrl)) return;
+    preloadedImageUrlsRef.current.add(hdUrl);
+    const img = new window.Image();
+    img.referrerPolicy = "no-referrer";
+    img.src = hdUrl;
+  }
+
+  function navigateToProductPage(
+    product: MartProduct,
+    preselectedColor?: MartProductColor | null
+  ) {
+    const slug = buildMartProductSlug(product);
+    const targetUrl = buildMartProductUrl(product);
+    if (!slug) {
+      router.push(targetUrl);
+      return;
+    }
+    if (typeof window !== "undefined") {
+      if (!activeSlug) {
+        catalogScrollYRef.current = window.scrollY;
+      }
+      pendingCardColorRef.current = preselectedColor || null;
+      setQuickViewProduct(null);
+      setActiveSlug(slug);
+      if (window.location.pathname !== targetUrl) {
+        window.history.pushState({ martSlug: slug }, "", targetUrl);
+      }
+      window.scrollTo({ top: 0, behavior: "auto" });
+    } else {
+      router.push(targetUrl);
+    }
+  }
+
+  function navigateToCatalog(options?: {
+    searchQueryParam?: string;
+    preserveScroll?: boolean;
+  }) {
+    const q = options?.searchQueryParam?.trim();
+    const targetUrl = q ? `/mart?q=${encodeURIComponent(q)}` : "/mart";
+    setActiveSlug(null);
+    if (typeof window !== "undefined") {
+      if (`${window.location.pathname}${window.location.search}` !== targetUrl) {
+        window.history.pushState({ martSlug: null }, "", targetUrl);
+      }
+      const targetY = options?.preserveScroll ? catalogScrollYRef.current : 0;
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: targetY, behavior: "auto" });
+      });
+    } else {
+      router.push(targetUrl);
+    }
   }
 
   function handleCopyProductLink(product: MartProduct, e?: React.MouseEvent) {
@@ -1587,7 +1723,7 @@ export function MartStorefront({
 
   const hasActiveFilters = activeFacetCount > 0 || searchQuery.trim().length > 0;
 
-  function renderProductCard(product: MartProduct) {
+  function renderProductCard(product: MartProduct, priority = false) {
     const hasDiscount =
       product.comparePrice > 0 && product.comparePrice > product.price;
     const isDropship = product.fulfillmentType === "dropship";
@@ -1602,7 +1738,6 @@ export function MartStorefront({
       lang,
       product.sku
     );
-    const prodDesc = pickLocalized(product.descriptionEn, product.descriptionBn, lang);
     const variants = parseProductVariants(
       pickLocalized(product.variantsEn, product.variantsBn, lang)
     );
@@ -1627,48 +1762,63 @@ export function MartStorefront({
         ? selectedRawColor
         : null;
     const cardDisplayImage = activeCardColor?.imageUrl || product.imageUrl;
+    const productUrl = buildMartProductUrl(product);
+
+    const handleInstantProductLinkClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) {
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      navigateToProductPage(product, activeCardColor);
+    };
 
     return (
       <article
         key={product.id}
-        role="link"
-        tabIndex={0}
-        onClick={() => navigateToProductPage(product)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            navigateToProductPage(product);
-          }
-        }}
-        className="group cursor-pointer flex flex-col justify-between rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-card hover:shadow-elevated hover:border-[#0B5336]/40 transition-all duration-200 hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-[#0B5336]"
+        onPointerEnter={() => preloadProductHeroImage(product, activeCardColor)}
+        onTouchStart={() => preloadProductHeroImage(product, activeCardColor)}
+        onClick={() => navigateToProductPage(product, activeCardColor)}
+        className="group cursor-pointer touch-manipulation flex flex-col justify-between rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-card hover:shadow-elevated hover:border-[#0B5336]/40 transition-[transform,box-shadow,border-color] duration-150 hover:-translate-y-0.5 active:scale-[0.99]"
       >
         <div>
-          <div className="block w-full aspect-square bg-white p-2.5 sm:p-3 overflow-hidden border-b border-slate-100 text-left">
-            <ProductMedia
-              src={cardDisplayImage}
-              alt={prodName}
-              className="transition-transform duration-200 group-hover:scale-[1.03]"
-            />
-          </div>
-
-          <div className="p-3 sm:p-4 space-y-1.5 sm:space-y-2">
-            <div className="flex items-center justify-between gap-1.5 text-[10px] sm:text-[11px] text-slate-500">
-              <span className="font-semibold text-[#0B5336] truncate">
-                {kickerParts.join(" · ")}
-              </span>
-              <span className="font-mono tabular-nums whitespace-nowrap shrink-0">
-                {outOfStock
-                  ? t.catalog.outOfStock
-                  : isDropship
-                  ? t.catalog.availableToOrder
-                  : `${toLocalizedDigits(effectiveStock, lang)} ${t.catalog.inStockSuffix}`}
-              </span>
+          <Link
+            href={productUrl}
+            prefetch={false}
+            onClick={handleInstantProductLinkClick}
+            className="block touch-manipulation focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0B5336]"
+          >
+            <div className="block w-full aspect-square bg-white p-2.5 sm:p-3 overflow-hidden border-b border-slate-100 text-left">
+              <ProductMedia
+                src={cardDisplayImage}
+                alt={prodName}
+                width={480}
+                priority={priority}
+                className="transition-transform duration-150 group-hover:scale-[1.03]"
+              />
             </div>
 
-            <h2 className="font-display text-xs sm:text-base font-semibold text-slate-900 group-hover:text-[#0B5336] transition-colors leading-snug line-clamp-2 min-h-[2.5em]">
-              {prodName}
-            </h2>
+            <div className="px-3 pt-3 sm:px-4 sm:pt-4 space-y-1.5 sm:space-y-2">
+              <div className="flex items-center justify-between gap-1.5 text-[10px] sm:text-[11px] text-slate-500">
+                <span className="font-semibold text-[#0B5336] truncate">
+                  {kickerParts.join(" · ")}
+                </span>
+                <span className="font-mono tabular-nums whitespace-nowrap shrink-0">
+                  {outOfStock
+                    ? t.catalog.outOfStock
+                    : isDropship
+                    ? t.catalog.availableToOrder
+                    : `${toLocalizedDigits(effectiveStock, lang)} ${t.catalog.inStockSuffix}`}
+                </span>
+              </div>
 
+              <h2 className="font-display text-xs sm:text-base font-semibold text-slate-900 group-hover:text-[#0B5336] transition-colors leading-snug line-clamp-2 min-h-[2.5em]">
+                {prodName}
+              </h2>
+            </div>
+          </Link>
+
+          <div className="px-3 pb-3 pt-1 sm:px-4 sm:pb-4 space-y-1.5">
             {colors.length > 0 && (
               <div className="flex flex-wrap items-center gap-1 pt-0.5">
                 {colors.slice(0, 5).map((clr) => {
@@ -1686,8 +1836,9 @@ export function MartStorefront({
                           ...prev,
                           [product.id]: clr,
                         }));
+                        preloadProductHeroImage(product, clr);
                       }}
-                      className={`inline-flex h-5 w-5 sm:h-6 sm:w-6 items-center justify-center rounded-full transition-all ${
+                      className={`inline-flex h-5 w-5 sm:h-6 sm:w-6 items-center justify-center rounded-full touch-manipulation transition-all ${
                         isChosen
                           ? "ring-2 ring-[#0B5336] bg-brand-50"
                           : "hover:bg-slate-100"
@@ -1739,7 +1890,12 @@ export function MartStorefront({
         </div>
 
         <div className="px-3 pb-3 pt-2.5 sm:px-4 sm:pb-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div className="min-w-0">
+          <Link
+            href={productUrl}
+            prefetch={false}
+            onClick={handleInstantProductLinkClick}
+            className="min-w-0 block touch-manipulation"
+          >
             <div className="flex flex-wrap items-baseline gap-1.5">
               <span className="font-mono text-sm sm:text-lg font-bold text-slate-900 tabular-nums">
                 {formatMartPrice(product.price, lang)}
@@ -1755,7 +1911,7 @@ export function MartStorefront({
                 {t.common.sku}: {product.sku}
               </div>
             )}
-          </div>
+          </Link>
 
           <div className="flex items-center gap-1.5 shrink-0">
             <button
@@ -1765,7 +1921,7 @@ export function MartStorefront({
                 openQuickView(product, activeCardColor);
               }}
               aria-label={`${t.catalog.quickViewAria} ${prodName}`}
-              className="inline-flex items-center justify-center rounded-xl border border-slate-200 p-1.5 sm:p-2 text-slate-600 hover:border-[#0B5336] hover:text-[#0B5336] transition-colors min-h-[36px] min-w-[36px] sm:min-h-[40px] sm:min-w-[40px]"
+              className="inline-flex items-center justify-center rounded-xl border border-slate-200 p-1.5 sm:p-2 text-slate-600 hover:border-[#0B5336] hover:text-[#0B5336] transition-colors touch-manipulation min-h-[36px] min-w-[36px] sm:min-h-[40px] sm:min-w-[40px]"
             >
               <Eye className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
             </button>
@@ -1785,7 +1941,7 @@ export function MartStorefront({
                     product.imageUrl,
                 });
               }}
-              className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1 rounded-xl bg-[#0B5336] px-2.5 sm:px-3 py-1.5 sm:py-2 text-[11px] sm:text-xs font-semibold text-white hover:bg-[#08412A] disabled:opacity-50 transition-colors min-h-[36px] sm:min-h-[40px] whitespace-nowrap"
+              className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1 rounded-xl bg-[#0B5336] px-2.5 sm:px-3 py-1.5 sm:py-2 text-[11px] sm:text-xs font-semibold text-white hover:bg-[#08412A] disabled:opacity-50 transition-colors touch-manipulation min-h-[36px] sm:min-h-[40px] whitespace-nowrap"
             >
               <ShoppingCart className="h-3.5 w-3.5 shrink-0" />
               <span className="truncate">
@@ -1830,8 +1986,15 @@ export function MartStorefront({
         onToggleCategory={toggleCategoryFilter}
         onClearCategories={() => {
           setSelectedCategories([]);
-          if (focusedProductSlug) {
-            router.push("/mart");
+          if (activeSlug) {
+            navigateToCatalog({ preserveScroll: false });
+          }
+        }}
+        onNavigateHome={() => {
+          if (activeSlug) {
+            navigateToCatalog({ preserveScroll: false });
+          } else if (typeof window !== "undefined") {
+            window.scrollTo({ top: 0, behavior: "smooth" });
           }
         }}
         categoryThumbs={categoryThumbMap}
@@ -1855,8 +2018,8 @@ export function MartStorefront({
           })
         }
         onCommitSearch={(term) => {
-          if (focusedProductSlug && term.trim()) {
-            router.push(`/mart?q=${encodeURIComponent(term.trim())}`);
+          if (activeSlug && term.trim()) {
+            navigateToCatalog({ searchQueryParam: term.trim(), preserveScroll: false });
           }
         }}
       />
@@ -1886,7 +2049,7 @@ export function MartStorefront({
       )}
 
       <main id="main-content" className="flex-1">
-        {focusedProductSlug ? (
+        {activeSlug ? (
           /* DEDICATED FULL PRODUCT DETAIL PAGE (/mart/p/[slug]) */
           <section className="py-6 sm:py-10 lg:py-12 pb-28 sm:pb-14">
             <div className="mx-auto max-w-7xl px-3 sm:px-6 lg:px-8 space-y-8 sm:space-y-12">
@@ -1913,7 +2076,13 @@ export function MartStorefront({
                     <div className="pt-2">
                       <Link
                         href="/mart"
-                        className="btn-primary inline-flex items-center gap-2 px-5 py-2.5 text-xs"
+                        onClick={(e) => {
+                          if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.button === 0) {
+                            e.preventDefault();
+                            navigateToCatalog({ preserveScroll: false });
+                          }
+                        }}
+                        className="btn-primary inline-flex items-center gap-2 px-5 py-2.5 text-xs touch-manipulation"
                       >
                         <ArrowLeft className="h-4 w-4" />
                         <span>{t.quickView.backToStoreBtn}</span>
@@ -2002,7 +2171,13 @@ export function MartStorefront({
                         <div className="flex flex-wrap items-center gap-2 min-w-0">
                           <Link
                             href="/mart"
-                            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] transition-colors min-h-[38px]"
+                            onClick={(e) => {
+                              if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.button === 0) {
+                                e.preventDefault();
+                                navigateToCatalog({ preserveScroll: true });
+                              }
+                            }}
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] transition-colors touch-manipulation min-h-[38px]"
                           >
                             <ArrowLeft className="h-3.5 w-3.5" />
                             <span>{t.quickView.backToStoreBtn}</span>
@@ -2056,6 +2231,8 @@ export function MartStorefront({
                               <ProductMedia
                                 src={pdpActiveImage || focusedProduct.imageUrl}
                                 alt={pName}
+                                width={1000}
+                                priority
                               />
                             </div>
 
@@ -2069,7 +2246,7 @@ export function MartStorefront({
                                       key={`${imgUrl}-${idx}`}
                                       type="button"
                                       onClick={() => setPdpActiveImage(imgUrl)}
-                                      className={`h-16 w-16 sm:h-20 sm:w-20 rounded-xl bg-white p-1.5 overflow-hidden border-2 shrink-0 transition-colors ${
+                                      className={`h-16 w-16 sm:h-20 sm:w-20 rounded-xl bg-white p-1.5 overflow-hidden border-2 shrink-0 touch-manipulation transition-colors ${
                                         active
                                           ? "border-[#0B5336]"
                                           : "border-slate-200 hover:border-slate-400"
@@ -2077,8 +2254,10 @@ export function MartStorefront({
                                     >
                                       {/* eslint-disable-next-line @next/next/no-img-element */}
                                       <img
-                                        src={normalizeMartImageUrl(imgUrl)}
+                                        src={normalizeMartImageUrl(imgUrl, 160)}
                                         alt={pName}
+                                        loading="lazy"
+                                        decoding="async"
                                         referrerPolicy="no-referrer"
                                         className="h-full w-full object-contain"
                                       />
@@ -2511,9 +2690,9 @@ export function MartStorefront({
                                     type="button"
                                     onClick={() => {
                                       setSelectedTags([tagVal]);
-                                      router.push("/mart");
+                                      navigateToCatalog({ preserveScroll: false });
                                     }}
-                                    className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] transition-colors"
+                                    className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700 hover:border-[#0B5336] hover:text-[#0B5336] transition-colors touch-manipulation"
                                   >
                                     #{tagVal}
                                   </button>
@@ -2538,7 +2717,13 @@ export function MartStorefront({
                             </div>
                             <Link
                               href="/mart"
-                              className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#0B5336] hover:underline"
+                              onClick={(e) => {
+                                if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.button === 0) {
+                                  e.preventDefault();
+                                  navigateToCatalog({ preserveScroll: true });
+                                }
+                              }}
+                              className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#0B5336] hover:underline touch-manipulation"
                             >
                               <span>{t.quickView.backToStoreBtn}</span>
                               <ArrowRight className="h-3.5 w-3.5" />
@@ -3574,7 +3759,7 @@ export function MartStorefront({
               </div>
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 lg:gap-5">
-                {filteredProducts.map((product) => renderProductCard(product))}
+                {filteredProducts.map((product, idx) => renderProductCard(product, idx < 4))}
               </div>
             )}
           </div>
@@ -3668,6 +3853,8 @@ export function MartStorefront({
                     <ProductMedia
                       src={quickViewActiveImage || quickViewProduct.imageUrl}
                       alt={pickLocalized(quickViewProduct.nameEn, quickViewProduct.nameBn, lang)}
+                      width={1000}
+                      priority
                     />
                   </div>
                   {qGallery.length > 1 && (
@@ -3679,18 +3866,20 @@ export function MartStorefront({
                             key={`${imgUrl}-${idx}`}
                             type="button"
                             onClick={() => setQuickViewActiveImage(imgUrl)}
-                            className={`h-14 w-14 rounded-lg bg-white p-1 overflow-hidden border-2 shrink-0 transition-colors ${
+                            className={`h-14 w-14 rounded-lg bg-white p-1 overflow-hidden border-2 shrink-0 touch-manipulation transition-colors ${
                               active ? "border-[#0B5336]" : "border-slate-200 hover:border-slate-400"
                             }`}
                           >
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
-                              src={normalizeMartImageUrl(imgUrl)}
+                              src={normalizeMartImageUrl(imgUrl, 160)}
                               alt={pickLocalized(
                                 quickViewProduct.nameEn,
                                 quickViewProduct.nameBn,
                                 lang
                               )}
+                              loading="lazy"
+                              decoding="async"
                               referrerPolicy="no-referrer"
                               className="h-full w-full object-contain"
                             />
@@ -3978,8 +4167,16 @@ export function MartStorefront({
 
                   <Link
                     href={buildMartProductUrl(quickViewProduct)}
-                    onClick={() => setQuickViewProduct(null)}
-                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#0B5336] hover:underline py-1"
+                    prefetch={false}
+                    onClick={(e) => {
+                      if (!e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.button === 0) {
+                        e.preventDefault();
+                        navigateToProductPage(quickViewProduct, quickViewSelectedColor);
+                      } else {
+                        setQuickViewProduct(null);
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#0B5336] hover:underline touch-manipulation py-1"
                   >
                     <span>{t.quickView.viewFullPageBtn}</span>
                     <ExternalLink className="h-3.5 w-3.5" />
@@ -4251,7 +4448,7 @@ export function MartStorefront({
                           }`}
                         >
                           <div className="h-16 w-16 rounded-lg bg-white p-1 border border-slate-200 overflow-hidden shrink-0">
-                            <ProductMedia src={item.imageUrl} alt={liveTitle} />
+                            <ProductMedia src={item.imageUrl} alt={liveTitle} width={160} />
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="text-sm font-semibold text-slate-900 truncate">

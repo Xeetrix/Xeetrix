@@ -2205,23 +2205,43 @@ export async function verifyMartAdminPassword(password: string): Promise<void> {
 
 /**
  * Normalizes Google Drive sharing links into direct embeddable image URLs.
+ * When `width` is specified, appends Google CDN edge-resize (`=w<width>`)
+ * so catalog cards (~480px) and thumbnails (~160px) load 5x–10x faster while
+ * PDP hero views (`=w1000` or omitted) stay crisp HD.
  */
-export function normalizeMartImageUrl(url?: string): string {
+export function normalizeMartImageUrl(url?: string, width?: number): string {
   if (!url) return "";
   const trimmed = url.trim();
+  if (!trimmed) return "";
+
+  let normalized = trimmed;
   const fileMatch = trimmed.match(/drive\.google\.com\/file\/d\/([^/]+)/);
   if (fileMatch && fileMatch[1]) {
-    return `https://lh3.googleusercontent.com/d/${fileMatch[1]}`;
+    normalized = `https://lh3.googleusercontent.com/d/${fileMatch[1]}`;
+  } else {
+    const openMatch = trimmed.match(/drive\.google\.com\/open\?id=([^&]+)/);
+    if (openMatch && openMatch[1]) {
+      normalized = `https://lh3.googleusercontent.com/d/${openMatch[1]}`;
+    } else {
+      const ucMatch = trimmed.match(/drive\.google\.com\/uc\?[^#]*id=([^&]+)/);
+      if (ucMatch && ucMatch[1]) {
+        normalized = `https://lh3.googleusercontent.com/d/${ucMatch[1]}`;
+      }
+    }
   }
-  const openMatch = trimmed.match(/drive\.google\.com\/open\?id=([^&]+)/);
-  if (openMatch && openMatch[1]) {
-    return `https://lh3.googleusercontent.com/d/${openMatch[1]}`;
+
+  if (
+    width &&
+    Number.isFinite(width) &&
+    width > 0 &&
+    /^https:\/\/lh3\.googleusercontent\.com\/d\/[^/?#]+/i.test(normalized)
+  ) {
+    const safeWidth = Math.max(64, Math.min(2000, Math.round(width)));
+    const base = normalized.replace(/=[ws]\d+[^/?#]*$/i, "");
+    return `${base}=w${safeWidth}`;
   }
-  const ucMatch = trimmed.match(/drive\.google\.com\/uc\?[^#]*id=([^&]+)/);
-  if (ucMatch && ucMatch[1]) {
-    return `https://lh3.googleusercontent.com/d/${ucMatch[1]}`;
-  }
-  return trimmed;
+
+  return normalized;
 }
 
 async function postToMartAdminApi<T = Record<string, unknown>>(
